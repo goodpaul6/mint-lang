@@ -1,0 +1,38 @@
+global arr
+global counter
+
+._main
+	push 9
+	set counter
+
+	array 10
+	set arr
+
+	get arr
+	push 0
+	push 1
+	setindex
+
+	get arr
+	push 1
+	push 2
+	setindex
+
+.loop
+	get arr
+	get counter
+	getindex
+	write
+
+	get counter
+	gotoz exit
+
+	get counter
+	push 1
+	sub
+	set counter
+
+	goto loop
+
+.exit
+	halt

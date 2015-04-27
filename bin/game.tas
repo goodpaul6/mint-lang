@@ -1,0 +1,211 @@
+global window
+global renderer
+global event
+
+global x
+global y
+global velX
+global velY
+
+.initPlayer
+	push 0
+	set x
+
+	push 0
+	set y
+
+	push 0
+	set velX
+
+	push 0
+	set velY
+
+	ret
+
+
+.handleEvent
+	getlocal -1
+	call 1 SDL_EventType
+	get SDL_QUIT
+	equ
+	gotoz handleEventNoExit
+	goto exit
+
+	.handleEventNoExit
+		ret
+
+.updateGame
+	push 0.998
+	get velX
+	mul
+	set velX
+
+	push 0.998
+	get velY
+	mul
+	set velY
+
+	get VK_RIGHT
+	call 1 SDL_IsKeyDown
+	push 1
+	equ
+	gotoz skipMoveRight
+
+	get velX
+	push 0.0005
+	add
+	set velX
+
+.skipMoveRight
+	get VK_LEFT
+	call 1 SDL_IsKeyDown
+	push 1
+	equ
+	gotoz skipMoveLeft
+
+	get velX
+	push 0.0005
+	sub
+	set velX
+
+.skipMoveLeft
+	get VK_DOWN
+	call 1 SDL_IsKeyDown
+	push 1
+	equ
+	gotoz skipMoveDown
+
+	get velY
+	push 0.0005
+	add
+	set velY
+
+.skipMoveDown
+	get VK_UP
+	call 1 SDL_IsKeyDown
+	push 1
+	equ
+	gotoz endUpdate
+
+	# y -= 0.1
+	get velY
+	push 0.0005
+	sub
+	set velY
+
+.endUpdate
+	get x
+	get velX
+	add
+	set x
+
+	get y
+	get velY
+	add
+	set y
+
+	get x
+	push 0
+	lt
+	gotoz skipCheckLeft
+
+	push 0
+	set x
+
+.skipCheckLeft
+	get x
+	push 768
+	gt
+	gotoz skipCheckRight
+
+	push 768
+	set x
+
+.skipCheckRight
+	get y
+	push 0
+	lt
+	gotoz skipCheckUp
+
+	push 0
+	set y
+
+.skipCheckUp
+	get y
+	push 568
+	gt
+	gotoz exitUpdate
+
+	push 568
+	set y
+
+.exitUpdate
+	ret
+
+.drawGame
+	# SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
+	get renderer
+	push 255
+	push 128
+	push 200
+	push 255
+	call 5 SDL_SetRenderDrawColor
+
+	get renderer
+	get x get y push 32 push 32
+	call 5 SDL_RenderFillRect
+
+	ret
+
+._main
+	call SDL_InitWrapper
+
+	get SDL_INIT_EVERYTHING
+	call 1 SDL_Init
+
+	push "TAS window"
+	get SDL_WINDOWPOS_CENTERED
+	get SDL_WINDOWPOS_CENTERED
+	push 800
+	push 600
+	get SDL_WINDOW_SHOWN
+	call 6 SDL_CreateWindow
+	set window
+
+	get window
+	get SDL_RENDERER_ACCELERATED
+	call 2 SDL_CreateRenderer
+	set renderer
+
+	call SDL_CreateEvent
+	set event
+
+	call initPlayer
+
+	.gameLoop
+		.eventLoop
+			get event
+			call 1 SDL_PollEvent
+			gotoz exitEventLoop
+
+			get event
+			call 1 handleEvent
+
+	.exitEventLoop
+		call updateGame
+
+		# get renderer
+		# call 1 SDL_RenderClear
+
+		call drawGame
+
+		get renderer
+		call 1 SDL_RenderPresent
+
+		goto gameLoop
+
+
+.exit
+	call SDL_Quit
+	halt
+
