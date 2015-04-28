@@ -24,14 +24,16 @@ void Ext_SDL_DestroyWindow(void* pWin)
 
 void Ext_SDL_CreateWindow(VM* vm)
 {
-	const char* name = PopString(vm);
-	int x = PopNumber(vm);
-	int y = PopNumber(vm);
-	int width = PopNumber(vm);
-	int height = PopNumber(vm);
 	int flags = PopNumber(vm);
+	int height = PopNumber(vm);
+	int width = PopNumber(vm);
+	int y = PopNumber(vm);
+	int x = PopNumber(vm);
+	const char* name = PopString(vm);
 
+	printf("creating window\n");
 	PushNative(vm, SDL_CreateWindow(name, x, y, width, height, flags), Ext_SDL_DestroyWindow, NULL);
+	printf("created window\n");
 }
 
 void Ext_SDL_DestroyRenderer(void* pRen)
@@ -43,8 +45,8 @@ void Ext_SDL_DestroyRenderer(void* pRen)
 
 void Ext_SDL_CreateRenderer(VM* vm)
 {
-	SDL_Window* window = PopNative(vm);
 	int flags = (int)PopNumber(vm);
+	SDL_Window* window = PopNative(vm);
 
 	PushNative(vm, SDL_CreateRenderer(window, -1, flags), Ext_SDL_DestroyRenderer, NULL);
 }
@@ -94,10 +96,10 @@ void Ext_SDL_RenderPresent(VM* vm)
 void Ext_SDL_RenderFillRect(VM* vm)
 {
 	SDL_Renderer* ren = (SDL_Renderer*)PopNative(vm);
-	int x = (int)PopNumber(vm);
-	int y = (int)PopNumber(vm);
-	int w = (int)PopNumber(vm);
 	int h = (int)PopNumber(vm);
+	int w = (int)PopNumber(vm);
+	int y = (int)PopNumber(vm);
+	int x = (int)PopNumber(vm);
 
 	SDL_Rect rect = { x, y, w, h };
 	SDL_RenderFillRect(ren, &rect);
@@ -106,10 +108,10 @@ void Ext_SDL_RenderFillRect(VM* vm)
 void Ext_SDL_SetRenderDrawColor(VM* vm)
 {
 	SDL_Renderer* ren = (SDL_Renderer*)PopNative(vm);
-	int r = (int)PopNumber(vm);
-	int g = (int)PopNumber(vm);
-	int b = (int)PopNumber(vm);
 	int a = (int)PopNumber(vm);
+	int b = (int)PopNumber(vm);
+	int g = (int)PopNumber(vm);
+	int r = (int)PopNumber(vm);
 
 	SDL_SetRenderDrawColor(ren, r, g, b, a);
 }
@@ -158,25 +160,27 @@ int main(int argc, char* argv[])
 		}
 
 		VM* vm = NewVM();
-		
-		AllocateExterns(vm, 13);
 
-		HookExtern(vm, 0, Ext_SDL_Init);
-		HookExtern(vm, 1, Ext_SDL_Quit);
-		HookExtern(vm, 2, Ext_SDL_CreateWindow);
-		HookExtern(vm, 3, Ext_SDL_CreateRenderer);
-		HookExtern(vm, 4, Ext_SDL_CreateEvent);
-		HookExtern(vm, 5, Ext_SDL_PollEvent);
-		HookExtern(vm, 6, Ext_SDL_EventType);
-		HookExtern(vm, 7, Ext_SDL_IsKeyDown);
-		HookExtern(vm, 8, Ext_SDL_RenderClear);
-		HookExtern(vm, 9, Ext_SDL_RenderPresent);
-		HookExtern(vm, 10, Ext_SDL_RenderFillRect);
-		HookExtern(vm, 11, Ext_SDL_SetRenderDrawColor);
-		HookExtern(vm, 12, Ext_SDL);
+		
 
 		vm->debug = debugFlag;
 		LoadBinaryFile(vm, bin);
+		
+		HookExtern(vm, "SDL_Init", Ext_SDL_Init);
+		HookExtern(vm, "SDL_Quit", Ext_SDL_Quit);
+		HookExtern(vm, "SDL", Ext_SDL);
+		HookExtern(vm, "SDL_CreateWindow", Ext_SDL_CreateWindow);
+		/*HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
+		HookExtern(vm, "SDL_CreateEvent", Ext_SDL_CreateEvent);
+		HookExtern(vm, "SDL_PollEvent", Ext_SDL_PollEvent);
+		HookExtern(vm, "SDL_EventType", Ext_SDL_EventType);
+		HookExtern(vm, "SDL_IsKeyDown", Ext_SDL_IsKeyDown);
+		HookExtern(vm, "SDL_RenderClear", Ext_SDL_RenderClear);
+		HookExtern(vm, "SDL_RenderPresent", Ext_SDL_RenderPresent);
+		HookExtern(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
+		HookExtern(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
+		HookExtern(vm, "SDL", Ext_SDL);*/
+		
 		RunVM(vm);
 		DeleteVM(vm);
 

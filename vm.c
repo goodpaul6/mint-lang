@@ -168,6 +168,15 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	for(int i = 0; i < vm->numGlobals; ++i)
 		vm->stack[i] = NULL;
 		
+	int numFunctions, numNumberConstants, numStringConstants;
+	
+	fread(&numFunctions, sizeof(int), 1, in);
+	
+	vm->functionPcs = emalloc(sizeof(int) * numFunctions);
+	vm->numFunctions = numFunctions;
+	
+	fread(vm->functionPcs, sizeof(int), numFunctions, in);
+	
 	int numExterns;
 	fread(&numExterns, sizeof(int), 1, in);
 	
@@ -187,15 +196,6 @@ void LoadBinaryFile(VM* vm, FILE* in)
 		vm->externNames[i] = name;
 		vm->externs[i] = NULL;
 	}
-	
-	int numFunctions, numNumberConstants, numStringConstants;
-	
-	fread(&numFunctions, sizeof(int), 1, in);
-	
-	vm->functionPcs = emalloc(sizeof(int) * numFunctions);
-	vm->numFunctions = numFunctions;
-	
-	fread(vm->functionPcs, sizeof(int), numFunctions, in);
 	
 	fread(&numNumberConstants, sizeof(int), 1, in);
 	

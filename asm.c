@@ -197,6 +197,42 @@ int GetGlobalIndex(char* name)
 	return -1;
 }
 
+static LinkedList* ExternTable;
+
+int RegisterExtern(char* name)
+{
+	LinkedListNode* node = ExternTable->head;
+	
+	int nodeIndex;
+	for(nodeIndex = 0; nodeIndex < ExternTable->length; ++nodeIndex)
+	{
+		if(strcmp((char*)node->data, name) == 0)
+			return nodeIndex;
+
+		node = node->next;
+	}
+	
+	char* copy = estrdup(name);
+	AddNode(ExternTable, copy);
+	return ExternTable->length - 1;
+}
+
+int GetExternIndex(char* name)
+{
+	LinkedListNode* node = ExternTable->head;
+
+	int nodeIndex;
+	for(nodeIndex = 0; nodeIndex < ExternTable->length; ++nodeIndex)
+	{
+		if(strcmp((char*)node->data, name) == 0)
+			return nodeIndex;
+
+		node = node->next;
+	}
+
+	return -1;
+}
+
 enum 
 {
 	OPT_A0,
@@ -283,6 +319,7 @@ enum
 {
 	TOK_INSTR,
 	TOK_GLOBAL,
+	TOK_EXTERN,
 	TOK_LABEL_REF,
 	TOK_NUMBER,
 	TOK_STRING,
@@ -324,6 +361,7 @@ int GetToken(FILE* in)
 		last = StoreUntilSpace(in);
 	
 		if(strcmp(Lexeme, "global") == 0) return TOK_GLOBAL;
+		if(strcmp(Lexeme, "extern") == 0) return TOK_EXTERN;
 
 		Opcode* op = GetOpcodeByName(Lexeme);
 		
@@ -408,11 +446,13 @@ size_t CodeBufferLength = 0;
 int EntryPoint = 0;
 int NumGlobals = 0;
 char ListPcs = 0;
+int NumExterns = 0;
 
 void BeginCode()
 {
 	EntryPoint = 0;
 	NumGlobals = 0;
+	NumExterns = 0;
 
 	CodeBuffer = NULL;
 	CodeBufferCapacity = 1;
@@ -429,6 +469,9 @@ void BeginCode()
 
 	GlobalTable = emalloc(sizeof(LinkedList));
 	InitList(GlobalTable);
+	
+	ExternTable = emalloc(sizeof(LinkedList));
+	InitList(ExternTable);
 }
 
 void GenCode(Word code)
@@ -459,6 +502,20 @@ void GenInt(int value)
 
 void EndCode(FILE* out, char summarize)
 {
+	if(summarize)
+	{
+		printf("===========================\n");
+		printf("Summary:\n");
+		printf("Entry Point: %i\n", EntryPoint);
+		printf("Length: %i\n", CodeBufferLength);
+		printf("Number of globals: %i\n", NumGlobals);
+		printf("Number of externs: %i\n", NumExterns);
+		printf("Number of functions: %i\n", LabelTable->length);
+		printf("Number of number constants: %i\n", NumberTable->length);
+		printf("Number of string constants: %i\n", StringTable->length);
+		printf("===========================\n");
+	}
+	
 	fwrite(&EntryPoint, sizeof(int), 1, out);
 
 	fwrite(&CodeBufferLength, sizeof(int), 1, out);
@@ -477,6 +534,15 @@ void EndCode(FILE* out, char summarize)
 		}
 
 		fwrite(&label->entryPoint, sizeof(int), 1, out);
+	}
+	
+	fwrite(&ExternTable->length, sizeof(int), 1, out);
+	for(LinkedListNode* node = ExternTable->head; node != NULL; node = node->next)
+	{
+		char* name = node->data;
+		int length = strlen(name);
+		fwrite(&length, sizeof(int), 1, out);
+		fwrite(name, sizeof(char), length, out);
 	}
 
 	fwrite(&NumberTable->length, sizeof(int), 1, out);
@@ -505,25 +571,13 @@ void EndCode(FILE* out, char summarize)
 	FreeList(NumberTable);
 	FreeList(StringTable);
 	FreeList(GlobalTable);
+	FreeList(ExternTable);
 
 	free(CodeBuffer);
-
-	if(summarize)
-	{
-		printf("===========================\n");
-		printf("Summary:\n");
-		printf("Entry Point: %i\n", EntryPoint);
-		printf("Length: %i\n", CodeBufferLength);
-		printf("Number of globals: %i\n", NumGlobals);
-		printf("Number of functions: %i\n", LabelTable->length);
-		printf("Number of number constants: %i\n", NumberTable->length);
-		printf("Number of string constants: %i\n", StringTable->length);
-		printf("===========================\n");
-	}
 }
 
 void CompileOp(Opcode* op, FILE* in, FILE* out)
-{
+{		
 	if(op->type == OPT_A0)
 		GenCode(op->value);
 	
@@ -532,13 +586,27 @@ void CompileOp(Opcode* op, FILE* in, FILE* out)
 		GenCode(op->value);
 
 		GetNextToken(in);
-		if(CurTok != TOK_NUMBER)
+		
+		int iArg;
+		
+		if(op->value == OP_CALLF)
+		{
+			if(CurTok != TOK_LABEL_REF)
+			{
+				fprintf(stderr, "Expected name of extern function after %s\n", op->name);
+				exit(1);
+			}
+			
+			iArg = GetExternIndex(Lexeme);
+		}
+		else if(CurTok != TOK_NUMBER)
 		{
 			fprintf(stderr, "Expected number after %s\n", op->name);
 			exit(1);
 		}
+		else
+			iArg = (int)strtod(Lexeme, NULL);
 
-		int iArg = (int)strtod(Lexeme, NULL);
 		GenInt(iArg);
 	}
 
@@ -657,6 +725,12 @@ void Assemble(FILE* in, FILE* out, char summarize)
 			RegisterGlobal(Lexeme);
 			++NumGlobals;
 		}
+		else if(CurTok == TOK_EXTERN)
+		{
+			GetNextToken(in);
+			RegisterExtern(Lexeme);
+			++NumExterns;
+		}
 		else if(CurTok == TOK_LABEL_DEF)
 		{
 			if(strcmp(Lexeme, "_main") == 0)
@@ -678,6 +752,8 @@ void Assemble(FILE* in, FILE* out, char summarize)
 				fprintf(stderr, "Referenced undeclared global '%s'\n", Lexeme);
 				exit(1);
 			}
+			
+			
 			GenInt(index);
 		}
 		else
@@ -699,7 +775,6 @@ int main(int argc, char* argv[])
 	{
 		const char* outputFileName = "out.t";
 		char shouldSummarize = 0;
-		char vmDebug = 0;
 		char showTemp = 0;
 
 		FILE* mergedFile = fopen("temp.tasm", "w");
@@ -715,8 +790,6 @@ int main(int argc, char* argv[])
 				outputFileName = argv[++i];
 			else if(strcmp(argv[i], "-sum") == 0)
 				shouldSummarize = 1;
-			else if(strcmp(argv[i], "-vmd") == 0)
-				vmDebug = 1;
 			else if(strcmp(argv[i], "-smf") == 0)
 				showTemp = 1;
 			else if(strcmp(argv[i], "-lpc") == 0)
