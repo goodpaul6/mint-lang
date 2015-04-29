@@ -644,8 +644,8 @@ void ExecuteCycle(VM* vm)
 		case OP_GOTO:
 		{
 			++vm->pc;
-			int index = ReadInteger(vm);
-			vm->pc = vm->functionPcs[index];
+			int pc = ReadInteger(vm);
+			vm->pc = pc;
 		
 			if(vm->debug)
 				printf("goto %i\n", vm->pc);
@@ -654,12 +654,12 @@ void ExecuteCycle(VM* vm)
 		case OP_GOTOZ:
 		{
 			++vm->pc;
-			int index = ReadInteger(vm);
+			int pc = ReadInteger(vm);
 			
 			Object* top = PopObject(vm);
 			if(top->number == 0)
 			{
-				vm->pc = vm->functionPcs[index];
+				vm->pc = pc;
 				if(vm->debug)
 					printf("gotoz %i\n", vm->pc);
 			}

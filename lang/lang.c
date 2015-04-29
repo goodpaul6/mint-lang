@@ -1,21 +1,28 @@
 // lang.c -- a language which compiles to mint vm bytecode
+/* 
+ * TODO:
+ * - string constants
+ * - else?
+ * - include/require other scripts (copy bytecode into vm at runtime?)
+ * 
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
 
-#include "vm.h"
+#include "../vm.h"
 
 #define MAX_LEX_LENGTH 256
 #define MAX_NUM_CONSTS 256
-#define MAX_VARS 256
 #define MAX_ID_NAME_LENGTH 64
 #define MAX_SCOPES 32
 #define MAX_ARGS 32
 
 double Constants[MAX_NUM_CONSTS];
 int NumConstants = 0;
+
 int NumGlobals = 0;
 int NumFunctions = 0;
 int NumExterns = 0;
@@ -47,8 +54,20 @@ void AppendInt(int value)
 		AppendCode(*code++);
 }
 
+void AllocatePatch(int length)
+{
+	for(int i = 0; i < length; ++i)
+		AppendCode(0);
+}
+
 void EmplaceInt(int loc, int value)
 {
+	if(loc >= CodeLength)
+	{
+		fprintf(stderr, "Compiler error: attempted to emplace in outside of code array\n");
+		exit(1);
+	}
+	
 	Word* code = (Word*)(&value);
 	for(int i = 0; i < sizeof(int) / sizeof(Word); ++i)
 		Code[loc + i] = *code++;
@@ -902,10 +921,10 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_BIN:
 		{
-			CompileExpr(exp->binx.rhs);
-			
 			if(exp->binx.op == '=')
 			{
+				CompileExpr(exp->binx.rhs);
+				
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
 				{
 					if(exp->binx.lhs->varDecl->isGlobal) AppendCode(OP_SET);
@@ -920,8 +939,8 @@ void CompileExpr(Expr* exp)
 			}
 			else
 			{
-				CompileExpr(exp->binx.rhs);
 				CompileExpr(exp->binx.lhs);
+				CompileExpr(exp->binx.rhs);
 				
 				switch(exp->binx.op)
 				{
@@ -952,7 +971,7 @@ void CompileExpr(Expr* exp)
 			AppendCode(OP_GOTOZ);
 			// emplace integer of exit location here
 			int emplaceLoc = CodeLength;
-			CodeLength += sizeof(int) / sizeof(Word);
+			AllocatePatch(sizeof(int) / sizeof(Word));
 			CompileExprList(exp->whilex.bodyHead);
 			
 			AppendCode(OP_GOTO);
@@ -966,7 +985,7 @@ void CompileExpr(Expr* exp)
 			CompileExpr(exp->ifx.cond);
 			AppendCode(OP_GOTOZ);
 			int emplaceLoc = CodeLength;
-			CodeLength += sizeof(int) / sizeof(Word);
+			AllocatePatch(sizeof(int) / sizeof(Word));
 			CompileExprList(exp->ifx.bodyHead);
 			EmplaceInt(emplaceLoc, CodeLength);
 		} break;
@@ -975,7 +994,7 @@ void CompileExpr(Expr* exp)
 		{
 			AppendCode(OP_GOTO);
 			int emplaceLoc = CodeLength;
-			CodeLength += sizeof(int) / sizeof(Word);
+			AllocatePatch(sizeof(int) / sizeof(Word));
 			
 			exp->funcx.decl->pc = CodeLength;
 			
@@ -1024,30 +1043,61 @@ void DebugExprList(Expr* head)
 
 int main(int argc, char* argv[])
 {
-	GetNextToken(stdin);
-	
-	Expr* exprHead = NULL;
-	Expr* exprCurrent = NULL;
-	
-	while(CurTok != TOK_EOF)
+	if(argc == 1)
 	{
-		if(!exprHead)
+		fprintf(stderr, "Error: no input files detected!\n");
+		exit(1);
+	}
+	
+	const char* outPath = NULL;
+	
+	for(int i = 1; i < argc; ++i)
+	{
+		if(strcmp(argv[i], "-o") == 0)
 		{
-			exprHead = ParseExpr(stdin);
-			exprCurrent = exprHead;
+			outPath = argv[++i];
 		}
 		else
 		{
-			exprCurrent->next = ParseExpr(stdin);
-			exprCurrent = exprCurrent->next;
+			FILE* in = fopen(argv[i], "r");
+			if(!in)
+			{
+				fprintf(stderr, "Cannot open file '%s' for reading\n", argv[i]);
+				exit(1);
+			}
+			
+			GetNextToken(in);
+			
+			Expr* exprHead = NULL;
+			Expr* exprCurrent = NULL;
+		
+			while(CurTok != TOK_EOF)
+			{
+				if(!exprHead)
+				{
+					exprHead = ParseExpr(in);
+					exprCurrent = exprHead;
+				}
+				else
+				{
+					exprCurrent->next = ParseExpr(in);
+					exprCurrent = exprCurrent->next;
+				}
+			}
+		
+			CompileExprList(exprHead);
+			fclose(in);
 		}
-	}
-	
-	CompileExprList(exprHead);
+	}		
 	AppendCode(OP_HALT);
-	DebugExprList(exprHead);
 	
-	FILE* out = fopen("out.mb", "wb");
+	FILE* out;
+	
+	if(!outPath)
+		out = fopen("out.mb", "wb");
+	else
+		out = fopen(outPath, "wb");
+	
 	OutputCode(out);
 	
 	fclose(out);

@@ -170,11 +170,11 @@ int main(int argc, char* argv[])
 		LoadBinaryFile(vm, bin);
 		
 		HookExtern(vm, "print", Ext_Print);
-		/*HookExtern(vm, "SDL_Init", Ext_SDL_Init);
+		HookExtern(vm, "SDL_Init", Ext_SDL_Init);
 		HookExtern(vm, "SDL_Quit", Ext_SDL_Quit);
 		HookExtern(vm, "SDL", Ext_SDL);
 		HookExtern(vm, "SDL_CreateWindow", Ext_SDL_CreateWindow);
-		HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
+		/*HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
 		HookExtern(vm, "SDL_CreateEvent", Ext_SDL_CreateEvent);
 		HookExtern(vm, "SDL_PollEvent", Ext_SDL_PollEvent);
 		HookExtern(vm, "SDL_EventType", Ext_SDL_EventType);
@@ -182,8 +182,8 @@ int main(int argc, char* argv[])
 		HookExtern(vm, "SDL_RenderClear", Ext_SDL_RenderClear);
 		HookExtern(vm, "SDL_RenderPresent", Ext_SDL_RenderPresent);
 		HookExtern(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
-		HookExtern(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
-		HookExtern(vm, "SDL", Ext_SDL);*/
+		HookExtern(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);*/
+		HookExtern(vm, "SDL", Ext_SDL);
 		
 		RunVM(vm);
 		DeleteVM(vm);
