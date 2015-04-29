@@ -236,12 +236,9 @@ void HookExtern(VM* vm, const char* name, ExternFunction func)
 	}
 	
 	if(index < 0 || index >= vm->numExterns)
-	{
-		fprintf(stderr, "Invalid extern hook name '%s'; code does not declare this function anywhere!\n", name);
-		exit(1);
-	}
-
-	vm->externs[index] = func;
+		printf("Warning: supplied invalid extern hook name '%s'; code does not declare this function anywhere!\n", name);
+	else
+		vm->externs[index] = func;
 }
 
 void MarkAll(VM* vm)
@@ -706,9 +703,9 @@ void ExecuteCycle(VM* vm)
 				fprintf(stderr, "Invalid extern index %i\n", index);
 				exit(1);
 			}
-			vm->externs[index](vm);
 			if(vm->debug)
 				printf("callf %i\n", index);
+			vm->externs[index](vm);
 		} break;
 
 		case OP_GETLOCAL:
@@ -740,6 +737,12 @@ void ExecuteCycle(VM* vm)
 
 void RunVM(VM* vm)
 {
+	for(int i = 0; i < vm->numExterns; ++i)
+	{
+		if(!vm->externs[i])
+			printf("Unhooked external function '%s'\n", vm->externNames[i]);
+	}
+	
 	vm->pc = vm->entryPoint;
 	while(vm->pc != -1)
 		ExecuteCycle(vm);

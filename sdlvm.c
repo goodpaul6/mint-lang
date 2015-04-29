@@ -141,6 +141,11 @@ void Ext_SDL(VM* vm)
 	}
 }
 
+void Ext_Print(VM* vm)
+{
+	printf("%g\n", PopNumber(vm));
+}
+
 int main(int argc, char* argv[])
 {
 	if(argc >= 2)
@@ -161,16 +166,15 @@ int main(int argc, char* argv[])
 
 		VM* vm = NewVM();
 
-		
-
 		vm->debug = debugFlag;
 		LoadBinaryFile(vm, bin);
 		
-		HookExtern(vm, "SDL_Init", Ext_SDL_Init);
+		HookExtern(vm, "print", Ext_Print);
+		/*HookExtern(vm, "SDL_Init", Ext_SDL_Init);
 		HookExtern(vm, "SDL_Quit", Ext_SDL_Quit);
 		HookExtern(vm, "SDL", Ext_SDL);
 		HookExtern(vm, "SDL_CreateWindow", Ext_SDL_CreateWindow);
-		/*HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
+		HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
 		HookExtern(vm, "SDL_CreateEvent", Ext_SDL_CreateEvent);
 		HookExtern(vm, "SDL_PollEvent", Ext_SDL_PollEvent);
 		HookExtern(vm, "SDL_EventType", Ext_SDL_EventType);
