@@ -92,6 +92,13 @@ void ResetVM(VM* vm)
 	
 	if(vm->functionPcs)
 		free(vm->functionPcs);
+		
+	if(vm->functionNames)
+	{
+		for(int i = 0; i < vm->numFunctions; ++i)
+			free(vm->functionNames[i]);
+		free(vm->functionNames);
+	}
 	
 	if(vm->numberConstants)
 		free(vm->numberConstants);
@@ -132,6 +139,7 @@ number of global variables as integer
 
 number of functions as integer
 function entry points as integers
+function names [string length followed by string as chars]
 
 number of external functions referenced as integer
 string length followed by string as chars (names of external functions as referenced in the code)
@@ -172,10 +180,21 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	
 	fread(&numFunctions, sizeof(int), 1, in);
 	
+	vm->functionNames = emalloc(sizeof(char*) * numFunctions);
 	vm->functionPcs = emalloc(sizeof(int) * numFunctions);
 	vm->numFunctions = numFunctions;
 	
 	fread(vm->functionPcs, sizeof(int), numFunctions, in);
+	
+	for(int i = 0; i < numFunctions; ++i)
+	{
+		int len;
+		fread(&len, sizeof(int), 1, in);
+		char* string = emalloc(len + 1);
+		fread(string, sizeof(char), len, in);
+		string[len] = '\0';
+		vm->functionNames[i] = string;
+	}
 	
 	int numExterns;
 	fread(&numExterns, sizeof(int), 1, in);
@@ -239,6 +258,18 @@ void HookExtern(VM* vm, const char* name, ExternFunction func)
 		printf("Warning: supplied invalid extern hook name '%s'; code does not declare this function anywhere!\n", name);
 	else
 		vm->externs[index] = func;
+}
+
+int GetFunctionId(VM* vm, const char* name)
+{
+	for(int i = 0; i < vm->numFunctions; ++i)
+	{
+		if(strcmp(vm->functionNames[i], name) == 0)
+			return i;
+	}
+	
+	printf("Warning: function '%s' does not exist in mint source\n", name);
+	return -1;
 }
 
 void MarkAll(VM* vm)
@@ -430,12 +461,12 @@ int ReadInteger(VM* vm)
 
 void SetLocal(VM* vm, int index, Object* value)
 {
-	vm->stack[vm->fp + index] = value;
+	vm->stack[vm->fp + index + vm->numGlobals] = value;
 }
 
 Object* GetLocal(VM* vm, int index)
 {
-	return vm->stack[vm->fp + index];
+	return vm->stack[vm->fp + index + vm->numGlobals];
 }
 
 char* ReadStringFromStdin()
@@ -468,7 +499,7 @@ void PushIndir(VM* vm, int nargs)
 	vm->indirStack[vm->indirStackSize++] = vm->fp;
 	vm->indirStack[vm->indirStackSize++] = vm->pc;
 	
-	vm->fp = vm->stackSize;
+	vm->fp = vm->stackSize - vm->numGlobals;
 }
 
 void PopIndir(VM* vm)
@@ -482,7 +513,7 @@ void PopIndir(VM* vm)
 	if(vm->debug)
 		printf("previous fp: %i\n", vm->fp);
 
-	vm->stackSize = vm->fp;
+	vm->stackSize = vm->fp + vm->numGlobals;
 	
 	vm->pc = vm->indirStack[--vm->indirStackSize];
 	vm->fp = vm->indirStack[--vm->indirStackSize];
@@ -490,6 +521,20 @@ void PopIndir(VM* vm)
 
 	if(vm->debug)
 		printf("new fp: %i\nnew stack size: %i\n", vm->fp, vm->stackSize);
+}
+
+void ExecuteCycle(VM* vm);
+void CallFunction(VM* vm, int id, Word numArgs)
+{
+	if(id < 0) return;
+
+	int startFp = vm->fp;
+	PushIndir(vm, numArgs);
+	
+	vm->pc = vm->functionPcs[id];
+	
+	while(vm->fp >= startFp && vm->pc >= 0)
+		ExecuteCycle(vm);
 }
 
 void ExecuteCycle(VM* vm)
@@ -500,7 +545,7 @@ void ExecuteCycle(VM* vm)
 	
 	if(vm->stackSize < vm->numGlobals)
 		printf("Global(s) were removed from the stack!\n");
-
+	
 	switch(vm->program[vm->pc])
 	{
 		case OP_PUSH:
@@ -598,23 +643,26 @@ void ExecuteCycle(VM* vm)
 
 		case OP_SET:
 		{
-			if(vm->debug)
-				printf("set\n");
 			++vm->pc;
 			int index = ReadInteger(vm);
 			
 			Object* top = PopObject(vm);
 			vm->stack[index] = top;
+			
+			if(vm->debug)
+			{
+				if(top->type == OBJ_NUMBER) printf("set %i to %g\n", index, top->number);
+				else if(top->type == OBJ_STRING) printf("set %i to %s\n", index, top->string);	
+			}
 		} break;
 		
 		case OP_GET:
 		{
-			if(vm->debug)
-				printf("get\n");
 			++vm->pc;
 			int index = ReadInteger(vm);
-			
 			PushObject(vm, (vm->stack[index]));
+			if(vm->debug)
+				printf("get %i\n", index);
 		} break;
 		
 		case OP_WRITE:
@@ -704,7 +752,7 @@ void ExecuteCycle(VM* vm)
 				exit(1);
 			}
 			if(vm->debug)
-				printf("callf %i\n", index);
+				printf("callf %s\n", vm->externNames[index]);
 			vm->externs[index](vm);
 		} break;
 

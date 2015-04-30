@@ -1,7 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - string constants
+ * - proper relational operators
  * - else?
  * - include/require other scripts (copy bytecode into vm at runtime?)
  * 
@@ -11,17 +11,20 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <stdarg.h>
 
-#include "../vm.h"
+#include "vm.h"
 
 #define MAX_LEX_LENGTH 256
-#define MAX_NUM_CONSTS 256
 #define MAX_ID_NAME_LENGTH 64
 #define MAX_SCOPES 32
-#define MAX_ARGS 32
+#define MAX_ARGS 32 
 
-double Constants[MAX_NUM_CONSTS];
-int NumConstants = 0;
+int LineNumber = 0;
+const char* FileName = NULL;
+
+int NumNumbers = 0;
+int NumStrings = 0;
 
 int NumGlobals = 0;
 int NumFunctions = 0;
@@ -31,6 +34,18 @@ int EntryPoint = 0;
 Word* Code = NULL;
 int CodeCapacity = 0;
 int CodeLength = 0;
+
+void ErrorExit(const char* format, ...)
+{
+	fprintf(stderr, "Error (%s:%i): ", FileName, LineNumber);
+	
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+	
+	exit(1);
+}
 
 void AppendCode(Word code)
 {
@@ -64,14 +79,33 @@ void EmplaceInt(int loc, int value)
 {
 	if(loc >= CodeLength)
 	{
-		fprintf(stderr, "Compiler error: attempted to emplace in outside of code array\n");
-		exit(1);
+		ErrorExit("Compiler error: attempted to emplace in outside of code array\n");
+		
 	}
 	
 	Word* code = (Word*)(&value);
 	for(int i = 0; i < sizeof(int) / sizeof(Word); ++i)
 		Code[loc + i] = *code++;
 }
+
+typedef enum
+{
+	CONST_NUM,
+	CONST_STR,
+} ConstType;
+
+typedef struct _ConstDecl
+{
+	struct _ConstDecl* next;
+	ConstType type;
+	int index;
+	
+	union
+	{
+		double number;
+		char string[MAX_LEX_LENGTH];
+	};
+} ConstDecl;
 
 typedef struct _FuncDecl
 {	
@@ -95,8 +129,14 @@ typedef struct _VarDecl
 	int index;
 } VarDecl;
 
+ConstDecl* Constants = NULL;
+ConstDecl* ConstantsCurrent = NULL;
+
 FuncDecl* CurFunc = NULL;
+
 FuncDecl* Functions = NULL;
+FuncDecl* FunctionsCurrent = NULL;
+
 VarDecl* VarStack[MAX_SCOPES];
 int VarStackDepth = 0;
 
@@ -110,6 +150,7 @@ number of global variables as integer
 
 number of functions as integer
 function entry points as integers
+function names [string length followed by string as chars]
 
 number of external functions referenced as integer
 string length followed by string as chars (names of external functions as referenced in the code)
@@ -129,7 +170,8 @@ void OutputCode(FILE* out)
 	printf("Number of global variables: %i\n", NumGlobals);
 	printf("Number of functions: %i\n", NumFunctions);
 	printf("Number of externs: %i\n", NumExterns);
-	printf("Number of constants: %i\n", NumConstants);
+	printf("Number of numbers: %i\n", NumNumbers);
+	printf("Number of strings: %i\n", NumStrings);
 	printf("=================================\n");
 	
 	
@@ -146,6 +188,15 @@ void OutputCode(FILE* out)
 		if(!decl->isExtern)
 			fwrite(&decl->pc, sizeof(int), 1, out);
 	}
+	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
+	{
+		if(!decl->isExtern)
+		{
+			int len = strlen(decl->name);
+			fwrite(&len, sizeof(int), 1, out);
+			fwrite(decl->name, sizeof(char), len, out);
+		}
+	}
 	
 	fwrite(&NumExterns, sizeof(int), 1, out);	
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
@@ -158,23 +209,91 @@ void OutputCode(FILE* out)
 		}
 	}
 	
-	fwrite(&NumConstants, sizeof(int), 1, out);
-	fwrite(Constants, sizeof(double), NumConstants, out);
-	
-	int numStrings = 0;
-	fwrite(&numStrings, sizeof(int), 1, out);
-}
-
-int RegisterNumber(double number)
-{
-	for(int i = 0; i < NumConstants; ++i)
+	fwrite(&NumNumbers, sizeof(int), 1, out);
+	for(ConstDecl* decl = Constants; decl != NULL; decl = decl->next)
 	{
-		if(Constants[i] == number)
-			return i;
+		if(decl->type == CONST_NUM)
+			fwrite(&decl->number, sizeof(double), 1, out);
 	}
 	
-	Constants[NumConstants] = number;
-	return NumConstants++;
+	fwrite(&NumStrings, sizeof(int), 1, out);
+	for(ConstDecl* decl = Constants; decl != NULL; decl = decl->next)
+	{
+		if(decl->type == CONST_STR)
+		{
+			int len = strlen(decl->string);
+			fwrite(&len, sizeof(int), 1, out);
+			fwrite(decl->string, sizeof(char), len, out);
+		}
+	}
+}
+
+ConstDecl* RegisterNumber(double number)
+{
+	for(ConstDecl* decl = Constants; decl != NULL; decl = decl->next)
+	{
+		if(decl->type == CONST_NUM)
+		{
+			if(decl->number == number)
+				return decl;
+		}
+	}
+	
+	ConstDecl* decl = malloc(sizeof(ConstDecl));
+	assert(decl);
+	
+	decl->next = NULL;
+	
+	if(!Constants)
+	{
+		Constants = decl;
+		ConstantsCurrent = Constants;
+	}
+	else
+	{
+		ConstantsCurrent->next = decl;
+		ConstantsCurrent = decl;
+	}
+
+	decl->type = CONST_NUM;
+	decl->number = number;
+	decl->index = NumNumbers++;	
+	
+	return decl;
+}
+
+ConstDecl* RegisterString(const char* string)
+{
+	for(ConstDecl* decl = Constants; decl != NULL; decl = decl->next)
+	{
+		if(decl->type == CONST_STR)
+		{
+			if(strcmp(decl->string, string) == 0)
+				return decl;
+		}
+	}
+	
+	ConstDecl* decl = malloc(sizeof(ConstDecl));
+	assert(decl);
+	
+	decl->next = NULL;
+	
+	if(!Constants)
+	{
+		Constants = decl;
+		ConstantsCurrent = Constants;
+	}
+	else
+	{
+		ConstantsCurrent->next = decl;
+		ConstantsCurrent = decl;
+	}
+
+	decl->type = CONST_STR;
+	strcpy(decl->string, string);
+	decl->index = NumStrings++;
+	
+	return decl;
 }
 
 FuncDecl* RegisterExtern(const char* name)
@@ -183,16 +302,26 @@ FuncDecl* RegisterExtern(const char* name)
 	{
 		if(strcmp(decl->name, name) == 0)
 		{
-			fprintf(stderr, "Attempted to redeclare previously defined extern/func '%s' as extern\n", name);
-			exit(1);
+			ErrorExit("Attempted to redeclare previously defined extern/func '%s' as extern\n", name);
+			
 		}
 	}
 	
 	FuncDecl* decl = malloc(sizeof(FuncDecl));
 	assert(decl);
 	
-	decl->next = Functions;
-	Functions = decl;
+	decl->next = NULL;
+	
+	if(!Functions)
+	{
+		Functions = decl;
+		FunctionsCurrent = Functions;
+	}
+	else
+	{
+		FunctionsCurrent->next = decl;
+		FunctionsCurrent = decl;
+	}
 	
 	decl->isExtern = 1;
 	strcpy(decl->name, name);
@@ -220,8 +349,18 @@ FuncDecl* EnterFunction(const char* name)
 	FuncDecl* decl = malloc(sizeof(FuncDecl));
 	assert(decl);
 
-	decl->next = Functions;
-	Functions = decl;
+	decl->next = NULL;
+
+	if(!Functions)
+	{
+		Functions = decl;
+		FunctionsCurrent = Functions;
+	}
+	else
+	{
+		FunctionsCurrent->next = decl;
+		FunctionsCurrent = decl;
+	}
 	
 	decl->isExtern = 0;
 	strcpy(decl->name, name);
@@ -259,8 +398,8 @@ VarDecl* RegisterVariable(const char* name)
 		{
 			if(strcmp(decl->name, name) == 0)
 			{					
-				fprintf(stderr, "Attempted to redeclare variable '%s'\n", name);
-				exit(1);
+				ErrorExit("Attempted to redeclare variable '%s'\n", name);
+				
 			}
 		}
 	}
@@ -288,10 +427,7 @@ VarDecl* RegisterVariable(const char* name)
 void RegisterArgument(const char* name, int numArgs)
 {
 	if(!CurFunc)
-	{
-		fprintf(stderr, "(INTERNAL) Must be inside function when registering arguments\n");
-		exit(1);
-	}
+		ErrorExit("(INTERNAL) Must be inside function when registering arguments\n");
 	
 	VarDecl* decl = RegisterVariable(name);
 	decl->index = -numArgs + CurFunc->numArgs++;
@@ -308,8 +444,8 @@ VarDecl* ReferenceVariable(const char* name)
 		}
 	}
 	
-	fprintf(stderr, "Attempted to reference undeclared identifier '%s'\n", name);
-	exit(1);
+	ErrorExit("Attempted to reference undeclared identifier '%s'\n", name);
+	
 	
 	return NULL;
 }
@@ -326,6 +462,12 @@ enum
 	TOK_IF = -8,
 	TOK_RETURN = -9,
 	TOK_EXTERN = -10,
+	TOK_STRING = -11,
+	TOK_EQUALS = -12,
+	TOK_LTE = -13,
+	TOK_GTE = -14,
+	TOK_NOTEQUAL = -15,
+	TOK_HEXNUM = -16
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -336,8 +478,11 @@ int GetToken(FILE* in)
 	static char last = ' ';
 	
 	while(isspace(last))
+	{
+		if(last == '\n') ++LineNumber;
 		last = getc(in);
-
+	}
+	
 	if(isalpha(last) || last == '_')
 	{
 		int i = 0;
@@ -360,7 +505,7 @@ int GetToken(FILE* in)
 	}
 		
 	if(isdigit(last))
-	{
+	{	
 		int i = 0;
 		while(isdigit(last) || last == '.')
 		{
@@ -371,6 +516,45 @@ int GetToken(FILE* in)
 		
 		return TOK_NUMBER;
 	}
+
+	if(last == '$')
+	{
+		last = getc(in);
+		int i = 0;
+		while(isxdigit(last))
+		{
+			Lexeme[i++] = last;
+			last = getc(in);
+		}
+		Lexeme[i] = '\0';
+		
+		return TOK_HEXNUM;
+	}
+	
+	if(last == '"')
+	{
+		int i = 0;
+		last = getc(in);
+	
+		while(last != '"')
+		{
+			Lexeme[i++] = last;
+			last = getc(in);
+		}
+		Lexeme[i] = '\0';
+		last = getc(in);
+		
+		return TOK_STRING;
+	}
+	
+	if(last == '#')
+	{
+		last = getc(in);
+		while(last != '\n' && last != '\r' && last != EOF)
+			last = getc(in);
+		if(last == EOF) return TOK_EOF;
+		else return GetToken(in);
+	}
 	
 	if(last == EOF)
 		return TOK_EOF;
@@ -378,12 +562,34 @@ int GetToken(FILE* in)
 	int lastChar = last;
 	last = getc(in);
 	
+	if(lastChar == '=' && last == '=')
+	{
+		last = getc(in);
+		return TOK_EQUALS;
+	}
+	else if(lastChar == '!' && last == '=')
+	{
+		last = getc(in);
+		return TOK_NOTEQUAL;
+	}
+	else if(lastChar == '<' && last == '=')
+	{
+		last = getc(in);
+		return TOK_LTE;
+	}
+	else if(lastChar == '>' && last == '=')
+	{
+		last = getc(in);
+		return TOK_GTE;
+	}
+	
 	return lastChar;
 }
 
 typedef enum
 {
 	EXP_NUMBER,
+	EXP_STRING,
 	EXP_IDENT,
 	EXP_CALL,
 	EXP_VAR,
@@ -403,7 +609,7 @@ typedef struct _Expr
 	
 	union
 	{
-		int numIndex;
+		ConstDecl* constDecl; // NOTE: for both EXP_NUMBER and EXP_STRING
 		VarDecl* varDecl; // NOTE: for both EXP_IDENT and EXP_VAR
 		struct { struct _Expr* args[MAX_ARGS]; int numArgs; char funcName[MAX_ID_NAME_LENGTH]; FuncDecl* decl; } callx;
 		struct { struct _Expr *lhs, *rhs; int op; } binx;
@@ -442,7 +648,27 @@ Expr* ParseFactor(FILE* in)
 		case TOK_NUMBER:
 		{
 			Expr* exp = CreateExpr(EXP_NUMBER);
-			exp->numIndex = RegisterNumber(strtod(Lexeme, NULL));
+			exp->constDecl = RegisterNumber(strtod(Lexeme, NULL));
+			
+			GetNextToken(in);
+			
+			return exp;
+		} break;
+		
+		case TOK_HEXNUM:
+		{
+			Expr* exp = CreateExpr(EXP_NUMBER);
+			exp->constDecl = RegisterNumber(strtol(Lexeme, NULL, 16));
+			
+			GetNextToken(in);
+			
+			return exp;
+		} break;
+		
+		case TOK_STRING:
+		{
+			Expr* exp = CreateExpr(EXP_STRING);
+			exp->constDecl = RegisterString(Lexeme);
 			
 			GetNextToken(in);
 			
@@ -484,8 +710,8 @@ Expr* ParseFactor(FILE* in)
 			{
 				if(exp->callx.decl->numArgs != exp->callx.numArgs)
 				{
-					fprintf(stderr, "Function '%s' expected %i argument(s) but you gave it %i\n", name, exp->callx.decl->numArgs, exp->callx.numArgs);
-					exit(1);
+					ErrorExit("Function '%s' expected %i argument(s) but you gave it %i\n", name, exp->callx.decl->numArgs, exp->callx.numArgs);
+					
 				}
 			}
 			GetNextToken(in);
@@ -499,8 +725,8 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok != TOK_IDENT)
 			{
-				fprintf(stderr, "Expected ident after 'var' but received something else\n");
-				exit(1);
+				ErrorExit("Expected ident after 'var' but received something else\n");
+				
 			}
 			
 			Expr* exp = CreateExpr(EXP_VAR);
@@ -520,8 +746,8 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok != ')')
 			{
-				fprintf(stderr, "Expected ')' after previous '('\n");
-				exit(1);
+				ErrorExit("Expected ')' after previous '('\n");
+				
 			}
 			
 			GetNextToken(in);
@@ -568,8 +794,8 @@ Expr* ParseFactor(FILE* in)
 			char name[MAX_ID_NAME_LENGTH];
 			if(CurTok != TOK_IDENT)
 			{
-				fprintf(stderr, "Expected identifier after 'func'\n");
-				exit(1);
+				ErrorExit("Expected identifier after 'func'\n");
+				
 			}
 			strcpy(name, Lexeme);
 			
@@ -577,8 +803,8 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok != '(')
 			{
-				fprintf(stderr, "Expected '(' after 'func' %s\n", name);
-				exit(1);
+				ErrorExit("Expected '(' after 'func' %s\n", name);
+				
 			}
 			GetNextToken(in);
 			
@@ -589,8 +815,8 @@ Expr* ParseFactor(FILE* in)
 			{
 				if(CurTok != TOK_IDENT)
 				{
-					fprintf(stderr, "Expected identifier in argument list for function '%s' but received something else\n", name);
-					exit(1);
+					ErrorExit("Expected identifier in argument list for function '%s' but received something else\n", name);
+					
 				}
 				
 				strcpy(args[numArgs++], Lexeme);
@@ -679,13 +905,14 @@ Expr* ParseFactor(FILE* in)
 					exp->retExpr = ParseExpr(in);
 					return exp;
 				}
+				GetNextToken(in);
 			
 				exp->retExpr = NULL;
 				return exp;	
 			}
 			
-			fprintf(stderr, "WHAT ARE YOU TRYING TO RETURN FROM! YOU'RE NOT EVEN INSIDE A FUNCTION BODY!\n");
-			exit(1);
+			ErrorExit("WHAT ARE YOU TRYING TO RETURN FROM! YOU'RE NOT EVEN INSIDE A FUNCTION BODY!\n");
+			
 			
 			return NULL;
 		} break;
@@ -703,8 +930,8 @@ Expr* ParseFactor(FILE* in)
 		} break;
 	};
 	
-	fprintf(stderr, "Unexpected character '%c'\n", CurTok);
-	exit(1);
+	ErrorExit("Unexpected token '%c' (%i) (%s)\n", CurTok, CurTok, Lexeme);
+	
 	
 	return NULL;
 }
@@ -718,7 +945,9 @@ int GetTokenPrec()
 		
 		case '+': case '-': prec = 4; break;
 		
-		case '<': case '>': prec = 3; break;
+		case '<': case '>': case TOK_LTE: case TOK_GTE: prec = 3; break;
+		
+		case TOK_EQUALS: case TOK_NOTEQUAL: prec = 2; break;
 		
 		case '=': prec = 1; break;
 	}
@@ -768,7 +997,12 @@ void DebugExpr(Expr* exp)
 	{
 		case EXP_NUMBER:
 		{
-			printf("%g", Constants[exp->numIndex]);
+			printf("%g", exp->constDecl->number);
+		} break;
+		
+		case EXP_STRING:
+		{
+			printf("'%s'", exp->constDecl->string);
 		} break;
 		
 		case EXP_IDENT:
@@ -870,11 +1104,11 @@ void CompileExpr(Expr* exp)
 {
 	switch(exp->type)
 	{
-		case EXP_NUMBER:
+		case EXP_NUMBER: case EXP_STRING:
 		{
 			AppendCode(OP_PUSH);
-			AppendCode(0);
-			AppendInt(exp->numIndex);
+			AppendCode(exp->constDecl->type == CONST_NUM ? 0 : 1);
+			AppendInt(exp->constDecl->index);
 		} break;
 		
 		case EXP_IDENT:
@@ -898,8 +1132,8 @@ void CompileExpr(Expr* exp)
 				FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
 				if(!decl)
 				{
-					fprintf(stderr, "Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
-					exit(1);
+					ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
+					
 				}
 				
 				exp->callx.decl = decl;
@@ -927,15 +1161,16 @@ void CompileExpr(Expr* exp)
 				
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
 				{
-					if(exp->binx.lhs->varDecl->isGlobal) AppendCode(OP_SET);
+					if(exp->binx.lhs->varDecl->isGlobal)
+					{
+						if(exp->binx.lhs->type == EXP_VAR) printf("Warning: assignment operations to global variables will not execute unless they are inside the entry point\n");
+						AppendCode(OP_SET);
+					}
 					else AppendCode(OP_SETLOCAL);
 					AppendInt(exp->binx.lhs->varDecl->index);
 				}
 				else
-				{
-					fprintf(stderr, "Left hand side of assignment operator '=' must be a variable\n");
-					exit(1);
-				}
+					ErrorExit("Left hand side of assignment operator '=' must be a variable\n");
 			}
 			else
 			{
@@ -951,10 +1186,14 @@ void CompileExpr(Expr* exp)
 					case '%': AppendCode(OP_MOD); break;
 					case '<': AppendCode(OP_LT); break;
 					case '>': AppendCode(OP_GT); break;
+					case TOK_EQUALS: AppendCode(OP_EQU); break;
+					case TOK_LTE: AppendCode(OP_LTE); break;
+					case TOK_GTE: AppendCode(OP_GTE); break;
+					case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
 					
 					default:
-						fprintf(stderr, "Unsupported binary operator %c\n", exp->binx.op);
-						exit(1);
+						ErrorExit("Unsupported binary operator %c\n", exp->binx.op);
+						
 				}
 			}
 		} break;
@@ -1003,10 +1242,12 @@ void CompileExpr(Expr* exp)
 			{
 				AppendCode(OP_PUSH);
 				AppendCode(0);
-				AppendInt(RegisterNumber(0));
+				AppendInt(RegisterNumber(0)->index);
 			}
 			
 			CompileExprList(exp->funcx.bodyHead);
+			AppendCode(OP_RETURN);
+			
 			EmplaceInt(emplaceLoc, CodeLength);
 		} break;
 		
@@ -1044,10 +1285,7 @@ void DebugExprList(Expr* head)
 int main(int argc, char* argv[])
 {
 	if(argc == 1)
-	{
-		fprintf(stderr, "Error: no input files detected!\n");
-		exit(1);
-	}
+		ErrorExit("Error: no input files detected!\n");
 	
 	const char* outPath = NULL;
 	
@@ -1061,10 +1299,9 @@ int main(int argc, char* argv[])
 		{
 			FILE* in = fopen(argv[i], "r");
 			if(!in)
-			{
-				fprintf(stderr, "Cannot open file '%s' for reading\n", argv[i]);
-				exit(1);
-			}
+				ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+			LineNumber = 1;
+			FileName = argv[i];
 			
 			GetNextToken(in);
 			

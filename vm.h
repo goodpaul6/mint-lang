@@ -90,7 +90,7 @@ typedef struct _Object
  
 #define MAX_INDIR		1024
 #define MAX_STACK		1024
-#define INIT_GC_THRESH	8
+#define INIT_GC_THRESH	128
 
 typedef struct _VM
 {
@@ -103,6 +103,7 @@ typedef struct _VM
 	
 	int numFunctions;
 	int* functionPcs;
+	char** functionNames;
 	
 	int numNumberConstants;
 	double* numberConstants;
@@ -137,12 +138,15 @@ void ResetVM(VM* vm);
 void LoadBinaryFile(VM* vm, FILE* in);
 
 void HookExtern(VM* vm, const char* name, ExternFunction func);
+int GetFunctionId(VM* vm, const char* name);
+void CallFunction(VM* vm, int id, Word numArgs);
 
 void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
 void PushArray(VM* vm, int length);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
 
+Object* PopObject(VM* vm);
 double PopNumber(VM* vm);
 const char* PopString(VM* vm);
 Object** PopArray(VM* vm, int* length);

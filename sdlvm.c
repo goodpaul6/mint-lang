@@ -24,12 +24,12 @@ void Ext_SDL_DestroyWindow(void* pWin)
 
 void Ext_SDL_CreateWindow(VM* vm)
 {
-	int flags = PopNumber(vm);
-	int height = PopNumber(vm);
-	int width = PopNumber(vm);
-	int y = PopNumber(vm);
-	int x = PopNumber(vm);
 	const char* name = PopString(vm);
+	int x = PopNumber(vm);
+	int y = PopNumber(vm);
+	int width = PopNumber(vm);
+	int height = PopNumber(vm);
+	int flags = PopNumber(vm);
 
 	printf("creating window\n");
 	PushNative(vm, SDL_CreateWindow(name, x, y, width, height, flags), Ext_SDL_DestroyWindow, NULL);
@@ -45,8 +45,8 @@ void Ext_SDL_DestroyRenderer(void* pRen)
 
 void Ext_SDL_CreateRenderer(VM* vm)
 {
-	int flags = (int)PopNumber(vm);
 	SDL_Window* window = PopNative(vm);
+	int flags = (int)PopNumber(vm);
 
 	PushNative(vm, SDL_CreateRenderer(window, -1, flags), Ext_SDL_DestroyRenderer, NULL);
 }
@@ -96,10 +96,11 @@ void Ext_SDL_RenderPresent(VM* vm)
 void Ext_SDL_RenderFillRect(VM* vm)
 {
 	SDL_Renderer* ren = (SDL_Renderer*)PopNative(vm);
-	int h = (int)PopNumber(vm);
-	int w = (int)PopNumber(vm);
-	int y = (int)PopNumber(vm);
+
 	int x = (int)PopNumber(vm);
+	int y = (int)PopNumber(vm);
+	int w = (int)PopNumber(vm);
+	int h = (int)PopNumber(vm);
 
 	SDL_Rect rect = { x, y, w, h };
 	SDL_RenderFillRect(ren, &rect);
@@ -108,12 +109,18 @@ void Ext_SDL_RenderFillRect(VM* vm)
 void Ext_SDL_SetRenderDrawColor(VM* vm)
 {
 	SDL_Renderer* ren = (SDL_Renderer*)PopNative(vm);
-	int a = (int)PopNumber(vm);
-	int b = (int)PopNumber(vm);
-	int g = (int)PopNumber(vm);
+	
 	int r = (int)PopNumber(vm);
+	int g = (int)PopNumber(vm);
+	int b = (int)PopNumber(vm);
+	int a = (int)PopNumber(vm);
 
 	SDL_SetRenderDrawColor(ren, r, g, b, a);
+}
+
+void Ext_SDL_GetTicks(VM* vm)
+{
+	PushNumber(vm, SDL_GetTicks());
 }
 
 void Ext_SDL(VM* vm)
@@ -143,7 +150,10 @@ void Ext_SDL(VM* vm)
 
 void Ext_Print(VM* vm)
 {
-	printf("%g\n", PopNumber(vm));
+	Object* obj = PopObject(vm);
+	
+	if(obj->type == OBJ_NUMBER) printf("%g\n", obj->number);
+	else printf("%s\n", obj->string);
 }
 
 int main(int argc, char* argv[])
@@ -174,7 +184,7 @@ int main(int argc, char* argv[])
 		HookExtern(vm, "SDL_Quit", Ext_SDL_Quit);
 		HookExtern(vm, "SDL", Ext_SDL);
 		HookExtern(vm, "SDL_CreateWindow", Ext_SDL_CreateWindow);
-		/*HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
+		HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
 		HookExtern(vm, "SDL_CreateEvent", Ext_SDL_CreateEvent);
 		HookExtern(vm, "SDL_PollEvent", Ext_SDL_PollEvent);
 		HookExtern(vm, "SDL_EventType", Ext_SDL_EventType);
@@ -182,10 +192,14 @@ int main(int argc, char* argv[])
 		HookExtern(vm, "SDL_RenderClear", Ext_SDL_RenderClear);
 		HookExtern(vm, "SDL_RenderPresent", Ext_SDL_RenderPresent);
 		HookExtern(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
-		HookExtern(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);*/
+		HookExtern(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
+		HookExtern(vm, "SDL_GetTicks", Ext_SDL_GetTicks);
 		HookExtern(vm, "SDL", Ext_SDL);
 		
-		RunVM(vm);
+		int mainId = GetFunctionId(vm, "_main");
+		
+		CallFunction(vm, mainId, 0);
+		
 		DeleteVM(vm);
 
 		return 0;
