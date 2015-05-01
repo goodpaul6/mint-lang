@@ -1,10 +1,13 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - proper relational operators
+ * - proper array index (i.e any potentially indexable lhs expression can be indexed, not just id's)
+ * - fix error message line numbers (store line numbers in expressions)
  * - else?
  * - include/require other scripts (copy bytecode into vm at runtime?)
  * 
+ * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
+ * - proper operators: need more operators
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -301,10 +304,7 @@ FuncDecl* RegisterExtern(const char* name)
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
 		if(strcmp(decl->name, name) == 0)
-		{
-			ErrorExit("Attempted to redeclare previously defined extern/func '%s' as extern\n", name);
-			
-		}
+			return decl;
 	}
 	
 	FuncDecl* decl = malloc(sizeof(FuncDecl));
@@ -444,9 +444,6 @@ VarDecl* ReferenceVariable(const char* name)
 		}
 	}
 	
-	ErrorExit("Attempted to reference undeclared identifier '%s'\n", name);
-	
-	
 	return NULL;
 }
 
@@ -467,7 +464,8 @@ enum
 	TOK_LTE = -13,
 	TOK_GTE = -14,
 	TOK_NOTEQUAL = -15,
-	TOK_HEXNUM = -16
+	TOK_HEXNUM = -16,
+	TOK_FOR = -17
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -500,6 +498,19 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "if") == 0) return TOK_IF;
 		if(strcmp(Lexeme, "return") == 0) return TOK_RETURN;
 		if(strcmp(Lexeme, "extern") == 0) return TOK_EXTERN;
+		if(strcmp(Lexeme, "true") == 0)
+		{
+			Lexeme[0] = '1';
+			Lexeme[1] = '\0';
+			return TOK_NUMBER;
+		}
+		if(strcmp(Lexeme, "false") == 0)
+		{
+			Lexeme[0] = '0';
+			Lexeme[1] = '\0';
+			return TOK_NUMBER;
+		}
+		if(strcmp(Lexeme, "for") == 0) return TOK_FOR;
 		
 		return TOK_IDENT;
 	}
@@ -600,6 +611,10 @@ typedef enum
 	EXP_IF,
 	EXP_RETURN,
 	EXP_EXTERN,
+	EXP_ARRAY_LITERAL,
+	EXP_ARRAY_INDEX,
+	EXP_UNARY,
+	EXP_FOR
 } ExprType;
 
 typedef struct _Expr
@@ -610,7 +625,7 @@ typedef struct _Expr
 	union
 	{
 		ConstDecl* constDecl; // NOTE: for both EXP_NUMBER and EXP_STRING
-		VarDecl* varDecl; // NOTE: for both EXP_IDENT and EXP_VAR
+		struct { VarDecl* varDecl; char name[MAX_ID_NAME_LENGTH]; } varx; // NOTE: for both EXP_IDENT and EXP_VAR
 		struct { struct _Expr* args[MAX_ARGS]; int numArgs; char funcName[MAX_ID_NAME_LENGTH]; FuncDecl* decl; } callx;
 		struct { struct _Expr *lhs, *rhs; int op; } binx;
 		struct _Expr* parenExpr;
@@ -619,6 +634,10 @@ typedef struct _Expr
 		FuncDecl* extDecl;
 		struct { struct _Expr *cond, *bodyHead; } ifx;
 		struct _Expr* retExpr;
+		struct _Expr* lengthExpr;
+		struct { VarDecl* varDecl; struct _Expr* indexExpr; char name[MAX_ID_NAME_LENGTH]; } arrayIndex;
+		struct { int op; struct _Expr* expr; } unaryx;
+		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
 	};
 } Expr;
 
@@ -675,6 +694,32 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 		
+		case '[':
+		{
+			GetNextToken(in);
+			Expr* exp = CreateExpr(EXP_ARRAY_LITERAL);
+			exp->lengthExpr = ParseExpr(in);
+			if(CurTok != ']')
+				ErrorExit("Expected ']' after previous '['\n");
+			
+			GetNextToken(in);
+			
+			return exp;
+		} break;
+		
+		case '-': case '!':
+		{
+			int op = CurTok;
+			
+			GetNextToken(in);
+			
+			Expr* exp = CreateExpr(EXP_UNARY);
+			exp->unaryx.op = op;
+			exp->unaryx.expr = ParseExpr(in);
+			
+			return exp;
+		} break;
+		
 		case TOK_IDENT:
 		{
 			char name[MAX_ID_NAME_LENGTH];
@@ -684,8 +729,24 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok != '(')
 			{
-				Expr* exp = CreateExpr(EXP_IDENT);
-				exp->varDecl = ReferenceVariable(name);
+				if(CurTok != '[')
+				{
+					Expr* exp = CreateExpr(EXP_IDENT);
+					exp->varx.varDecl = ReferenceVariable(name);
+					strcpy(exp->varx.name, name);
+					return exp;
+				}
+				GetNextToken(in);
+				
+				Expr* exp = CreateExpr(EXP_ARRAY_INDEX);
+				exp->arrayIndex.varDecl = ReferenceVariable(name);
+				strcpy(exp->arrayIndex.name, name);
+				exp->arrayIndex.indexExpr = ParseExpr(in);
+				
+				if(CurTok != ']')
+					ErrorExit("Expected ']' after previous '['");
+				GetNextToken(in);
+				
 				return exp;
 			}
 			
@@ -709,10 +770,7 @@ Expr* ParseFactor(FILE* in)
 			if(exp->callx.decl && !exp->callx.decl->isExtern)
 			{
 				if(exp->callx.decl->numArgs != exp->callx.numArgs)
-				{
 					ErrorExit("Function '%s' expected %i argument(s) but you gave it %i\n", name, exp->callx.decl->numArgs, exp->callx.numArgs);
-					
-				}
 			}
 			GetNextToken(in);
 			
@@ -724,13 +782,11 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			if(CurTok != TOK_IDENT)
-			{
 				ErrorExit("Expected ident after 'var' but received something else\n");
-				
-			}
-			
+						
 			Expr* exp = CreateExpr(EXP_VAR);
-			exp->varDecl = RegisterVariable(Lexeme);
+			exp->varx.varDecl = RegisterVariable(Lexeme);
+			strcpy(exp->varx.name, Lexeme);
 			
 			GetNextToken(in);
 			
@@ -783,6 +839,50 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			exp->whilex.bodyHead = exprHead;
+			
+			return exp;
+		} break;
+		
+		case TOK_FOR:
+		{
+			GetNextToken(in);
+			
+			PushScope();
+			Expr* exp = CreateExpr(EXP_FOR);
+			exp->forx.init = ParseExpr(in);
+			
+			if(CurTok != ',')
+				ErrorExit("Expected ',' after for initial expression\n");
+			GetNextToken(in);
+			
+			exp->forx.cond = ParseExpr(in);
+			
+			if(CurTok != ',')
+				ErrorExit("Expected ',' after for condition\n");
+			GetNextToken(in);
+				
+			exp->forx.iter = ParseExpr(in);
+			
+			Expr* exprHead = NULL;
+			Expr* exprCurrent = NULL;
+			
+			while(CurTok != TOK_END)
+			{
+				if(!exprHead)
+				{
+					exprHead = ParseExpr(in);
+					exprCurrent = exprHead;
+				}
+				else
+				{
+					exprCurrent->next = ParseExpr(in);
+					exprCurrent = exprCurrent->next;
+				}
+			}
+			GetNextToken(in);
+			PopScope();
+		
+			exp->forx.bodyHead = exprHead;
 			
 			return exp;
 		} break;
@@ -1007,7 +1107,7 @@ void DebugExpr(Expr* exp)
 		
 		case EXP_IDENT:
 		{
-			printf("%s", exp->varDecl->name);
+			printf("%s", exp->varx.varDecl->name);
 		} break;
 		
 		case EXP_CALL:
@@ -1024,7 +1124,7 @@ void DebugExpr(Expr* exp)
 		
 		case EXP_VAR:
 		{
-			printf("var %s", exp->varDecl->name);
+			printf("var %s", exp->varx.varDecl->name);
 		} break;
 		
 		case EXP_BIN:
@@ -1111,18 +1211,66 @@ void CompileExpr(Expr* exp)
 			AppendInt(exp->constDecl->index);
 		} break;
 		
+		case EXP_UNARY:
+		{
+			CompileExpr(exp->unaryx.expr);
+			switch(exp->unaryx.op)
+			{
+				case '-': AppendCode(OP_NEG); break;
+				case '!': AppendCode(OP_LOGICAL_NOT); break;
+			}
+		} break;
+		
+		case EXP_ARRAY_LITERAL:
+		{
+			CompileExpr(exp->lengthExpr);
+			AppendCode(OP_CREATE_ARRAY);
+		} break;
+		
 		case EXP_IDENT:
 		{
-			if(exp->varDecl->isGlobal)
+			if(!exp->varx.varDecl)
+			{
+				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
+				if(!exp->varx.varDecl)	
+					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
+			}
+			
+			if(exp->varx.varDecl->isGlobal)
 			{
 				AppendCode(OP_GET);
-				AppendInt(exp->varDecl->index);
+				AppendInt(exp->varx.varDecl->index);
 			}
 			else
 			{
 				AppendCode(OP_GETLOCAL);
-				AppendInt(exp->varDecl->index);
+				AppendInt(exp->varx.varDecl->index);
 			}
+		} break;
+		
+		case EXP_ARRAY_INDEX:
+		{
+			CompileExpr(exp->arrayIndex.indexExpr);
+			
+			if(!exp->binx.lhs->arrayIndex.varDecl)
+			{
+				exp->binx.lhs->arrayIndex.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
+				if(!exp->binx.lhs->arrayIndex.varDecl)	
+					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->binx.lhs->varx.name);
+			}
+
+			if(exp->arrayIndex.varDecl->isGlobal)
+			{
+				AppendCode(OP_GET);
+				AppendInt(exp->arrayIndex.varDecl->index);
+			}
+			else
+			{
+				AppendCode(OP_GETLOCAL);
+				AppendInt(exp->arrayIndex.varDecl->index);
+			}
+			
+			AppendCode(OP_GETINDEX);
 		} break;
 		
 		case EXP_CALL:
@@ -1131,10 +1279,7 @@ void CompileExpr(Expr* exp)
 			{
 				FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
 				if(!decl)
-				{
 					ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
-					
-				}
 				
 				exp->callx.decl = decl;
 			}
@@ -1161,13 +1306,45 @@ void CompileExpr(Expr* exp)
 				
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
 				{
-					if(exp->binx.lhs->varDecl->isGlobal)
+					if(!exp->binx.lhs->varx.varDecl)
+					{
+						exp->binx.lhs->varx.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
+						if(!exp->binx.lhs->varx.varDecl)	
+							ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->binx.lhs->varx.name);
+					}
+				
+					if(exp->binx.lhs->varx.varDecl->isGlobal)
 					{
 						if(exp->binx.lhs->type == EXP_VAR) printf("Warning: assignment operations to global variables will not execute unless they are inside the entry point\n");
 						AppendCode(OP_SET);
 					}
 					else AppendCode(OP_SETLOCAL);
-					AppendInt(exp->binx.lhs->varDecl->index);
+				
+					AppendInt(exp->binx.lhs->varx.varDecl->index);
+				}
+				else if(exp->binx.lhs->type == EXP_ARRAY_INDEX)
+				{
+					CompileExpr(exp->binx.lhs->arrayIndex.indexExpr);
+					
+					if(!exp->binx.lhs->arrayIndex.varDecl)
+					{
+						exp->binx.lhs->arrayIndex.varDecl = ReferenceVariable(exp->binx.lhs->arrayIndex.name);
+						if(!exp->binx.lhs->arrayIndex.varDecl)	
+							ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->binx.lhs->arrayIndex.name);
+					}
+					
+					if(exp->binx.lhs->arrayIndex.varDecl->isGlobal)
+					{
+						AppendCode(OP_GET);
+						AppendInt(exp->binx.lhs->arrayIndex.varDecl->index);
+					}
+					else
+					{
+						AppendCode(OP_GETLOCAL);
+						AppendInt(exp->binx.lhs->arrayIndex.varDecl->index);
+					}
+					
+					AppendCode(OP_SETINDEX);
 				}
 				else
 					ErrorExit("Left hand side of assignment operator '=' must be a variable\n");
@@ -1212,6 +1389,26 @@ void CompileExpr(Expr* exp)
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
 			CompileExprList(exp->whilex.bodyHead);
+			
+			AppendCode(OP_GOTO);
+			AppendInt(loopPc);
+			
+			EmplaceInt(emplaceLoc, CodeLength);
+		} break;
+		
+		case EXP_FOR:
+		{
+			CompileExpr(exp->forx.init);
+			int loopPc = CodeLength;
+			
+			CompileExpr(exp->forx.cond);
+			AppendCode(OP_GOTOZ);
+			int emplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+			
+			CompileExprList(exp->forx.bodyHead);
+			
+			CompileExpr(exp->forx.iter);
 			
 			AppendCode(OP_GOTO);
 			AppendInt(loopPc);

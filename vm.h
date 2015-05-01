@@ -26,6 +26,8 @@ enum
 	OP_GTE,
 	OP_EQU,
 	OP_NEQU,
+	OP_NEG,
+	OP_LOGICAL_NOT,
 	
 	OP_SETINDEX,
 	OP_GETINDEX,
@@ -77,6 +79,7 @@ typedef struct _Object
 		{
 			struct _Object** members;
 			int length;
+			int capacity;
 		} array;
 
 		struct
@@ -137,19 +140,24 @@ void ResetVM(VM* vm);
 
 void LoadBinaryFile(VM* vm, FILE* in);
 
+void HookStandardLibrary(VM* vm);
 void HookExtern(VM* vm, const char* name, ExternFunction func);
+void HookExternNoWarn(VM* vm, const char* name, ExternFunction func);
+
 int GetFunctionId(VM* vm, const char* name);
 void CallFunction(VM* vm, int id, Word numArgs);
 
+void PushObject(VM* vm, Object* obj);
 void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
-void PushArray(VM* vm, int length);
+Object* PushArray(VM* vm, int length);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
 
 Object* PopObject(VM* vm);
 double PopNumber(VM* vm);
 const char* PopString(VM* vm);
 Object** PopArray(VM* vm, int* length);
+Object* PopArrayObject(VM* vm);
 void* PopNative(VM* vm);
 
 void RunVM(VM* vm);

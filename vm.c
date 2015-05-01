@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static char* ObjectTypeNames[] =
 {
@@ -39,6 +40,74 @@ static char* estrdup(const char* string)
 	strcpy(newString, string);
 	return newString;
 }
+
+/* STANDARD LIBRARY */
+void Std_Len(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type == OBJ_STRING)
+		PushNumber(vm, strlen(obj->string));
+	else if(obj->type == OBJ_ARRAY)
+		PushNumber(vm, obj->array.length);
+}
+
+void Std_Push(VM* vm)
+{
+	Object* obj = PopArrayObject(vm);
+	Object* value = PopObject(vm);
+	
+	while(obj->array.length + 1 >= obj->array.capacity)
+	{
+		obj->array.capacity *= 2;
+		obj->array.members = erealloc(obj->array.members, obj->array.capacity * sizeof(Object*));
+	}
+	
+	obj->array.members[obj->array.length++] = value;
+}
+
+void Std_Pop(VM* vm)
+{
+	Object* obj = PopArrayObject(vm);
+	if(obj->array.length <= 0)
+	{
+		fprintf(stderr, "Cannot pop from empty array\n");
+		exit(1);
+	}
+	
+	PushObject(vm, obj->array.members[--obj->array.length]);
+}
+
+void Std_Floor(VM* vm)
+{
+	double num = PopNumber(vm);
+	PushNumber(vm, floor(num));
+}
+
+void Std_Ceil(VM* vm)
+{
+	double num = PopNumber(vm);
+	PushNumber(vm, ceil(num));
+}
+
+void Std_Sin(VM* vm)
+{
+	double num = PopNumber(vm);
+	PushNumber(vm, sin(num));
+}
+
+void Std_Cos(VM* vm)
+{
+	double num = PopNumber(vm);
+	PushNumber(vm, cos(num));
+}
+
+void Std_Sqrt(VM* vm)
+{
+	double num = PopNumber(vm);
+	PushNumber(vm, sqrt(num));
+}
+
+/* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
 {
@@ -242,6 +311,18 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	}
 }
 
+void HookStandardLibrary(VM* vm)
+{
+	HookExternNoWarn(vm, "len", Std_Len);
+	HookExternNoWarn(vm, "push", Std_Push);
+	HookExternNoWarn(vm, "pop", Std_Pop);
+	HookExternNoWarn(vm, "floor", Std_Floor);
+	HookExternNoWarn(vm, "ceil", Std_Ceil);
+	HookExternNoWarn(vm, "sin", Std_Sin);
+	HookExternNoWarn(vm, "cos", Std_Cos);
+	HookExternNoWarn(vm, "sqrt", Std_Sqrt);
+}
+
 void HookExtern(VM* vm, const char* name, ExternFunction func)
 {
 	int index = -1;
@@ -257,6 +338,22 @@ void HookExtern(VM* vm, const char* name, ExternFunction func)
 	if(index < 0 || index >= vm->numExterns)
 		printf("Warning: supplied invalid extern hook name '%s'; code does not declare this function anywhere!\n", name);
 	else
+		vm->externs[index] = func;
+}
+
+void HookExternNoWarn(VM* vm, const char* name, ExternFunction func)
+{
+	int index = -1;
+	for(int i = 0; i < vm->numExterns; ++i)
+	{
+		if(strcmp(vm->externNames[i], name) == 0)
+		{
+			index = i;
+			break;
+		}
+	}
+	
+	if(index >= 0 && index < vm->numExterns)
 		vm->externs[index] = func;
 }
 
@@ -401,12 +498,20 @@ void PushString(VM* vm, const char* string)
 	PushObject(vm, obj);
 }
 
-void PushArray(VM* vm, int length)
+Object* PushArray(VM* vm, int length)
 {
 	Object* obj = NewObject(vm, OBJ_ARRAY);
-	obj->array.members = ecalloc(sizeof(Object*), length);
+	
+	if(length == 0)
+		obj->array.capacity = 2;
+	else
+		obj->array.capacity = length;
+	
+	obj->array.members = ecalloc(sizeof(Object*), obj->array.capacity);
 	obj->array.length = length;
+	
 	PushObject(vm, obj);
+	return obj;
 }
 
 void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)())
@@ -439,6 +544,13 @@ Object** PopArray(VM* vm, int* length)
 	if(length)
 		*length = obj->array.length;
 	return obj->array.members;
+}
+
+Object* PopArrayObject(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_ARRAY) { fprintf(stderr, "Expected array but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	return obj;
 }
 
 void* PopNative(VM* vm)
@@ -597,17 +709,37 @@ void ExecuteCycle(VM* vm)
 		BIN_OP(EQU, ==)
 		BIN_OP(NEQU, !=)
 		
+		case OP_NEG:
+		{
+			if(vm->debug)
+				printf("neg\n");
+			
+			++vm->pc;
+			Object* obj = PopObject(vm);
+			PushNumber(vm, -obj->number);
+		} break;
+		
+		case OP_LOGICAL_NOT:
+		{
+			if(vm->debug)
+				printf("not\n");
+			
+			++vm->pc;
+			Object* obj = PopObject(vm);
+			PushNumber(vm, !obj->number);
+		} break;
+		
 		case OP_SETINDEX:
 		{
 			if(vm->debug)
 				printf("setindex\n");
 			++vm->pc;
 
-			Object* value = PopObject(vm);
-			int index = (int)PopNumber(vm);
 			int arrayLength;
 			Object** members = PopArray(vm, &arrayLength);
-
+			int index = (int)PopNumber(vm);
+			Object* value = PopObject(vm);
+			
 			if(index >= 0 && index < arrayLength)
 				members[index] = value;
 			else
@@ -623,9 +755,9 @@ void ExecuteCycle(VM* vm)
 				printf("getindex\n");
 			++vm->pc;
 
-			int index = (int)PopNumber(vm);
 			int arrayLength;
 			Object** members = PopArray(vm, &arrayLength);
+			int index = (int)PopNumber(vm);
 
 			if(index >= 0 && index < arrayLength)
 			{

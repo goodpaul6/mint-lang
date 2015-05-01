@@ -179,22 +179,24 @@ int main(int argc, char* argv[])
 		vm->debug = debugFlag;
 		LoadBinaryFile(vm, bin);
 		
-		HookExtern(vm, "print", Ext_Print);
-		HookExtern(vm, "SDL_Init", Ext_SDL_Init);
-		HookExtern(vm, "SDL_Quit", Ext_SDL_Quit);
-		HookExtern(vm, "SDL", Ext_SDL);
-		HookExtern(vm, "SDL_CreateWindow", Ext_SDL_CreateWindow);
-		HookExtern(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
-		HookExtern(vm, "SDL_CreateEvent", Ext_SDL_CreateEvent);
-		HookExtern(vm, "SDL_PollEvent", Ext_SDL_PollEvent);
-		HookExtern(vm, "SDL_EventType", Ext_SDL_EventType);
-		HookExtern(vm, "SDL_IsKeyDown", Ext_SDL_IsKeyDown);
-		HookExtern(vm, "SDL_RenderClear", Ext_SDL_RenderClear);
-		HookExtern(vm, "SDL_RenderPresent", Ext_SDL_RenderPresent);
-		HookExtern(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
-		HookExtern(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
-		HookExtern(vm, "SDL_GetTicks", Ext_SDL_GetTicks);
-		HookExtern(vm, "SDL", Ext_SDL);
+		HookStandardLibrary(vm);
+		
+		HookExternNoWarn(vm, "print", Ext_Print);
+		HookExternNoWarn(vm, "SDL_Init", Ext_SDL_Init);
+		HookExternNoWarn(vm, "SDL_Quit", Ext_SDL_Quit);
+		HookExternNoWarn(vm, "SDL", Ext_SDL);
+		HookExternNoWarn(vm, "SDL_CreateWindow", Ext_SDL_CreateWindow);
+		HookExternNoWarn(vm, "SDL_CreateRenderer", Ext_SDL_CreateRenderer);
+		HookExternNoWarn(vm, "SDL_CreateEvent", Ext_SDL_CreateEvent);
+		HookExternNoWarn(vm, "SDL_PollEvent", Ext_SDL_PollEvent);
+		HookExternNoWarn(vm, "SDL_EventType", Ext_SDL_EventType);
+		HookExternNoWarn(vm, "SDL_IsKeyDown", Ext_SDL_IsKeyDown);
+		HookExternNoWarn(vm, "SDL_RenderClear", Ext_SDL_RenderClear);
+		HookExternNoWarn(vm, "SDL_RenderPresent", Ext_SDL_RenderPresent);
+		HookExternNoWarn(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
+		HookExternNoWarn(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
+		HookExternNoWarn(vm, "SDL_GetTicks", Ext_SDL_GetTicks);
+		HookExternNoWarn(vm, "SDL", Ext_SDL);
 		
 		int mainId = GetFunctionId(vm, "_main");
 		
