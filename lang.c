@@ -776,6 +776,21 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 		
+		case '[':
+		{
+			GetNextToken(in);
+			
+			Expr* exp = CreateExpr(EXP_ARRAY_LITERAL);
+			exp->lengthExpr = ParseExpr(in);
+		
+			if(CurTok != ']')
+				ErrorExit("Expected ']' after previous '['\n");
+			
+			GetNextToken(in);
+			
+			return exp;
+		} break;
+		
 		case TOK_IDENT:
 		{
 			char name[MAX_ID_NAME_LENGTH];
