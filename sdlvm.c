@@ -196,7 +196,6 @@ int main(int argc, char* argv[])
 		HookExternNoWarn(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
 		HookExternNoWarn(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
 		HookExternNoWarn(vm, "SDL_GetTicks", Ext_SDL_GetTicks);
-		HookExternNoWarn(vm, "SDL", Ext_SDL);
 		
 		int mainId = GetFunctionId(vm, "_main");
 		

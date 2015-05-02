@@ -1,13 +1,12 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - proper array index (i.e any potentially indexable lhs expression can be indexed, not just id's)
  * - fix error message line numbers (store line numbers in expressions)
  * - else?
- * - include/require other scripts (copy bytecode into vm at runtime?)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
  * - proper operators: need more operators
+ * - include/require other scripts (copy bytecode into vm at runtime?): can only include things at compile time (with cmd line)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -465,15 +464,24 @@ enum
 	TOK_GTE = -14,
 	TOK_NOTEQUAL = -15,
 	TOK_HEXNUM = -16,
-	TOK_FOR = -17
+	TOK_FOR = -17,
+	TOK_ELSE = -18,
+	TOK_ELIF = -19
 };
 
 char Lexeme[MAX_LEX_LENGTH];
 int CurTok = 0;
+char ResetLex = 0;
 
 int GetToken(FILE* in)
 {
 	static char last = ' ';
+	
+	if(ResetLex)
+	{
+		last = ' ';
+		ResetLex = 0;
+	}
 	
 	while(isspace(last))
 	{
@@ -511,6 +519,8 @@ int GetToken(FILE* in)
 			return TOK_NUMBER;
 		}
 		if(strcmp(Lexeme, "for") == 0) return TOK_FOR;
+		if(strcmp(Lexeme, "else") == 0) return TOK_ELSE;
+		if(strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
 		
 		return TOK_IDENT;
 	}
@@ -632,10 +642,10 @@ typedef struct _Expr
 		struct { struct _Expr *cond, *bodyHead; } whilex;
 		struct { FuncDecl* decl; struct _Expr* bodyHead; } funcx;
 		FuncDecl* extDecl;
-		struct { struct _Expr *cond, *bodyHead; } ifx;
+		struct { struct _Expr *cond, *bodyHead, *alt; } ifx;
 		struct _Expr* retExpr;
 		struct _Expr* lengthExpr;
-		struct { VarDecl* varDecl; struct _Expr* indexExpr; char name[MAX_ID_NAME_LENGTH]; } arrayIndex;
+		struct { struct _Expr* arrExpr; struct _Expr* indexExpr; } arrayIndex;
 		struct { int op; struct _Expr* expr; } unaryx;
 		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
 	};
@@ -659,6 +669,78 @@ Expr* CreateExpr(ExprType type)
 }
 
 Expr* ParseExpr(FILE* in);
+
+Expr* ParseIf(FILE* in)
+{
+	GetNextToken(in);
+	
+	Expr* exp = CreateExpr(EXP_IF);
+	
+	Expr* cond = ParseExpr(in);
+				
+	PushScope();
+	
+	Expr* exprHead = NULL;
+	Expr* exprCurrent = NULL;
+	
+	while(CurTok != TOK_ELSE && CurTok != TOK_ELIF && CurTok != TOK_END)
+	{
+		if(!exprHead)
+		{
+			exprHead = ParseExpr(in);
+			exprCurrent = exprHead;
+		}
+		else
+		{
+			exprCurrent->next = ParseExpr(in);
+			exprCurrent = exprCurrent->next;
+		}
+	}
+	
+	exp->ifx.cond = cond;
+	exp->ifx.bodyHead = exprHead;
+	exp->ifx.alt = NULL;
+	
+	PopScope();
+	
+	if(CurTok == TOK_ELIF)
+		exp->ifx.alt = ParseIf(in);
+	else if(CurTok == TOK_ELSE)
+	{
+		GetNextToken(in);
+	
+		PushScope();
+		
+		Expr* exprHead = NULL;
+		Expr* exprCurrent = NULL;
+		
+		while(CurTok != TOK_END)
+		{
+			if(!exprHead)
+			{
+				exprHead = ParseExpr(in);
+				exprCurrent = exprHead;
+			}
+			else
+			{
+				exprCurrent->next = ParseExpr(in);
+				exprCurrent = exprCurrent->next;
+			}
+		}
+		GetNextToken(in);
+		
+		exp->ifx.alt = exprHead;
+		
+		PopScope();
+	}
+	else if(CurTok == TOK_END)
+	{
+		GetNextToken(in);
+		exp->ifx.alt = NULL;
+	}
+	
+	return exp;
+}
 
 Expr* ParseFactor(FILE* in)
 {
@@ -694,32 +776,6 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 		
-		case '[':
-		{
-			GetNextToken(in);
-			Expr* exp = CreateExpr(EXP_ARRAY_LITERAL);
-			exp->lengthExpr = ParseExpr(in);
-			if(CurTok != ']')
-				ErrorExit("Expected ']' after previous '['\n");
-			
-			GetNextToken(in);
-			
-			return exp;
-		} break;
-		
-		case '-': case '!':
-		{
-			int op = CurTok;
-			
-			GetNextToken(in);
-			
-			Expr* exp = CreateExpr(EXP_UNARY);
-			exp->unaryx.op = op;
-			exp->unaryx.expr = ParseExpr(in);
-			
-			return exp;
-		} break;
-		
 		case TOK_IDENT:
 		{
 			char name[MAX_ID_NAME_LENGTH];
@@ -729,24 +785,9 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok != '(')
 			{
-				if(CurTok != '[')
-				{
-					Expr* exp = CreateExpr(EXP_IDENT);
-					exp->varx.varDecl = ReferenceVariable(name);
-					strcpy(exp->varx.name, name);
-					return exp;
-				}
-				GetNextToken(in);
-				
-				Expr* exp = CreateExpr(EXP_ARRAY_INDEX);
-				exp->arrayIndex.varDecl = ReferenceVariable(name);
-				strcpy(exp->arrayIndex.name, name);
-				exp->arrayIndex.indexExpr = ParseExpr(in);
-				
-				if(CurTok != ']')
-					ErrorExit("Expected ']' after previous '['");
-				GetNextToken(in);
-				
+				Expr* exp = CreateExpr(EXP_IDENT);
+				exp->varx.varDecl = ReferenceVariable(name);
+				strcpy(exp->varx.name, name);
 				return exp;
 			}
 			
@@ -961,37 +1002,7 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_IF:
 		{
-			GetNextToken(in);
-			
-			Expr* exp = CreateExpr(EXP_IF);
-			
-			exp->ifx.cond = ParseExpr(in);
-			
-			PushScope();
-			
-			Expr* exprHead = NULL;
-			Expr* exprCurrent = NULL;
-			
-			while(CurTok != TOK_END)
-			{
-				if(!exprHead)
-				{
-					exprHead = ParseExpr(in);
-					exprCurrent = exprHead;
-				}
-				else
-				{
-					exprCurrent->next = ParseExpr(in);
-					exprCurrent = exprCurrent->next;
-				}
-			}
-			GetNextToken(in);
-			
-			PopScope();
-			
-			exp->ifx.bodyHead = exprHead;
-			
-			return exp;
+			return ParseIf(in);
 		} break;
 		
 		case TOK_RETURN:
@@ -1036,6 +1047,51 @@ Expr* ParseFactor(FILE* in)
 	return NULL;
 }
 
+Expr* ParsePost(FILE* in, Expr* pre)
+{
+	switch(CurTok)
+	{
+		case '[':
+		{
+			GetNextToken(in);
+			
+			Expr* exp = CreateExpr(EXP_ARRAY_INDEX);
+			exp->arrayIndex.arrExpr = pre;
+			exp->arrayIndex.indexExpr = ParseExpr(in);
+			if(CurTok != ']')
+				ErrorExit("Expected ']' after previous '['\n");
+			GetNextToken(in);
+			if(CurTok != '[') return exp;
+			else ParsePost(in, exp);
+		} break;
+		
+		default:
+			return pre;
+	}
+}
+
+Expr* ParseUnary(FILE* in)
+{
+	switch(CurTok)
+	{
+		case '-': case '!':
+		{
+			int op = CurTok;
+			
+			GetNextToken(in);
+			
+			Expr* exp = CreateExpr(EXP_UNARY);
+			exp->unaryx.op = op;
+			exp->unaryx.expr = ParseExpr(in);
+			
+			return exp;
+		} break;
+		
+		default:
+			return ParsePost(in, ParseFactor(in));
+	}
+}
+
 int GetTokenPrec()
 {
 	int prec = -1;
@@ -1068,7 +1124,7 @@ Expr* ParseBinRhs(FILE* in, int exprPrec, Expr* lhs)
 
 		GetNextToken(in);
 
-		Expr* rhs = ParseFactor(in);
+		Expr* rhs = ParseUnary(in);
 		int nextPrec = GetTokenPrec();
 		
 		if(prec < nextPrec)
@@ -1086,8 +1142,8 @@ Expr* ParseBinRhs(FILE* in, int exprPrec, Expr* lhs)
 
 Expr* ParseExpr(FILE* in)
 {
-	Expr* factor = ParseFactor(in);
-	return ParseBinRhs(in, 0, factor);
+	Expr* unary = ParseUnary(in);
+	return ParseBinRhs(in, 0, unary);
 }
 
 void DebugExprList(Expr* head);
@@ -1251,24 +1307,7 @@ void CompileExpr(Expr* exp)
 		case EXP_ARRAY_INDEX:
 		{
 			CompileExpr(exp->arrayIndex.indexExpr);
-			
-			if(!exp->binx.lhs->arrayIndex.varDecl)
-			{
-				exp->binx.lhs->arrayIndex.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
-				if(!exp->binx.lhs->arrayIndex.varDecl)	
-					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->binx.lhs->varx.name);
-			}
-
-			if(exp->arrayIndex.varDecl->isGlobal)
-			{
-				AppendCode(OP_GET);
-				AppendInt(exp->arrayIndex.varDecl->index);
-			}
-			else
-			{
-				AppendCode(OP_GETLOCAL);
-				AppendInt(exp->arrayIndex.varDecl->index);
-			}
+			CompileExpr(exp->arrayIndex.arrExpr);
 			
 			AppendCode(OP_GETINDEX);
 		} break;
@@ -1325,24 +1364,7 @@ void CompileExpr(Expr* exp)
 				else if(exp->binx.lhs->type == EXP_ARRAY_INDEX)
 				{
 					CompileExpr(exp->binx.lhs->arrayIndex.indexExpr);
-					
-					if(!exp->binx.lhs->arrayIndex.varDecl)
-					{
-						exp->binx.lhs->arrayIndex.varDecl = ReferenceVariable(exp->binx.lhs->arrayIndex.name);
-						if(!exp->binx.lhs->arrayIndex.varDecl)	
-							ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->binx.lhs->arrayIndex.name);
-					}
-					
-					if(exp->binx.lhs->arrayIndex.varDecl->isGlobal)
-					{
-						AppendCode(OP_GET);
-						AppendInt(exp->binx.lhs->arrayIndex.varDecl->index);
-					}
-					else
-					{
-						AppendCode(OP_GETLOCAL);
-						AppendInt(exp->binx.lhs->arrayIndex.varDecl->index);
-					}
+					CompileExpr(exp->binx.lhs->arrayIndex.arrExpr);
 					
 					AppendCode(OP_SETINDEX);
 				}
@@ -1424,6 +1446,14 @@ void CompileExpr(Expr* exp)
 			AllocatePatch(sizeof(int) / sizeof(Word));
 			CompileExprList(exp->ifx.bodyHead);
 			EmplaceInt(emplaceLoc, CodeLength);
+		
+			if(exp->ifx.alt)
+			{
+				if(exp->ifx.alt->type != EXP_IF)
+					CompileExprList(exp->ifx.alt);
+				else
+					CompileExpr(exp->ifx.alt);
+			}
 		} break;
 		
 		case EXP_FUNC:
@@ -1485,7 +1515,10 @@ int main(int argc, char* argv[])
 		ErrorExit("Error: no input files detected!\n");
 	
 	const char* outPath = NULL;
-	
+
+	Expr* exprHead = NULL;
+	Expr* exprCurrent = NULL;
+
 	for(int i = 1; i < argc; ++i)
 	{
 		if(strcmp(argv[i], "-o") == 0)
@@ -1502,9 +1535,6 @@ int main(int argc, char* argv[])
 			
 			GetNextToken(in);
 			
-			Expr* exprHead = NULL;
-			Expr* exprCurrent = NULL;
-		
 			while(CurTok != TOK_EOF)
 			{
 				if(!exprHead)
@@ -1518,11 +1548,13 @@ int main(int argc, char* argv[])
 					exprCurrent = exprCurrent->next;
 				}
 			}
-		
-			CompileExprList(exprHead);
+			
+			ResetLex = 1;
 			fclose(in);
 		}
-	}		
+	}					
+	
+	CompileExprList(exprHead);
 	AppendCode(OP_HALT);
 	
 	FILE* out;
