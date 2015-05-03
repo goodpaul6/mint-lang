@@ -2,7 +2,6 @@
 /* 
  * TODO:
  * - fix error message line numbers (store line numbers in expressions)
- * - else?
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
  * - proper operators: need more operators
