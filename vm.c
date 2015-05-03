@@ -107,6 +107,14 @@ void Std_Sqrt(VM* vm)
 	PushNumber(vm, sqrt(num));
 }
 
+void Std_Atan2(VM* vm)
+{
+	double y = PopNumber(vm);
+	double x = PopNumber(vm);
+	
+	PushNumber(vm, atan2(y, x));
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -321,6 +329,7 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "sin", Std_Sin);
 	HookExternNoWarn(vm, "cos", Std_Cos);
 	HookExternNoWarn(vm, "sqrt", Std_Sqrt);
+	HookExternNoWarn(vm, "atan2", Std_Atan2);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -369,30 +378,35 @@ int GetFunctionId(VM* vm, const char* name)
 	return -1;
 }
 
+void MarkObject(Object* obj)
+{
+	if(obj->marked) return;
+	
+	if(obj->type == OBJ_NATIVE)
+	{
+		if(obj->native.onMark)
+			obj->native.onMark(obj->native.value);
+	}
+	if(obj->type == OBJ_ARRAY)
+	{
+		for(int i = 0; i < obj->array.length; ++i)
+		{
+			Object* mem = obj->array.members[i];
+			if(mem)
+				MarkObject(mem);
+		}
+	}
+
+	obj->marked = 1;
+}
+
 void MarkAll(VM* vm)
 {
 	for(int i = 0; i < vm->stackSize; ++i)
 	{
 		Object* reachable = vm->stack[i];
 		if(reachable)
-		{
-			if(reachable->type == OBJ_NATIVE)
-			{
-				if(reachable->native.onMark)
-					reachable->native.onMark(reachable->native.value);
-			}
-			if(reachable->type == OBJ_ARRAY)
-			{
-				for(int i = 0; i < reachable->array.length; ++i)
-				{
-					Object* obj = reachable->array.members[i];
-					if(obj)
-						obj->marked = 1;
-				}
-			}
-
-			reachable->marked = 1;
-		}
+			MarkObject(reachable);
 	}
 }
 
@@ -731,14 +745,14 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_SETINDEX:
 		{
-			if(vm->debug)
-				printf("setindex\n");
 			++vm->pc;
 
 			int arrayLength;
 			Object** members = PopArray(vm, &arrayLength);
 			int index = (int)PopNumber(vm);
 			Object* value = PopObject(vm);
+			if(vm->debug)
+				printf("setindex %i\n", index);
 			
 			if(index >= 0 && index < arrayLength)
 				members[index] = value;
@@ -751,8 +765,6 @@ void ExecuteCycle(VM* vm)
 
 		case OP_GETINDEX:
 		{
-			if(vm->debug)
-				printf("getindex\n");
 			++vm->pc;
 
 			int arrayLength;
@@ -764,7 +776,12 @@ void ExecuteCycle(VM* vm)
 				if(members[index])
 					PushObject(vm, members[index]);
 				else
-					PushNumber(vm, 0);
+				{
+					fprintf(stderr, "attempted to index non-existent value in array\n");
+					exit(1);
+				}
+				if(vm->debug)
+					printf("getindex %i\n", index);
 			}
 			else
 			{
@@ -847,11 +864,12 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_CALL:
 		{
-			if(vm->debug)
-				printf("call\n");
 			Word nargs = vm->program[++vm->pc];
 			++vm->pc;
 			int index = ReadInteger(vm);
+
+			if(vm->debug)
+				printf("call %s\n", vm->functionNames[index]);
 
 			PushIndir(vm, nargs);
 

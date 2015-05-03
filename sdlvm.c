@@ -200,10 +200,13 @@ int main(int argc, char* argv[])
 		int mainId = GetFunctionId(vm, "_main");
 		
 		CallFunction(vm, mainId, 0);
+		int value = (int)PopNumber(vm);
+		
+		printf("program returned %i\n", value);
 		
 		DeleteVM(vm);
-
-		return 0;
+		
+		return value;
 	}
 	else 
 	{

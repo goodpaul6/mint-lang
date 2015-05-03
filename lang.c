@@ -1338,8 +1338,17 @@ void CompileExpr(Expr* exp)
 				exp->callx.decl = decl;
 			}
 			
-			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-				CompileExpr(exp->callx.args[i]);
+			if(exp->callx.decl->isExtern)
+			{
+				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+					CompileExpr(exp->callx.args[i]);
+			}
+			else
+			{
+				for(int i = 0; i < exp->callx.numArgs; ++i)
+					CompileExpr(exp->callx.args[i]);
+			}
+				
 			
 			if(!exp->callx.decl->isExtern)
 			{
