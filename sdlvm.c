@@ -156,6 +156,11 @@ void Ext_Print(VM* vm)
 	else printf("%s\n", obj->string);
 }
 
+void Ext_LoadScript(VM* vm)
+{
+	
+}
+
 int main(int argc, char* argv[])
 {
 	if(argc >= 2)

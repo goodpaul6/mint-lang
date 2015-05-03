@@ -558,6 +558,17 @@ int GetToken(FILE* in)
 	
 		while(last != '"')
 		{
+			if(last == '\\')
+			{
+				last = getc(in);
+				switch(last)
+				{
+					case 'n': last = '\n'; break;
+					case 'r': last = '\r'; break;
+					case 't': last = '\t'; break;
+				}
+			}
+			
 			Lexeme[i++] = last;
 			last = getc(in);
 		}

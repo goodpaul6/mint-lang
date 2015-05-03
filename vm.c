@@ -115,6 +115,44 @@ void Std_Atan2(VM* vm)
 	PushNumber(vm, atan2(y, x));
 }
 
+void Std_Printf(VM* vm)
+{
+	const char* format = PopString(vm);
+	int len = strlen(format);
+	
+	for(int i = 0; i < len; ++i)
+	{
+		int c = format[i];
+		
+		switch(c)
+		{
+			case '%':
+			{
+				int type = format[++i];
+				switch(type)
+				{
+					case 'g':
+					{
+						printf("%g", PopNumber(vm));
+					} break;
+					
+					case 's':
+					{
+						printf("%s", PopString(vm));
+					} break;
+					
+					default:
+						putc(c, stdout);
+						putc(type, stdout);
+				}
+			} break;
+			
+			default:
+				putc(c, stdout);
+		}
+	}
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -330,6 +368,7 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "cos", Std_Cos);
 	HookExternNoWarn(vm, "sqrt", Std_Sqrt);
 	HookExternNoWarn(vm, "atan2", Std_Atan2);
+	HookExternNoWarn(vm, "printf", Std_Printf);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
