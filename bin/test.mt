@@ -1,5 +1,4 @@
-extern print
-extern push
+extern printf
 
 extern cos
 extern sin
@@ -30,13 +29,11 @@ end
 func _main()
 	MSDL_Init()
 	
-	write("hello world")
-	
 	pos = [0]
 	vel = [0]
 	
-	for var y = 0, y < 40, y = y + 1
-		for var x = 0, x < 40, x = x + 1
+	for var y = 0, y < 45, y = y + 1
+		for var x = 0, x < 45, x = x + 1
 			push(pos, x * 36)
 			push(pos, y * 36)
 			
@@ -97,15 +94,11 @@ func _main()
 			
 		SDL_RenderClear(renderer)
 		for var i = 0, i < plen, i = i + 2
-			if pos[i] >= -32 
-				if pos[i + 1] >= -32
-					if pos[i] < 640
-						if pos[i + 1] < 480
-							var v = (1 - i / len(pos)) * 255
-							SDL_SetRenderDrawColor(renderer, 255 - v, v, v, 255)
-							SDL_RenderFillRect(renderer, pos[i], pos[i + 1], 32, 32)
-						end
-					end
+			if (pos[i + 1] >= -32) && (pos[i] >= -32)
+				if (pos[i] < 640) && (pos[i + 1] < 480)
+					var v = (1 - i / len(pos)) * 255
+					SDL_SetRenderDrawColor(renderer, 255 - v, v, v, 255)
+					SDL_RenderFillRect(renderer, pos[i], pos[i + 1], 32, 32)
 				end
 			end
 		end

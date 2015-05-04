@@ -1,7 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - compiler intrinsics (ex. len)
+ * - logical and/or (BUGGED RIGHT NOW: Weird order of operation? Need parentheses)
  * - fix error message line numbers (store line numbers in expressions)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
@@ -466,7 +466,9 @@ enum
 	TOK_HEXNUM = -16,
 	TOK_FOR = -17,
 	TOK_ELSE = -18,
-	TOK_ELIF = -19
+	TOK_ELIF = -19,
+	TOK_AND = -20,
+	TOK_OR = -21,
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -613,6 +615,16 @@ int GetToken(FILE* in)
 	{
 		last = getc(in);
 		return TOK_GTE;
+	}
+	else if(lastChar == '&' && last == '&')
+	{
+		last = getc(in);
+		return TOK_AND;
+	}
+	else if(lastChar == '|' && last == '|')
+	{
+		last = getc(in);
+		return TOK_OR;
 	}
 	
 	return lastChar;
@@ -1123,14 +1135,16 @@ int GetTokenPrec()
 	int prec = -1;
 	switch(CurTok)
 	{
-		case '*': case '/': case '%': case '&': case '|': prec = 5; break;
+		case '*': case '/': case '%': case '&': case '|': prec = 6; break;
 		
-		case '+': case '-': prec = 4; break;
+		case '+': case '-': prec = 5; break;
+	
+		case '<': case '>': case TOK_LTE: case TOK_GTE:	prec = 4; break;
+	
+		case TOK_EQUALS: case TOK_NOTEQUAL: prec = 3; break;
 		
-		case '<': case '>': case TOK_LTE: case TOK_GTE: prec = 3; break;
-		
-		case TOK_EQUALS: case TOK_NOTEQUAL: prec = 2; break;
-		
+		case TOK_AND: case TOK_OR: prec = 2; break;
+			
 		case '=': prec = 1; break;
 	}
 	
@@ -1211,9 +1225,20 @@ void DebugExpr(Expr* exp)
 		
 		case EXP_BIN:
 		{
+			printf("(");
 			DebugExpr(exp->binx.lhs);
-			printf("%c", exp->binx.op);
+			switch(exp->binx.op)
+			{
+				case TOK_AND: printf("&&"); break;
+				case TOK_OR: printf("||"); break;
+				case TOK_GTE: printf(">="); break;
+				case TOK_LTE: printf("<="); break;
+				
+				default:
+					printf("%c", exp->binx.op);
+			}
 			DebugExpr(exp->binx.rhs);
+			printf(")");
 		} break;
 		
 		case EXP_PAREN:
@@ -1289,7 +1314,7 @@ char CompileIntrinsic(Expr* exp)
 		if(exp->callx.numArgs != 1)
 			ErrorExit("Intrinsic 'len' only takes 1 argument\n");
 		CompileExpr(exp->callx.args[0]);
-		AppendCode(OP_ARRAY_LENGTH);
+		AppendCode(OP_LENGTH);
 		return 1;
 	}
 	else if(strcmp(exp->callx.funcName, "write") == 0)
@@ -1305,6 +1330,32 @@ char CompileIntrinsic(Expr* exp)
 		if(exp->callx.numArgs != 0)
 			ErrorExit("Intrinsic 'read' takes no arguments\n");
 		AppendCode(OP_READ);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "push") == 0)
+	{
+		if(exp->callx.numArgs != 2)
+			ErrorExit("Intrinsic 'push' only takes 2 arguments\n");
+		CompileExpr(exp->callx.args[1]);
+		CompileExpr(exp->callx.args[0]);
+		AppendCode(OP_ARRAY_PUSH);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "pop") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExit("Intrinsic 'push' only takes 1 argument\n");
+		CompileExpr(exp->callx.args[0]);
+		AppendCode(OP_ARRAY_POP);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "clear") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExit("Intrinsic 'clear' only takes 1 argument\n");
+		CompileExpr(exp->callx.args[0]);
+		AppendCode(OP_ARRAY_CLEAR);
+		return 1;
 	}
 	
 	return 0;
@@ -1456,6 +1507,8 @@ void CompileExpr(Expr* exp)
 					case TOK_LTE: AppendCode(OP_LTE); break;
 					case TOK_GTE: AppendCode(OP_GTE); break;
 					case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
+					case TOK_AND: AppendCode(OP_LOGICAL_AND); break;
+					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
 					
 					default:
 						ErrorExit("Unsupported binary operator %c\n", exp->binx.op);

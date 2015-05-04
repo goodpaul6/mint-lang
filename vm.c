@@ -43,41 +43,6 @@ static char* estrdup(const char* string)
 }
 
 /* STANDARD LIBRARY */
-void Std_Len(VM* vm)
-{
-	Object* obj = PopObject(vm);
-	if(obj->type == OBJ_STRING)
-		PushNumber(vm, strlen(obj->string));
-	else if(obj->type == OBJ_ARRAY)
-		PushNumber(vm, obj->array.length);
-}
-
-void Std_Push(VM* vm)
-{
-	Object* obj = PopArrayObject(vm);
-	Object* value = PopObject(vm);
-	
-	while(obj->array.length + 1 >= obj->array.capacity)
-	{
-		obj->array.capacity *= 2;
-		obj->array.members = erealloc(obj->array.members, obj->array.capacity * sizeof(Object*));
-	}
-	
-	obj->array.members[obj->array.length++] = value;
-}
-
-void Std_Pop(VM* vm)
-{
-	Object* obj = PopArrayObject(vm);
-	if(obj->array.length <= 0)
-	{
-		fprintf(stderr, "Cannot pop from empty array\n");
-		exit(1);
-	}
-	
-	PushObject(vm, obj->array.members[--obj->array.length]);
-}
-
 void Std_Floor(VM* vm)
 {
 	double num = PopNumber(vm);
@@ -418,9 +383,6 @@ void LoadBinaryFile(VM* vm, FILE* in)
 
 void HookStandardLibrary(VM* vm)
 {
-	HookExternNoWarn(vm, "len", Std_Len);
-	HookExternNoWarn(vm, "push", Std_Push);
-	HookExternNoWarn(vm, "pop", Std_Pop);
 	HookExternNoWarn(vm, "floor", Std_Floor);
 	HookExternNoWarn(vm, "ceil", Std_Ceil);
 	HookExternNoWarn(vm, "sin", Std_Sin);
@@ -702,26 +664,24 @@ Object* GetLocal(VM* vm, int index)
 
 char* ReadStringFromStdin()
 {
-	char* string = emalloc(1);
-	size_t stringLength = 0;
-	size_t stringCapacity = 1;
-
-	int c;
-
+	char buf[256];
+	int c = getc(stdin);
 	int i = 0;
-	while((c = getc(stdin)) != '\n')
-	{	
-		if(stringLength + 1 >= stringCapacity)
+	
+	while(c != '\n')
+	{
+		if(i + 1 >= 256) 
 		{
-			stringCapacity *= 2;
-			string = erealloc(string, stringCapacity);
+			buf[i] = '\0';
+			return estrdup(buf);
 		}
 		
-		string[i++] = c;
+		buf[i++] = c;
+		c = getc(stdin);
 	}
+	buf[i] = '\0';
 	
-	string[i] = '\0';
-	return string;
+	return estrdup(buf);
 }
 
 void PushIndir(VM* vm, int nargs)
@@ -802,16 +762,65 @@ void ExecuteCycle(VM* vm)
 			PushArray(vm, length);
 		} break;
 
-		case OP_ARRAY_LENGTH:
+		case OP_LENGTH:
 		{
 			if(vm->debug)
 				printf("length\n");
 			++vm->pc;
 			Object* obj = PopObject(vm);
-			PushNumber(vm, obj->array.length);
+			if(obj->type == OBJ_STRING)
+				PushNumber(vm, strlen(obj->string));
+			else if(obj->type == OBJ_ARRAY)
+				PushNumber(vm, obj->array.length);
+			else
+			{
+				fprintf(stderr, "Attempted to get length of %s\n", ObjectTypeNames[obj->type]);
+				exit(1);
+			}
+		} break;
+		
+		case OP_ARRAY_PUSH:
+		{
+			if(vm->debug)
+				printf("array_push\n");
+			++vm->pc;
+			
+			Object* obj = PopArrayObject(vm);
+			Object* value = PopObject(vm);
+
+			while(obj->array.length + 1 >= obj->array.capacity)
+			{
+				obj->array.capacity *= 2;
+				obj->array.members = erealloc(obj->array.members, obj->array.capacity * sizeof(Object*));
+			}
+			
+			obj->array.members[obj->array.length++] = value;
+		} break;
+		
+		case OP_ARRAY_POP:
+		{
+			if(vm->debug)
+				printf("array_pop\n");
+			Object* obj = PopArrayObject(vm);
+			if(obj->array.length <= 0)
+			{
+				fprintf(stderr, "Cannot pop from empty array\n");
+				exit(1);
+			}
+			
+			PushObject(vm, obj->array.members[--obj->array.length]);
+		} break;
+		
+		case OP_ARRAY_CLEAR:
+		{
+			if(vm->debug)
+				printf("array_clear\n");
+			++vm->pc;
+			Object* obj = PopArrayObject(vm);
+			obj->array.length = 0;
 		} break;
 	
-		#define BIN_OP_TYPE(op, operator, type) case OP_##op: { if(vm->debug) printf("%s\n", #op); Object* val2 = PopObject(vm); Object* val1 = PopObject(vm); Object* result = NewObject(vm, OBJ_NUMBER); result->number = (type)val1->number operator (type)val2->number; PushObject(vm, result); ++vm->pc; } break;
+		#define BIN_OP_TYPE(op, operator, type) case OP_##op: { if(vm->debug) printf("%s\n", #op); Object* val2 = PopObject(vm); Object* val1 = PopObject(vm); PushNumber(vm, (type)val1->number operator (type)val2->number); ++vm->pc; } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
 		BIN_OP(ADD, +)
@@ -827,6 +836,8 @@ void ExecuteCycle(VM* vm)
 		BIN_OP(GTE, >=)
 		BIN_OP(EQU, ==)
 		BIN_OP(NEQU, !=)
+		BIN_OP_TYPE(LOGICAL_AND, &&, int)
+		BIN_OP_TYPE(LOGICAL_OR, ||, int)
 		
 		case OP_NEG:
 		{
