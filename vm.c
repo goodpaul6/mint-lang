@@ -297,7 +297,7 @@ void ResetVM(VM* vm)
 	
 	if(vm->externs)
 		free(vm->externs);
-	
+		
 	CollectGarbage(vm);
 	
 	InitVM(vm);
@@ -562,7 +562,7 @@ void CollectGarbage(VM* vm)
 	Sweep(vm);
 	if(vm->debug)
 		printf("cleaned objects\n");
-	vm->maxObjectsUntilGc = numObjects * 2 + vm->numGlobals;
+	vm->maxObjectsUntilGc = vm->numObjects * 2 + vm->numGlobals;
 
 	if(vm->debug)
 	{
@@ -573,7 +573,9 @@ void CollectGarbage(VM* vm)
 
 Object* NewObject(VM* vm, ObjectType type)
 {
-	if(vm->numObjects == vm->maxObjectsUntilGc) CollectGarbage(vm);
+	if(vm->numObjects == vm->maxObjectsUntilGc) 
+		CollectGarbage(vm);
+
 	if(vm->debug)
 		printf("creating object: %s\n", ObjectTypeNames[type]);
 	

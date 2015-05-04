@@ -12,6 +12,7 @@ extern SDL_RenderFillRect
 extern SDL_SetRenderDrawColor
 extern SDL_GetTicks
 extern SDL_IsKeyDown
+extern SDL_Delay
 
 var kright
 var kleft

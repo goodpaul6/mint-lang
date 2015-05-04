@@ -48,8 +48,5 @@ func _main()
 	string = type("")
 	array = type([0])
 	
-	assert(number == number, "not supposed to happen")
-	assert(string == number, "supposed to happen")
-	
 	return 0
 end

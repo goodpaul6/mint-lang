@@ -141,6 +141,8 @@ void Ext_SDL(VM* vm)
 		PushNumber(vm, SDL_RENDERER_PRESENTVSYNC);
 	else if(strcmp(name, "SDL_QUIT") == 0)
 		PushNumber(vm, SDL_QUIT);
+	else if(strcmp(name, "SDL_KEYDOWN") == 0)
+		PushNumber(vm, SDL_KEYDOWN);
 	else 
 	{
 		printf("Invalid SDL constant %s\nPushing 0...", name);
@@ -156,9 +158,10 @@ void Ext_Print(VM* vm)
 	else printf("%s\n", obj->string);
 }
 
-void Ext_LoadScript(VM* vm)
+void Ext_SDL_Delay(VM* vm)
 {
-	
+	int ms = (int)PopNumber(vm);
+	SDL_Delay(ms);
 }
 
 int main(int argc, char* argv[])
@@ -173,15 +176,20 @@ int main(int argc, char* argv[])
 		}
 
 		char debugFlag = 0;
+		char noGcFlag = 0;
 		for(int i = 2; i < argc; ++i)
 		{
 			if(strcmp(argv[i], "-d") == 0)
 				debugFlag = 1;
+				
+			if(strcmp(argv[i], "-nogc") == 0)
+				noGcFlag = 1;
 		}
 
 		VM* vm = NewVM();
 
 		vm->debug = debugFlag;
+		
 		LoadBinaryFile(vm, bin);
 		
 		HookStandardLibrary(vm);
@@ -201,6 +209,7 @@ int main(int argc, char* argv[])
 		HookExternNoWarn(vm, "SDL_RenderFillRect", Ext_SDL_RenderFillRect);
 		HookExternNoWarn(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
 		HookExternNoWarn(vm, "SDL_GetTicks", Ext_SDL_GetTicks);
+		HookExternNoWarn(vm, "SDL_Delay", Ext_SDL_Delay);
 		
 		int mainId = GetFunctionId(vm, "_main");
 		

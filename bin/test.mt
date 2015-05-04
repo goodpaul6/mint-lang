@@ -22,13 +22,9 @@ func abs(x)
 end
 
 func accel(x, y)
-	for var yy = 0, yy < 10, yy = yy + 1
-		for var xx = 0, xx < 10, xx = xx + 1
-			var i = yy * 10 + xx
-			
-			vel[i][0] = vel[i][0] + x
-			vel[i][1] = vel[i][1] + y
-		end
+	for var i = 0, i < len(vel), i = i + 2	
+		vel[i] = vel[i] + x
+		vel[i + 1] = vel[i + 1] + y
 	end
 end
 
@@ -38,19 +34,13 @@ func _main()
 	pos = [0]
 	vel = [0]
 	
-	for var y = 0, y < 10, y = y + 1
-		for var x = 0, x < 10, x = x + 1
-			var p2 = [2]
-			p2[0] = x * 36
-			p2[1] = y * 36
+	for var y = 0, y < 30, y = y + 1
+		for var x = 0, x < 30, x = x + 1
+			push(pos, x * 36)
+			push(pos, y * 36)
 			
-			push(pos, p2)
-			
-			var v2 = [2]
-			v2[0] = 0
-			v2[1] = 0
-			
-			push(vel, v2)
+			push(vel, 0)
+			push(vel, 0)
 		end
 	end
 	
@@ -63,10 +53,14 @@ func _main()
 	var last = SDL_GetTicks()
 	var time = 0
 	
+	var plen = len(pos)
+	var tpf = (1000 / 60)
+	
 	var running = true
+	var quit = SDL("SDL_QUIT")
 	while running
 		while SDL_PollEvent(event)
-			if SDL_EventType(event) == SDL("SDL_QUIT")
+			if SDL_EventType(event) == quit
 				running = false
 			end
 		end
@@ -74,13 +68,17 @@ func _main()
 		time = time + (SDL_GetTicks() - last)
 		last = SDL_GetTicks()
 		
-		while time >= (1000 / 60)
-			for var i = 0, i < len(pos), i = i + 1
-				pos[i][0] = pos[i][0] + vel[i][0]
-				pos[i][1] = pos[i][1] + vel[i][1]
+		if time > tpf * 10
+			time = tpf * 10
+		end
+		
+		while time >= tpf
+			for var i = 0, i < plen, i = i + 2
+				pos[i] = pos[i] + vel[i]
+				pos[i + 1] = pos[i + 1] + vel[i + 1]
 				
-				vel[i][0] = vel[i][0] * 0.90
-				vel[i][1] = vel[i][1] * 0.90
+				vel[i] = vel[i] * 0.90
+				vel[i + 1] = vel[i + 1] * 0.90
 			end
 		
 			if SDL_IsKeyDown(kleft) 
@@ -92,16 +90,27 @@ func _main()
 			elif SDL_IsKeyDown(kdown)
 				accel(0, 2)
 			end
-		
-			time = time - (1000 / 60)
+			
+			time = time - tpf
 		end
-		
+			
 		SDL_RenderClear(renderer)
-		for var i = 0, i < len(pos), i = i + 1			
-			SDL_SetRenderDrawColor(renderer, (1 - i / len(pos)) * 255, (1 - i / len(pos)) * 255, (1 - i / len(pos)) * 255, 255)
-			SDL_RenderFillRect(renderer, pos[i][0], pos[i][1], 32, 32)
+		for var i = 0, i < plen, i = i + 2
+			if pos[i] >= -32 
+				if pos[i + 1] >= -32
+					if pos[i] < 640
+						if pos[i + 1] < 480
+							var v = (1 - i / len(pos)) * 255
+							SDL_SetRenderDrawColor(renderer, 255 - v, v, v, 255)
+							SDL_RenderFillRect(renderer, pos[i], pos[i + 1], 32, 32)
+						end
+					end
+				end
+			end
 		end
 		SDL_RenderPresent(renderer)
+		
+		SDL_Delay(12)
 	end
 	
 	SDL_Quit()
