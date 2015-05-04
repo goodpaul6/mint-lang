@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <malloc.h>
 
 static char* ObjectTypeNames[] =
 {
@@ -141,6 +142,11 @@ void Std_Printf(VM* vm)
 						printf("%s", PopString(vm));
 					} break;
 					
+					case 'c':
+					{
+						printf("%c", (int)PopNumber(vm));
+					} break;
+					
 					default:
 						putc(c, stdout);
 						putc(type, stdout);
@@ -150,6 +156,59 @@ void Std_Printf(VM* vm)
 			default:
 				putc(c, stdout);
 		}
+	}
+}
+
+void Std_Strcat(VM* vm)
+{
+	const char* a = PopString(vm);
+	const char* b = PopString(vm);
+	
+	int la = strlen(a);
+	int lb = strlen(b);
+	
+	char* newString = alloca(la + lb + 1);
+	if(!newString)
+	{
+		fprintf(stderr, "Out of stack space when alloca'ing\n");
+		exit(1);
+	}
+	strcpy(newString, a);
+	strcpy(newString + la, b);
+	
+	PushString(vm, newString);
+}
+
+void Std_Tonumber(VM* vm)
+{
+	const char* string = PopString(vm);
+	PushNumber(vm, strtod(string, NULL));
+}
+
+void Std_Tostring(VM* vm)
+{
+	double number = PopNumber(vm);
+	char buf[128];
+	sprintf(buf, "%g", number);
+	PushString(vm, buf);
+}
+
+void Std_Type(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	PushNumber(vm, obj->type);
+}
+
+void Std_Assert(VM* vm)
+{
+	int result = (int)PopNumber(vm);
+	const char* message = PopString(vm);
+	
+	if(!result)
+	{
+		fprintf(stderr, "Assertion failed (pc %i)\n", vm->pc);
+		fprintf(stderr, "%s\n", message);
+		exit(1);
 	}
 }
 
@@ -369,6 +428,11 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "sqrt", Std_Sqrt);
 	HookExternNoWarn(vm, "atan2", Std_Atan2);
 	HookExternNoWarn(vm, "printf", Std_Printf);
+	HookExternNoWarn(vm, "strcat", Std_Strcat);
+	HookExternNoWarn(vm, "tonumber", Std_Tonumber);
+	HookExternNoWarn(vm, "tostring", Std_Tostring);
+	HookExternNoWarn(vm, "type", Std_Type);
+	HookExternNoWarn(vm, "assert", Std_Assert);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -806,25 +870,37 @@ void ExecuteCycle(VM* vm)
 		{
 			++vm->pc;
 
-			int arrayLength;
-			Object** members = PopArray(vm, &arrayLength);
+			Object* obj = PopObject(vm);
 			int index = (int)PopNumber(vm);
 
-			if(index >= 0 && index < arrayLength)
+			if(obj->type == OBJ_ARRAY)
 			{
-				if(members[index])
-					PushObject(vm, members[index]);
+				int arrayLength = obj->array.length;
+				Object** members = obj->array.members;
+				
+				if(index >= 0 && index < arrayLength)
+				{
+					if(members[index])
+						PushObject(vm, members[index]);
+					else
+					{
+						fprintf(stderr, "attempted to index non-existent value in array\n");
+						exit(1);
+					}
+					if(vm->debug)
+						printf("getindex %i\n", index);
+				}
 				else
 				{
-					fprintf(stderr, "attempted to index non-existent value in array\n");
+					fprintf(stderr, "Invalid array index %i\n", index);
 					exit(1);
 				}
-				if(vm->debug)
-					printf("getindex %i\n", index);
 			}
-			else
+			else if(obj->type == OBJ_STRING)
+				PushNumber(vm, obj->string[index]);
+			else 
 			{
-				fprintf(stderr, "Invalid array index %i\n", index);
+				fprintf(stderr, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
 				exit(1);
 			}
 		} break;
