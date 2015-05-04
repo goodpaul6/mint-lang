@@ -1,6 +1,5 @@
 extern print
 extern push
-extern len
 
 extern cos
 extern sin
@@ -31,11 +30,13 @@ end
 func _main()
 	MSDL_Init()
 	
+	write("hello world")
+	
 	pos = [0]
 	vel = [0]
 	
-	for var y = 0, y < 30, y = y + 1
-		for var x = 0, x < 30, x = x + 1
+	for var y = 0, y < 40, y = y + 1
+		for var x = 0, x < 40, x = x + 1
 			push(pos, x * 36)
 			push(pos, y * 36)
 			

@@ -1,6 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
+ * - compiler intrinsics (ex. len)
  * - fix error message line numbers (store line numbers in expressions)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
@@ -1280,6 +1281,35 @@ void DebugExpr(Expr* exp)
 	}
 }
 
+void CompileExpr(Expr* exp);
+char CompileIntrinsic(Expr* exp)
+{
+	if(strcmp(exp->callx.funcName, "len") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExit("Intrinsic 'len' only takes 1 argument\n");
+		CompileExpr(exp->callx.args[0]);
+		AppendCode(OP_ARRAY_LENGTH);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "write") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExit("Intrinsic 'write' only takes 1 argument\n");
+		CompileExpr(exp->callx.args[0]);
+		AppendCode(OP_WRITE);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "read") == 0)
+	{
+		if(exp->callx.numArgs != 0)
+			ErrorExit("Intrinsic 'read' takes no arguments\n");
+		AppendCode(OP_READ);
+	}
+	
+	return 0;
+}
+
 void CompileExprList(Expr* head);
 void CompileExpr(Expr* exp)
 {
@@ -1339,36 +1369,39 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_CALL:
 		{
-			if(!exp->callx.decl)
+			if(!CompileIntrinsic(exp))
 			{
-				FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
-				if(!decl)
-					ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
+				if(!exp->callx.decl)
+				{
+					FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
+					if(!decl)
+						ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
+					
+					exp->callx.decl = decl;
+				}
 				
-				exp->callx.decl = decl;
-			}
-			
-			if(exp->callx.decl->isExtern)
-			{
-				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-					CompileExpr(exp->callx.args[i]);
-			}
-			else
-			{
-				for(int i = 0; i < exp->callx.numArgs; ++i)
-					CompileExpr(exp->callx.args[i]);
-			}
+				if(exp->callx.decl->isExtern)
+				{
+					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+						CompileExpr(exp->callx.args[i]);
+				}
+				else
+				{
+					for(int i = 0; i < exp->callx.numArgs; ++i)
+						CompileExpr(exp->callx.args[i]);
+				}
+					
 				
-			
-			if(!exp->callx.decl->isExtern)
-			{
-				AppendCode(OP_CALL);
-				AppendCode(exp->callx.numArgs);
+				if(!exp->callx.decl->isExtern)
+				{
+					AppendCode(OP_CALL);
+					AppendCode(exp->callx.numArgs);
+				}
+				else
+					AppendCode(OP_CALLF);
+				
+				AppendInt(exp->callx.decl->index);
 			}
-			else
-				AppendCode(OP_CALLF);
-			
-			AppendInt(exp->callx.decl->index);
 		} break;
 		
 		case EXP_BIN:
