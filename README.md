@@ -2,7 +2,7 @@
 A programming language. Compiles to bytecode, useful for games.
 
 Example:
-'''
+```
 
 extern print
 
@@ -15,4 +15,4 @@ func _main()
 	print(fact(5))
 end
 
-'''
+```
