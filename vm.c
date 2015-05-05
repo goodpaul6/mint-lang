@@ -903,21 +903,6 @@ void ExecuteCycle(VM* vm)
 			Object* obj = PopArrayObject(vm);
 			obj->array.length = 0;
 		} break;
-		
-		case OP_ARRAY_EXPAND:
-		{
-			if(vm->debug)
-				printf("array_expand\n");
-			++vm->pc;
-			Object* obj = PopArrayObject(vm);
-			for(int i = obj->array.length - 1; i >= 0; --i)
-			{
-				if(obj->array.members[i])
-					PushObject(vm, obj->array.members[i]);
-				else
-					PushNumber(vm, 0);
-			}
-		} break;
 	
 		#define BIN_OP_TYPE(op, operator, type) case OP_##op: { if(vm->debug) printf("%s\n", #op); Object* val2 = PopObject(vm); Object* val1 = PopObject(vm); PushNumber(vm, (type)val1->number operator (type)val2->number); ++vm->pc; } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
