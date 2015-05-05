@@ -848,8 +848,22 @@ Expr* ParseFactor(FILE* in)
 			
 			if(exp->callx.decl && !exp->callx.decl->isExtern)
 			{
-				if(exp->callx.decl->numArgs != exp->callx.numArgs)
-					ErrorExit("Function '%s' expected %i argument(s) but you gave it %i\n", name, exp->callx.decl->numArgs, exp->callx.numArgs);
+				// NOTE: Kinda hacky fix to compiler throwing errors when using expand
+				char isExpanded = 0;
+				for(int i = 0; i < exp->callx.numArgs; ++i)
+				{
+					if(exp->callx.args[i]->type == EXP_CALL)
+					{
+						if(strcmp(exp->callx.args[i]->callx.funcName, "expand") == 0)
+							isExpanded = 1;
+					}
+				}
+				
+				if(!isExpanded)
+				{
+					if(exp->callx.decl->numArgs != exp->callx.numArgs)
+						ErrorExit("Function '%s' expected %i argument(s) but you gave it %i\n", name, exp->callx.decl->numArgs, exp->callx.numArgs);
+				}
 			}
 			GetNextToken(in);
 			
@@ -1366,6 +1380,15 @@ char CompileIntrinsic(Expr* exp)
 			CompileExpr(exp->callx.args[i]);
 		AppendCode(OP_CALLP);
 		AppendCode(exp->callx.numArgs - 1);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "expand") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExit("Intrinsic 'expand' takes only 1 argument\n");
+		
+		CompileExpr(exp->callx.args[0]);
+		AppendCode(OP_ARRAY_EXPAND);
 		return 1;
 	}
 	

@@ -11,6 +11,8 @@ extern floor
 var pos
 var vel
 var size
+var update
+var update_data
 
 func _main()
 	MSDL_Init()
@@ -18,6 +20,8 @@ func _main()
 	pos = [0]
 	vel = [0]
 	size = [0]
+	update = [0]
+	update_data = [0]
 	
 	var cen = SDL("SDL_WINDOWPOS_CENTERED")
 	
@@ -35,7 +39,11 @@ func _main()
 	var mousedown = SDL("SDL_MOUSEBUTTONDOWN")
 	var mouseup = SDL("SDL_MOUSEBUTTONUP")
 	
-	init_player(100, 100)
+	for var y = 0, y < 30, y = y + 1
+		for var x = 0, x < 30, x = x + 1
+			init_player(x * 32, y * 32)
+		end
+	end
 	
 	while running
 		while SDL_PollEvent(event)
@@ -63,9 +71,10 @@ func _main()
 			for var i = 0, i < len(pos), i = i + 2
 				pos[i] = pos[i] + vel[i]
 				pos[i + 1] = pos[i + 1] + vel[i + 1]
+				if update[floor(i / 2)] != 0
+					call(update[floor(i / 2)], update_data[floor(i / 2)])
+				end
 			end
-			
-			update_player()
 			
 			time = time - tpf
 		end
