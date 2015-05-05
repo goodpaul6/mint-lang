@@ -11,7 +11,8 @@ static char* ObjectTypeNames[] =
 	"number",
 	"string",
 	"array",
-	"native pointer"
+	"native pointer",
+	"function"
 };
 
 static void* emalloc(size_t size)
@@ -177,6 +178,22 @@ void Std_Assert(VM* vm)
 	}
 }
 
+void Std_Erase(VM* vm)
+{
+	Object* obj = PopArrayObject(vm);
+	int index = (int)PopNumber(vm);
+	
+	if(index < 0 || index >= obj->array.length)
+	{
+		fprintf(stderr, "Attempted to erase non-existent index %i\n", index);
+		exit(1);
+	}
+	
+	if(index < obj->array.length - 1 && obj->array.length > 1)
+		memmove(&obj->array.members[index], &obj->array.members[index + 1], sizeof(Object*) * (obj->array.length - index - 1));
+	--obj->array.length;
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -196,6 +213,7 @@ void InitVM(VM* vm)
 	vm->stringConstants = NULL;
 	
 	vm->gcHead = NULL;
+	vm->freeHead = NULL;
 	
 	vm->numObjects = 0;
 	vm->maxObjectsUntilGc = INIT_GC_THRESH;
@@ -264,6 +282,16 @@ void ResetVM(VM* vm)
 		free(vm->externs);
 		
 	CollectGarbage(vm);
+	
+	Object* obj = vm->freeHead;
+	Object* next = NULL;
+	
+	while(obj)
+	{
+		next = obj->next;
+		free(obj);
+		obj = next;
+	}
 	
 	InitVM(vm);
 }
@@ -395,6 +423,7 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "tostring", Std_Tostring);
 	HookExternNoWarn(vm, "type", Std_Type);
 	HookExternNoWarn(vm, "assert", Std_Assert);
+	HookExternNoWarn(vm, "erase", Std_Erase);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -429,6 +458,18 @@ void HookExternNoWarn(VM* vm, const char* name, ExternFunction func)
 	
 	if(index >= 0 && index < vm->numExterns)
 		vm->externs[index] = func;
+}
+
+void CheckExterns(VM* vm)
+{
+	for(int i = 0; i < vm->numExterns; ++i)
+	{
+		if(!vm->externs[i])
+		{
+			fprintf(stderr, "Unbound extern '%s'\n", vm->externNames[i]);
+			exit(1);
+		}
+	}
 }
 
 int GetFunctionId(VM* vm, const char* name)
@@ -489,8 +530,6 @@ void DeleteObject(Object* obj)
 		free(obj->array.members);
 		obj->array.length = 0;
 	}
-	
-	free(obj);
 }
 
 void Sweep(VM* vm)
@@ -503,6 +542,10 @@ void Sweep(VM* vm)
 			Object* unreached = *obj;
 			*(obj) = unreached->next;
 			DeleteObject(unreached);
+			
+			unreached->next = vm->freeHead;
+			vm->freeHead = unreached;
+			
 			--vm->numObjects;
 		}
 		else 
@@ -541,7 +584,15 @@ Object* NewObject(VM* vm, ObjectType type)
 	if(vm->debug)
 		printf("creating object: %s\n", ObjectTypeNames[type]);
 	
-	Object* obj = emalloc(sizeof(Object));
+	Object* obj;
+	if(!vm->freeHead)
+		obj = emalloc(sizeof(Object));
+	else
+	{
+		obj = vm->freeHead;
+		vm->freeHead = obj->next;
+	}
+	
 	obj->type = type;
 	obj->marked = 0;
 	
@@ -576,6 +627,16 @@ void PushString(VM* vm, const char* string)
 {
 	Object* obj = NewObject(vm, OBJ_STRING);
 	obj->string = estrdup(string);
+	PushObject(vm, obj);
+}
+
+void PushFunc(VM* vm, int id, Word isExtern)
+{
+	Object* obj = NewObject(vm, OBJ_FUNC);
+	
+	obj->func.index = id;
+	obj->func.isExtern = isExtern;
+	
 	PushObject(vm, obj);
 }
 
@@ -616,6 +677,15 @@ const char* PopString(VM* vm)
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_STRING) { fprintf(stderr, "Expected string but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
 	return obj->string;
+}
+
+int PopFunc(VM* vm, Word* isExtern)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_FUNC) { fprintf(stderr, "Expected function but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(isExtern)
+		*isExtern = obj->func.isExtern;
+	return obj->func.index;
 }
 
 Object** PopArray(VM* vm, int* length)
@@ -739,18 +809,32 @@ void ExecuteCycle(VM* vm)
 	
 	switch(vm->program[vm->pc])
 	{
-		case OP_PUSH:
+		case OP_PUSH_NUMBER:
 		{
 			if(vm->debug)
-				printf("push\n");
+				printf("push_number\n");
 			++vm->pc;
-			Word isString = vm->program[vm->pc++];
 			int index = ReadInteger(vm);
-			
-			if(isString)
-				PushString(vm, vm->stringConstants[index]);
-			else
-				PushNumber(vm, vm->numberConstants[index]);
+			PushNumber(vm, vm->numberConstants[index]);
+		} break;
+		
+		case OP_PUSH_STRING:
+		{
+			if(vm->debug)
+				printf("push_string\n");
+			++vm->pc;
+			int index = ReadInteger(vm);
+			PushString(vm, vm->stringConstants[index]);
+		} break;
+		
+		case OP_PUSH_FUNC:
+		{
+			if(vm->debug)
+				printf("push_func\n");
+			Word isExtern = vm->program[++vm->pc];
+			++vm->pc;
+			int index = ReadInteger(vm);
+			PushFunc(vm, index, isExtern);
 		} break;
 
 		case OP_CREATE_ARRAY:
@@ -1004,6 +1088,25 @@ void ExecuteCycle(VM* vm)
 			vm->pc = vm->functionPcs[index];
 		} break;
 		
+		case OP_CALLP:
+		{
+			Word isExtern;		
+			Word nargs = vm->program[++vm->pc];
+			++vm->pc;
+			int id = PopFunc(vm, &isExtern);
+			
+			if(vm->debug)
+				printf("callp %s%s\n", isExtern ? "extern " : "", isExtern ? vm->externNames[id] : vm->functionNames[id]);
+			
+			if(isExtern)
+				vm->externs[id](vm);
+			else
+			{
+				PushIndir(vm, nargs);
+				vm->pc = vm->functionPcs[id];
+			}
+		} break;
+		
 		case OP_RETURN:
 		{
 			if(vm->debug)
@@ -1024,11 +1127,6 @@ void ExecuteCycle(VM* vm)
 		{
 			++vm->pc;
 			int index = ReadInteger(vm);
-			if(index < 0 || index >= vm->numExterns)
-			{
-				fprintf(stderr, "Invalid extern index %i\n", index);
-				exit(1);
-			}
 			if(vm->debug)
 				printf("callf %s\n", vm->externNames[index]);
 			vm->externs[index](vm);

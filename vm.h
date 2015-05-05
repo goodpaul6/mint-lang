@@ -9,8 +9,10 @@ typedef unsigned char Word;
 
 enum
 {
-	OP_PUSH,
+	OP_PUSH_NUMBER,
+	OP_PUSH_STRING,
 	OP_CREATE_ARRAY,
+	OP_PUSH_FUNC,
 	
 	OP_LENGTH,
 	OP_ARRAY_PUSH,
@@ -48,6 +50,7 @@ enum
 	OP_GOTOZ,
 
 	OP_CALL,
+	OP_CALLP,
 	OP_RETURN,
 	OP_RETURN_VALUE,
 
@@ -66,7 +69,8 @@ typedef enum
 	OBJ_NUMBER,
 	OBJ_STRING,
 	OBJ_ARRAY,
-	OBJ_NATIVE
+	OBJ_NATIVE,
+	OBJ_FUNC
 } ObjectType;
 
 typedef struct _Object
@@ -94,6 +98,8 @@ typedef struct _Object
 			void (*onFree)(void*);
 			void (*onMark)(void*);
 		} native;
+		
+		struct { int index; Word isExtern; } func;
 	};
 } Object;
  
@@ -121,6 +127,7 @@ typedef struct _VM
 	char** stringConstants;
 	
 	Object* gcHead;
+	Object* freeHead;
 	
 	int numObjects;
 	int maxObjectsUntilGc;
@@ -150,18 +157,22 @@ void HookStandardLibrary(VM* vm);
 void HookExtern(VM* vm, const char* name, ExternFunction func);
 void HookExternNoWarn(VM* vm, const char* name, ExternFunction func);
 
+void CheckExterns(VM* vm);
+
 int GetFunctionId(VM* vm, const char* name);
 void CallFunction(VM* vm, int id, Word numArgs);
 
 void PushObject(VM* vm, Object* obj);
 void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
+void PushFunc(VM* vm, int id, Word isExtern);
 Object* PushArray(VM* vm, int length);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
 
 Object* PopObject(VM* vm);
 double PopNumber(VM* vm);
 const char* PopString(VM* vm);
+int PopFunc(VM* vm, Word* isExtern);
 Object** PopArray(VM* vm, int* length);
 Object* PopArrayObject(VM* vm);
 void* PopNative(VM* vm);

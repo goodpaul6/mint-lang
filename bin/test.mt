@@ -6,41 +6,18 @@ extern sin
 extern sqrt
 extern atan2
 
+extern floor
+
 var pos
 var vel
-
-# mint virtual machine (mint-lang)
-
-func abs(x)
-	if x < 0
-		return -x
-	else 
-		return x
-	end
-end
-
-func accel(x, y)
-	for var i = 0, i < len(vel), i = i + 2	
-		vel[i] = vel[i] + x
-		vel[i + 1] = vel[i + 1] + y
-	end
-end
+var size
 
 func _main()
 	MSDL_Init()
 	
 	pos = [0]
 	vel = [0]
-	
-	for var y = 0, y < 45, y = y + 1
-		for var x = 0, x < 45, x = x + 1
-			push(pos, x * 36)
-			push(pos, y * 36)
-			
-			push(vel, 0)
-			push(vel, 0)
-		end
-	end
+	size = [0]
 	
 	var cen = SDL("SDL_WINDOWPOS_CENTERED")
 	
@@ -51,17 +28,29 @@ func _main()
 	var last = SDL_GetTicks()
 	var time = 0
 	
-	var plen = len(pos)
 	var tpf = (1000 / 60)
 	
 	var running = true
 	var quit = SDL("SDL_QUIT")
+	var mousedown = SDL("SDL_MOUSEBUTTONDOWN")
+	var mouseup = SDL("SDL_MOUSEBUTTONUP")
+	
+	init_player(100, 100)
+	
 	while running
 		while SDL_PollEvent(event)
 			if SDL_EventType(event) == quit
 				running = false
 			end
+			
+			if SDL_EventType(event) == mousedown
+				is_mouse_down = true
+			elif SDL_EventType(event) == mouseup
+				is_mouse_down = false
+			end
 		end
+		
+		SDL_GetMousePos(mouse_x, mouse_y)
 		
 		time = time + (SDL_GetTicks() - last)
 		last = SDL_GetTicks()
@@ -71,34 +60,22 @@ func _main()
 		end
 		
 		while time >= tpf
-			for var i = 0, i < plen, i = i + 2
+			for var i = 0, i < len(pos), i = i + 2
 				pos[i] = pos[i] + vel[i]
 				pos[i + 1] = pos[i + 1] + vel[i + 1]
-				
-				vel[i] = vel[i] * 0.90
-				vel[i + 1] = vel[i + 1] * 0.90
 			end
-		
-			if SDL_IsKeyDown(kleft) 
-				accel(-2, 0)
-			elif SDL_IsKeyDown(kright)
-				accel(2, 0)
-			elif SDL_IsKeyDown(kup)
-				accel(0, -2)
-			elif SDL_IsKeyDown(kdown)
-				accel(0, 2)
-			end
+			
+			update_player()
 			
 			time = time - tpf
 		end
 			
 		SDL_RenderClear(renderer)
-		for var i = 0, i < plen, i = i + 2
+		for var i = 0, i < len(pos), i = i + 2
 			if (pos[i + 1] >= -32) && (pos[i] >= -32)
 				if (pos[i] < 640) && (pos[i + 1] < 480)
-					var v = (1 - i / len(pos)) * 255
-					SDL_SetRenderDrawColor(renderer, 255 - v, v, v, 255)
-					SDL_RenderFillRect(renderer, pos[i], pos[i + 1], 32, 32)
+					SDL_SetRenderDrawColor(renderer, 128, 255, 255, 255)
+					SDL_RenderFillRect(renderer, pos[i], pos[i + 1], size[floor(i / 2)], size[floor(i / 2)])
 				end
 			end
 		end

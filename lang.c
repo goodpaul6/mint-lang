@@ -429,7 +429,7 @@ void RegisterArgument(const char* name, int numArgs)
 		ErrorExit("(INTERNAL) Must be inside function when registering arguments\n");
 	
 	VarDecl* decl = RegisterVariable(name);
-	decl->index = -numArgs + CurFunc->numArgs++;
+	decl->index = -(++CurFunc->numArgs);
 }
 
 VarDecl* ReferenceVariable(const char* name)
@@ -1112,7 +1112,7 @@ Expr* ParseUnary(FILE* in)
 {
 	switch(CurTok)
 	{
-		case '-': case '!':
+		case '-': case '!': case '@':
 		{
 			int op = CurTok;
 			
@@ -1357,6 +1357,14 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_ARRAY_CLEAR);
 		return 1;
 	}
+	else if(strcmp(exp->callx.funcName, "call") == 0)
+	{
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+			CompileExpr(exp->callx.args[i]);
+		AppendCode(OP_CALLP);
+		AppendCode(exp->callx.numArgs - 1);
+		return 1;
+	}
 	
 	return 0;
 }
@@ -1368,18 +1376,34 @@ void CompileExpr(Expr* exp)
 	{
 		case EXP_NUMBER: case EXP_STRING:
 		{
-			AppendCode(OP_PUSH);
-			AppendCode(exp->constDecl->type == CONST_NUM ? 0 : 1);
+			AppendCode(exp->constDecl->type == CONST_NUM ? OP_PUSH_NUMBER : OP_PUSH_STRING);
 			AppendInt(exp->constDecl->index);
 		} break;
 		
 		case EXP_UNARY:
 		{
-			CompileExpr(exp->unaryx.expr);
 			switch(exp->unaryx.op)
 			{
-				case '-': AppendCode(OP_NEG); break;
-				case '!': AppendCode(OP_LOGICAL_NOT); break;
+				case '-': CompileExpr(exp->unaryx.expr); AppendCode(OP_NEG); break;
+				case '!': CompileExpr(exp->unaryx.expr); AppendCode(OP_LOGICAL_NOT); break;
+				case '@':
+				{
+					Expr* func = exp->unaryx.expr;
+					if(func->type == EXP_IDENT)
+					{
+						if(func->varx.varDecl)
+							ErrorExit("Cannot reference variable '%s' using '@' operator\n", func->varx.name);
+						FuncDecl* decl = ReferenceFunction(func->varx.name);
+						if(!decl)
+							ErrorExit("Attempted to reference non-existent function '%s'\n", func->varx.name);
+						
+						AppendCode(OP_PUSH_FUNC);
+						AppendCode(decl->isExtern);
+						AppendInt(decl->index);
+					}
+					else
+						ErrorExit("Cannot apply '@' operator to anything but an identifier\n");
+				} break;
 			}
 		} break;
 		
@@ -1430,18 +1454,10 @@ void CompileExpr(Expr* exp)
 					
 					exp->callx.decl = decl;
 				}
-				
-				if(exp->callx.decl->isExtern)
-				{
-					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-						CompileExpr(exp->callx.args[i]);
-				}
-				else
-				{
-					for(int i = 0; i < exp->callx.numArgs; ++i)
-						CompileExpr(exp->callx.args[i]);
-				}
-					
+			
+				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+					CompileExpr(exp->callx.args[i]);
+		
 				
 				if(!exp->callx.decl->isExtern)
 				{
@@ -1587,8 +1603,7 @@ void CompileExpr(Expr* exp)
 			if(strcmp(exp->funcx.decl->name, "_main") == 0) EntryPoint = CodeLength;
 			for(int i = 0; i < exp->funcx.decl->numLocals; ++i)
 			{
-				AppendCode(OP_PUSH);
-				AppendCode(0);
+				AppendCode(OP_PUSH_NUMBER);
 				AppendInt(RegisterNumber(0)->index);
 			}
 			

@@ -123,6 +123,18 @@ void Ext_SDL_GetTicks(VM* vm)
 	PushNumber(vm, SDL_GetTicks());
 }
 
+void Ext_SDL_GetMousePos(VM* vm)
+{
+	Object* refX = PopObject(vm);
+	Object* refY = PopObject(vm);
+	
+	int vx, vy;
+	SDL_GetMouseState(&vx, &vy);
+
+	refX->number = vx;
+	refY->number = vy;
+}
+
 void Ext_SDL(VM* vm)
 {
 	const char* name = PopString(vm);
@@ -143,19 +155,15 @@ void Ext_SDL(VM* vm)
 		PushNumber(vm, SDL_QUIT);
 	else if(strcmp(name, "SDL_KEYDOWN") == 0)
 		PushNumber(vm, SDL_KEYDOWN);
+	else if(strcmp(name, "SDL_MOUSEBUTTONDOWN") == 0)
+		PushNumber(vm, SDL_MOUSEBUTTONDOWN);
+	else if(strcmp(name, "SDL_MOUSEBUTTONUP") == 0)
+		PushNumber(vm, SDL_MOUSEBUTTONUP);
 	else 
 	{
 		printf("Invalid SDL constant %s\nPushing 0...", name);
 		PushNumber(vm, 0);
 	}
-}
-
-void Ext_Print(VM* vm)
-{
-	Object* obj = PopObject(vm);
-	
-	if(obj->type == OBJ_NUMBER) printf("%g\n", obj->number);
-	else printf("%s\n", obj->string);
 }
 
 void Ext_SDL_Delay(VM* vm)
@@ -194,7 +202,6 @@ int main(int argc, char* argv[])
 		
 		HookStandardLibrary(vm);
 		
-		HookExternNoWarn(vm, "print", Ext_Print);
 		HookExternNoWarn(vm, "SDL_Init", Ext_SDL_Init);
 		HookExternNoWarn(vm, "SDL_Quit", Ext_SDL_Quit);
 		HookExternNoWarn(vm, "SDL", Ext_SDL);
@@ -210,6 +217,9 @@ int main(int argc, char* argv[])
 		HookExternNoWarn(vm, "SDL_SetRenderDrawColor", Ext_SDL_SetRenderDrawColor);
 		HookExternNoWarn(vm, "SDL_GetTicks", Ext_SDL_GetTicks);
 		HookExternNoWarn(vm, "SDL_Delay", Ext_SDL_Delay);
+		HookExternNoWarn(vm, "SDL_GetMousePos", Ext_SDL_GetMousePos);
+		
+		CheckExterns(vm);
 		
 		int mainId = GetFunctionId(vm, "_main");
 		
