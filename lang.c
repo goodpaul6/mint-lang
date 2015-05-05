@@ -1359,6 +1359,9 @@ char CompileIntrinsic(Expr* exp)
 	}
 	else if(strcmp(exp->callx.funcName, "call") == 0)
 	{
+		if(exp->callx.numArgs < 1)
+			ErrorExit("Intrinsic 'call' takes at least 1 argument (the function reference)\n");
+		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileExpr(exp->callx.args[i]);
 		AppendCode(OP_CALLP);
