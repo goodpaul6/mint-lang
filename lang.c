@@ -667,7 +667,7 @@ typedef struct _Expr
 		FuncDecl* extDecl;
 		struct { struct _Expr *cond, *bodyHead, *alt; } ifx;
 		struct _Expr* retExpr;
-		struct _Expr* lengthExpr;
+		struct { struct _Expr* head; int length; } arrayx;
 		struct { struct _Expr* arrExpr; struct _Expr* indexExpr; } arrayIndex;
 		struct { int op; struct _Expr* expr; } unaryx;
 		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
@@ -804,12 +804,28 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			Expr* exp = CreateExpr(EXP_ARRAY_LITERAL);
-			exp->lengthExpr = ParseExpr(in);
-		
-			if(CurTok != ']')
-				ErrorExit("Expected ']' after previous '['\n");
 			
+			Expr* exprHead = NULL;
+			Expr* exprCurrent = NULL;
+			int len = 0;
+			while(CurTok != ']')
+			{
+				if(!exprHead)
+				{
+					exprHead = ParseExpr(in);
+					exprCurrent = exprHead;
+				}
+				else
+				{
+					exprCurrent->next = ParseExpr(in);
+					exprCurrent = exprCurrent->next;
+				}
+				if(CurTok == ',') GetNextToken(in);
+				++len;
+			}			
 			GetNextToken(in);
+			exp->arrayx.head = exprHead;
+			exp->arrayx.length = len;
 			
 			return exp;
 		} break;
@@ -1368,6 +1384,29 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(exp->callx.numArgs - 1);
 		return 1;
 	}
+	else if(strcmp(exp->callx.funcName, "array") == 0)
+	{
+		if(exp->callx.numArgs > 1)
+			ErrorExit("Intrinsic 'array' only takes no more than 1 argument\n");
+			
+		if(exp->callx.numArgs == 1)
+			CompileExpr(exp->callx.args[0]);
+		else
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(0)->index);
+		}
+	
+		AppendCode(OP_CREATE_ARRAY);
+		return 1;
+	}
+	else if(strcmp(exp->callx.funcName, "dict") == 0)
+	{
+		if(exp->callx.numArgs != 0)
+			ErrorExit("Intrinsic 'dict' takes no arguments\n");
+		AppendCode(OP_PUSH_DICT);
+		return 1; 
+	}
 	
 	return 0;
 }
@@ -1412,8 +1451,9 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_ARRAY_LITERAL:
 		{
-			CompileExpr(exp->lengthExpr);
-			AppendCode(OP_CREATE_ARRAY);
+			CompileExprList(exp->arrayx.head);
+			AppendCode(OP_CREATE_ARRAY_BLOCK);
+			AppendInt(exp->arrayx.length);
 		} break;
 		
 		case EXP_IDENT:
@@ -1584,8 +1624,13 @@ void CompileExpr(Expr* exp)
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
 			CompileExprList(exp->ifx.bodyHead);
-			EmplaceInt(emplaceLoc, CodeLength);
+			
+			AppendCode(OP_GOTO);
+			int exitEmplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+			
 		
+			EmplaceInt(emplaceLoc, CodeLength);
 			if(exp->ifx.alt)
 			{
 				if(exp->ifx.alt->type != EXP_IF)
@@ -1593,6 +1638,7 @@ void CompileExpr(Expr* exp)
 				else
 					CompileExpr(exp->ifx.alt);
 			}
+			EmplaceInt(exitEmplaceLoc, CodeLength);
 		} break;
 		
 		case EXP_FUNC:

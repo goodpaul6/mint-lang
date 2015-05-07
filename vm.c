@@ -12,7 +12,8 @@ static char* ObjectTypeNames[] =
 	"string",
 	"array",
 	"native pointer",
-	"function"
+	"function",
+	"dictionary"
 };
 
 static void* emalloc(size_t size)
@@ -502,6 +503,19 @@ void MarkObject(Object* obj)
 				MarkObject(mem);
 		}
 	}
+	if(obj->type == OBJ_DICT)
+	{
+		for(int i = 0; i < obj->dict.capacity; ++i)
+		{	
+			DictNode* node = obj->dict.buckets[i];
+			
+			while(node)
+			{
+				MarkObject(node->value);
+				node = node->next;
+			}
+		}
+	}
 
 	obj->marked = 1;
 }
@@ -519,7 +533,7 @@ void MarkAll(VM* vm)
 void DeleteObject(Object* obj)
 {
 	if(obj->type == OBJ_STRING)
-		free(obj->string);
+		free(obj->string.raw);
 	if(obj->type == OBJ_NATIVE)
 	{
 		if(obj->native.onFree)
@@ -528,8 +542,11 @@ void DeleteObject(Object* obj)
 	if(obj->type == OBJ_ARRAY)
 	{
 		free(obj->array.members);
+		obj->array.capacity = 0;
 		obj->array.length = 0;
 	}
+	if(obj->type == OBJ_DICT)
+		FreeDict(&obj->dict);
 }
 
 void Sweep(VM* vm)
@@ -626,7 +643,9 @@ void PushNumber(VM* vm, double value)
 void PushString(VM* vm, const char* string)
 {
 	Object* obj = NewObject(vm, OBJ_STRING);
-	obj->string = estrdup(string);
+	
+	obj->string.raw = estrdup(string);
+	
 	PushObject(vm, obj);
 }
 
@@ -656,6 +675,14 @@ Object* PushArray(VM* vm, int length)
 	return obj;
 }
 
+Object* PushDict(VM* vm)
+{
+	Object* obj = NewObject(vm, OBJ_DICT);
+	InitDict(&obj->dict);
+	PushObject(vm, obj);
+	return obj;
+}
+
 void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)())
 {
 	Object* obj = NewObject(vm, OBJ_NATIVE);
@@ -676,7 +703,7 @@ const char* PopString(VM* vm)
 {
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_STRING) { fprintf(stderr, "Expected string but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
-	return obj->string;
+	return obj->string.raw;
 }
 
 int PopFunc(VM* vm, Word* isExtern)
@@ -701,6 +728,13 @@ Object* PopArrayObject(VM* vm)
 {
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_ARRAY) { fprintf(stderr, "Expected array but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	return obj;
+}
+
+Object* PopDict(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_DICT) { fprintf(stderr, "Expected dictionary but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
 	return obj;
 }
 
@@ -836,6 +870,14 @@ void ExecuteCycle(VM* vm)
 			int index = ReadInteger(vm);
 			PushFunc(vm, index, isExtern);
 		} break;
+		
+		case OP_PUSH_DICT:
+		{
+			if(vm->debug)
+				printf("push_dict\n");
+			++vm->pc;
+			PushDict(vm);
+		} break;
 
 		case OP_CREATE_ARRAY:
 		{
@@ -845,6 +887,19 @@ void ExecuteCycle(VM* vm)
 			int length = (int)PopNumber(vm);
 			PushArray(vm, length);
 		} break;
+		
+		case OP_CREATE_ARRAY_BLOCK:
+		{
+			if(vm->debug)
+				printf("create_array_block\n");
+			++vm->pc;
+			int length = ReadInteger(vm);
+			Object* obj = PushArray(vm, length);
+			for(int i = 0; i < length; ++i)
+				obj->array.members[length - i - 1] = vm->stack[vm->stackSize - 2 - i];
+			vm->stackSize -= length;
+			vm->stack[vm->stackSize - 1] = obj;
+		} break;
 
 		case OP_LENGTH:
 		{
@@ -853,7 +908,7 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			Object* obj = PopObject(vm);
 			if(obj->type == OBJ_STRING)
-				PushNumber(vm, strlen(obj->string));
+				PushNumber(vm, strlen(obj->string.raw));
 			else if(obj->type == OBJ_ARRAY)
 				PushNumber(vm, obj->array.length);
 			else
@@ -918,10 +973,38 @@ void ExecuteCycle(VM* vm)
 		BIN_OP(LTE, <=)
 		BIN_OP(GT, >)
 		BIN_OP(GTE, >=)
-		BIN_OP(EQU, ==)
-		BIN_OP(NEQU, !=)
 		BIN_OP_TYPE(LOGICAL_AND, &&, int)
 		BIN_OP_TYPE(LOGICAL_OR, ||, int)
+		
+		case OP_EQU:
+		{
+			++vm->pc;
+			Object* o2 = PopObject(vm);
+			Object* o1 = PopObject(vm);
+			
+			if(o1->type != o2->type) PushNumber(vm, 0);
+			else
+			{
+				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
+				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number == o2->number); }
+				else PushNumber(vm, o1 == o2);
+			}
+		} break;
+		
+		case OP_NEQU:
+		{
+			++vm->pc;
+			Object* o2 = PopObject(vm);
+			Object* o1 = PopObject(vm);
+			
+			if(o1->type != o2->type) PushNumber(vm, 1);
+			else
+			{
+				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) != 0); }
+				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number != o2->number); }
+				else PushNumber(vm, o1 != o2);
+			}
+		} break;
 		
 		case OP_NEG:
 		{
@@ -947,18 +1030,62 @@ void ExecuteCycle(VM* vm)
 		{
 			++vm->pc;
 
-			int arrayLength;
-			Object** members = PopArray(vm, &arrayLength);
-			int index = (int)PopNumber(vm);
+			Object* obj = PopObject(vm);
+			Object* indexObj = PopObject(vm);
 			Object* value = PopObject(vm);
 			if(vm->debug)
-				printf("setindex %i\n", index);
+				printf("setindex\n");
 			
-			if(index >= 0 && index < arrayLength)
-				members[index] = value;
+			if(obj->type == OBJ_ARRAY)
+			{
+				if(indexObj->type != OBJ_NUMBER)
+				{
+					fprintf(stderr, "Attempted to index array with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
+					exit(1);
+				}
+				
+				int index = (int)indexObj->number;
+				
+				int arrayLength = obj->array.length;
+				Object** members = obj->array.members;
+				
+				if(index >= 0 && index < arrayLength)
+					members[index] = value;
+				else
+				{
+					fprintf(stderr, "Invalid array index %i\n", index);
+					exit(1);
+				}
+			}
+			else if(obj->type == OBJ_STRING)
+			{				
+				if(indexObj->type != OBJ_NUMBER)
+				{
+					fprintf(stderr, "Attempted to index string with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
+					exit(1);
+				}
+				
+				if(value->type != OBJ_NUMBER)
+				{
+					fprintf(stderr, "Attempted to assign a %s to an index of a string '%s' (expected number/character)\n", ObjectTypeNames[value->type], obj->string.raw);
+					exit(1);
+				}
+				
+				obj->string.raw[(int)indexObj->number] = (char)value->number;
+			}
+			else if(obj->type == OBJ_DICT)
+			{
+				if(indexObj->type != OBJ_STRING)
+				{
+					fprintf(stderr, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
+					exit(1);
+				}
+				
+				DictPut(&obj->dict, indexObj->string.raw, value);
+			}
 			else
 			{
-				fprintf(stderr, "Invalid array index %i\n", index);
+				fprintf(stderr, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
 				exit(1);
 			}
 		} break;
@@ -968,12 +1095,21 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 
 			Object* obj = PopObject(vm);
-			int index = (int)PopNumber(vm);
+			Object* indexObj = PopObject(vm);
 
 			if(obj->type == OBJ_ARRAY)
 			{
+				if(indexObj->type != OBJ_NUMBER)
+				{
+					fprintf(stderr, "Attempted to index array with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
+					exit(1);
+				}
+				
+				int index = (int)indexObj->number;
+				
 				int arrayLength = obj->array.length;
 				Object** members = obj->array.members;
+				
 				
 				if(index >= 0 && index < arrayLength)
 				{
@@ -994,7 +1130,25 @@ void ExecuteCycle(VM* vm)
 				}
 			}
 			else if(obj->type == OBJ_STRING)
-				PushNumber(vm, obj->string[index]);
+			{
+				if(indexObj->type != OBJ_NUMBER)
+				{
+					fprintf(stderr, "Attempted to index string with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
+					exit(1);
+				}
+				
+				PushNumber(vm, obj->string.raw[(int)indexObj->number]);
+			}
+			else if(obj->type == OBJ_DICT)
+			{
+				if(indexObj->type != OBJ_STRING)
+				{
+					fprintf(stderr, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
+					exit(1);
+				}
+				
+				PushObject(vm, DictGet(&obj->dict, indexObj->string.raw));
+			}
 			else 
 			{
 				fprintf(stderr, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
@@ -1156,6 +1310,10 @@ void ExecuteCycle(VM* vm)
 				printf("halt\n");
 			vm->pc = -1;
 		} break;
+		
+		default:
+			printf("Invalid instruction %i\n", vm->program[vm->pc]);
+			break;
 	}
 }
 

@@ -1,5 +1,7 @@
-#ifndef TINY_VM_H
-#define TINY_VM_H
+#ifndef MINT_VM_H
+#define MINT_VM_H
+
+#include "dict.h"
 
 #include <stdio.h>
 
@@ -12,13 +14,15 @@ enum
 	OP_PUSH_NUMBER,
 	OP_PUSH_STRING,
 	OP_CREATE_ARRAY,
+	OP_CREATE_ARRAY_BLOCK,
 	OP_PUSH_FUNC,
+	OP_PUSH_DICT,
 	
 	OP_LENGTH,
 	OP_ARRAY_PUSH,
 	OP_ARRAY_POP,
 	OP_ARRAY_CLEAR,
-
+	
 	OP_ADD,
 	OP_SUB,
 	OP_MUL,
@@ -70,7 +74,8 @@ typedef enum
 	OBJ_STRING,
 	OBJ_ARRAY,
 	OBJ_NATIVE,
-	OBJ_FUNC
+	OBJ_FUNC,
+	OBJ_DICT,
 } ObjectType;
 
 typedef struct _Object
@@ -83,7 +88,7 @@ typedef struct _Object
 	union
 	{
 		double number;
-		char* string;
+		struct { char* raw; } string;
 		
 		struct
 		{
@@ -100,12 +105,14 @@ typedef struct _Object
 		} native;
 		
 		struct { int index; Word isExtern; } func;
+		
+		Dict dict;
 	};
 } Object;
  
 #define MAX_INDIR		1024
 #define MAX_STACK		1024
-#define INIT_GC_THRESH	128
+#define INIT_GC_THRESH	32
 
 typedef struct _VM
 {
@@ -167,6 +174,7 @@ void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
 void PushFunc(VM* vm, int id, Word isExtern);
 Object* PushArray(VM* vm, int length);
+Object* PushDict(VM* vm);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
 
 Object* PopObject(VM* vm);
@@ -175,6 +183,7 @@ const char* PopString(VM* vm);
 int PopFunc(VM* vm, Word* isExtern);
 Object** PopArray(VM* vm, int* length);
 Object* PopArrayObject(VM* vm);
+Object* PopDict(VM* vm);
 void* PopNative(VM* vm);
 
 void RunVM(VM* vm);
