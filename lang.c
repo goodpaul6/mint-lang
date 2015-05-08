@@ -1,7 +1,6 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - dictionary literal (use = instead of ':' or something)
  * - fix error message line numbers (store line numbers in expressions)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
