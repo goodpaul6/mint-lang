@@ -6,8 +6,11 @@
 #include <math.h>
 #include <malloc.h>
 
+Object NullObject;
+
 static char* ObjectTypeNames[] =
 {
+	"null",
 	"number",
 	"string",
 	"array",
@@ -199,6 +202,8 @@ void Std_Erase(VM* vm)
 
 void InitVM(VM* vm)
 {
+	NullObject.type = OBJ_NULL;
+	
 	vm->program = NULL;
 	vm->programLength = 0;
 	
@@ -290,7 +295,7 @@ void ResetVM(VM* vm)
 	while(obj)
 	{
 		next = obj->next;
-		free(obj);
+		if(obj->type != OBJ_NULL) free(obj);
 		obj = next;
 	}
 	
@@ -843,6 +848,14 @@ void ExecuteCycle(VM* vm)
 	
 	switch(vm->program[vm->pc])
 	{
+		case OP_PUSH_NULL:
+		{
+			if(vm->debug)
+				printf("push_null\n");
+			++vm->pc;
+			PushObject(vm, &NullObject);
+		} break;
+		
 		case OP_PUSH_NUMBER:
 		{
 			if(vm->debug)
@@ -879,6 +892,23 @@ void ExecuteCycle(VM* vm)
 			PushDict(vm);
 		} break;
 
+		case OP_CREATE_DICT_BLOCK:
+		{
+			if(vm->debug)
+				printf("create_dict_block\n");
+			++vm->pc;
+			int length = ReadInteger(vm);
+			Object* obj = PushDict(vm);
+			if(length > 0)
+			{
+				// stack (before dict) is filled with key-value pairs (backwards, key is higher on stack)
+				for(int i = 0; i < length * 2; i += 2)
+					DictPut(&obj->dict, vm->stack[vm->stackSize - i - 2]->string.raw, vm->stack[vm->stackSize - i - 3]);
+				vm->stackSize -= length * 2;
+				vm->stack[vm->stackSize - 1] = obj;
+			}
+		} break;
+
 		case OP_CREATE_ARRAY:
 		{
 			if(vm->debug)
@@ -895,10 +925,13 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			int length = ReadInteger(vm);
 			Object* obj = PushArray(vm, length);
-			for(int i = 0; i < length; ++i)
-				obj->array.members[length - i - 1] = vm->stack[vm->stackSize - 2 - i];
-			vm->stackSize -= length;
-			vm->stack[vm->stackSize - 1] = obj;
+			if(length > 0)
+			{
+				for(int i = 0; i < length; ++i)
+					obj->array.members[length - i - 1] = vm->stack[vm->stackSize - 2 - i];
+				vm->stackSize -= length;
+				vm->stack[vm->stackSize - 1] = obj;
+			}
 		} break;
 
 		case OP_LENGTH:
@@ -940,6 +973,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("array_pop\n");
+			++vm->pc;
 			Object* obj = PopArrayObject(vm);
 			if(obj->array.length <= 0)
 			{
@@ -957,6 +991,33 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			Object* obj = PopArrayObject(vm);
 			obj->array.length = 0;
+		} break;
+
+		case OP_DICT_SET:
+		{
+			if(vm->debug)
+				printf("dict_set\n");
+			++vm->pc;
+			Object* obj = PopDict(vm);
+			const char* key = PopString(vm);
+			Object* value = PopObject(vm);
+			
+			DictPut(&obj->dict, key, value);
+		} break;
+		
+		case OP_DICT_GET:
+		{
+			if(vm->debug)
+				printf("dict_get\n");
+			++vm->pc;
+			Object* obj = PopDict(vm);
+			const char* key = PopString(vm);
+			
+			Object* value = DictGet(&obj->dict, key);
+			if(value)
+				PushObject(vm, value);
+			else
+				PushNumber(vm, 0);
 		} break;
 	
 		#define BIN_OP_TYPE(op, operator, type) case OP_##op: { if(vm->debug) printf("%s\n", #op); Object* val2 = PopObject(vm); Object* val1 = PopObject(vm); PushNumber(vm, (type)val1->number operator (type)val2->number); ++vm->pc; } break;

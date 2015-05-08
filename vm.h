@@ -11,17 +11,23 @@ typedef unsigned char Word;
 
 enum
 {
+	OP_PUSH_NULL,
 	OP_PUSH_NUMBER,
 	OP_PUSH_STRING,
 	OP_CREATE_ARRAY,
 	OP_CREATE_ARRAY_BLOCK,
 	OP_PUSH_FUNC,
 	OP_PUSH_DICT,
+	OP_CREATE_DICT_BLOCK,
 	
 	OP_LENGTH,
 	OP_ARRAY_PUSH,
 	OP_ARRAY_POP,
 	OP_ARRAY_CLEAR,
+	
+	// fast dictionary operations
+	OP_DICT_SET,
+	OP_DICT_GET,
 	
 	OP_ADD,
 	OP_SUB,
@@ -70,6 +76,7 @@ enum
 
 typedef enum 
 {
+	OBJ_NULL,
 	OBJ_NUMBER,
 	OBJ_STRING,
 	OBJ_ARRAY,
@@ -112,7 +119,7 @@ typedef struct _Object
  
 #define MAX_INDIR		1024
 #define MAX_STACK		1024
-#define INIT_GC_THRESH	32
+#define INIT_GC_THRESH	128
 
 typedef struct _VM
 {

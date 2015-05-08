@@ -1,7 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - dictionary literal (use = instead of ':' or something)
+ * - throw error when variables are assigned to the return values of void functions (store whether a func's void in the funcdecl)
  * - fix error message line numbers (store line numbers in expressions)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
@@ -120,8 +120,6 @@ typedef struct _FuncDecl
 	int numLocals;
 	Word numArgs;
 	int pc;
-	
-	int type;
 } FuncDecl;
 
 typedef struct _VarDecl
@@ -131,8 +129,6 @@ typedef struct _VarDecl
 	char isGlobal;
 	char name[MAX_ID_NAME_LENGTH];
 	int index;
-	
-	int type;
 } VarDecl;
 
 ConstDecl* Constants = NULL;
@@ -327,7 +323,6 @@ FuncDecl* RegisterExtern(const char* name)
 	}
 	
 	decl->isExtern = 1;
-	
 	strcpy(decl->name, name);
 	
 	decl->index = NumExterns++;
@@ -367,7 +362,6 @@ FuncDecl* EnterFunction(const char* name)
 	}
 	
 	decl->isExtern = 0;
-	
 	strcpy(decl->name, name);
 	decl->index = NumFunctions++;
 	decl->numArgs = 0;
@@ -425,8 +419,6 @@ VarDecl* RegisterVariable(const char* name)
 	}
 	else
 		decl->index = CurFunc->numLocals++;
-	
-	decl->type = -1;
 	
 	return decl;
 }
@@ -655,10 +647,7 @@ typedef enum
 	EXP_ARRAY_LITERAL,
 	EXP_ARRAY_INDEX,
 	EXP_UNARY,
-	EXP_FOR,
-	EXP_DOT,
-	EXP_DICT_LITERAL,
-	EXP_NULL
+	EXP_FOR
 } ExprType;
 
 typedef struct _Expr
@@ -682,8 +671,6 @@ typedef struct _Expr
 		struct { struct _Expr* arrExpr; struct _Expr* indexExpr; } arrayIndex;
 		struct { int op; struct _Expr* expr; } unaryx;
 		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
-		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
-		struct { struct _Expr* pairsHead; int length; } dictx;
 	};
 } Expr;
 
@@ -812,13 +799,6 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 		
-		case EXP_NULL:
-		{
-			GetNextToken(in);
-			Expr* exp = CreateExpr(EXP_NULL);
-			return exp;
-		} break;
-		
 		case '[':
 		{
 			GetNextToken(in);
@@ -846,37 +826,6 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			exp->arrayx.head = exprHead;
 			exp->arrayx.length = len;
-			
-			return exp;
-		} break;
-		
-		case '{':
-		{
-			GetNextToken(in);
-			
-			Expr* exp = CreateExpr(EXP_DICT_LITERAL);
-			
-			Expr* exprHead = NULL;
-			Expr* exprCurrent = NULL;
-			int len = 0;
-			while(CurTok != '}')
-			{
-				if(!exprHead)
-				{
-					exprHead = ParseExpr(in);
-					exprCurrent = exprHead;
-				}
-				else
-				{
-					exprCurrent->next = ParseExpr(in);
-					exprCurrent = exprCurrent->next;
-				}
-				if(CurTok == ',') GetNextToken(in);
-				++len;
-			}			
-			GetNextToken(in);
-			exp->dictx.pairsHead = exprHead;
-			exp->dictx.length = len;
 			
 			return exp;
 		} break;
@@ -947,7 +896,10 @@ Expr* ParseFactor(FILE* in)
 			exp->parenExpr = ParseExpr(in);
 			
 			if(CurTok != ')')
+			{
 				ErrorExit("Expected ')' after previous '('\n");
+				
+			}
 			
 			GetNextToken(in);
 			
@@ -1118,7 +1070,6 @@ Expr* ParseFactor(FILE* in)
 					exp->retExpr = ParseExpr(in);
 					return exp;
 				}
-				
 				GetNextToken(in);
 			
 				exp->retExpr = NULL;
@@ -1150,16 +1101,6 @@ Expr* ParseFactor(FILE* in)
 	return NULL;
 }
 
-char IsPostOperator()
-{
-	switch(CurTok)
-	{
-		case '[': case '.': 
-			return 1;
-	}
-	return 0;
-}
-
 Expr* ParsePost(FILE* in, Expr* pre)
 {
 	switch(CurTok)
@@ -1174,24 +1115,8 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			if(CurTok != ']')
 				ErrorExit("Expected ']' after previous '['\n");
 			GetNextToken(in);
-			if(!IsPostOperator()) return exp;
-			return ParsePost(in, exp);
-		} break;
-		
-		case '.':
-		{
-			GetNextToken(in);
-			
-			if(CurTok != TOK_IDENT)
-				ErrorExit("Expected identfier after '.'\n");
-			
-			Expr* exp = CreateExpr(EXP_DOT);
-			strcpy(exp->dotx.name, Lexeme);
-			exp->dotx.dict = pre;
-			
-			GetNextToken(in);
-			if(!IsPostOperator()) return exp;
-			return ParsePost(in, exp);
+			if(CurTok != '[') return exp;
+			else ParsePost(in, exp);
 		} break;
 		
 		default:
@@ -1497,11 +1422,6 @@ void CompileExpr(Expr* exp)
 			AppendInt(exp->constDecl->index);
 		} break;
 		
-		case EXP_NULL:
-		{
-			AppendCode(OP_PUSH_NULL);
-		} break;
-		
 		case EXP_UNARY:
 		{
 			switch(exp->unaryx.op)
@@ -1597,7 +1517,7 @@ void CompileExpr(Expr* exp)
 		case EXP_BIN:
 		{
 			if(exp->binx.op == '=')
-			{	
+			{
 				CompileExpr(exp->binx.rhs);
 				
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
@@ -1625,18 +1545,8 @@ void CompileExpr(Expr* exp)
 					
 					AppendCode(OP_SETINDEX);
 				}
-				else if(exp->binx.lhs->type == EXP_DOT)
-				{
-					CompileExpr(exp->binx.rhs);
-					
-					AppendCode(OP_PUSH_STRING);
-					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
-					CompileExpr(exp->binx.lhs->dotx.dict);
-					
-					AppendCode(OP_DICT_SET);
-				}
 				else
-					ErrorExit("Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %i\n", exp->binx.lhs->type);
+					ErrorExit("Left hand side of assignment operator '=' must be a variable\n");
 			}
 			else
 			{
@@ -1660,7 +1570,8 @@ void CompileExpr(Expr* exp)
 					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
 					
 					default:
-						ErrorExit("Unsupported binary operator %c\n", exp->binx.op);		
+						ErrorExit("Unsupported binary operator %c\n", exp->binx.op);
+						
 				}
 			}
 		} break;
@@ -1718,6 +1629,7 @@ void CompileExpr(Expr* exp)
 			int exitEmplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
 			
+		
 			EmplaceInt(emplaceLoc, CodeLength);
 			if(exp->ifx.alt)
 			{
@@ -1759,34 +1671,6 @@ void CompileExpr(Expr* exp)
 			}
 			else
 				AppendCode(OP_RETURN);
-		} break;
-		
-		case EXP_DOT:
-		{
-			AppendCode(OP_PUSH_STRING);
-			AppendInt(RegisterString(exp->dotx.name)->index);
-			CompileExpr(exp->dotx.dict);
-			
-			AppendCode(OP_DICT_GET);
-		} break;
-		
-		case EXP_DICT_LITERAL:
-		{
-			Expr* node = exp->dictx.pairsHead;
-			while(node)
-			{
-				if(node->type != EXP_BIN) ErrorExit("Non-binary expression in dictionary literal (Expected something = something_else)\n");
-				if(node->binx.op != '=') ErrorExit("Invalid dictionary literal binary operator '%c'\n", node->binx.op);
-				if(node->binx.lhs->type != EXP_IDENT) ErrorExit("Invalid lhs in dictionary literal (Expected identifier)\n");
-				
-				CompileExpr(node->binx.rhs);
-				AppendCode(OP_PUSH_STRING);
-				AppendInt(RegisterString(node->binx.lhs->varx.name)->index);
-				
-				node = node->next;
-			}
-			AppendCode(OP_CREATE_DICT_BLOCK);
-			AppendInt(exp->dictx.length);
 		} break;
 		
 		default:
