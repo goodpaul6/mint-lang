@@ -12,6 +12,7 @@ end
 
 func _main()
 	write(fact(5))
+	return 0
 end
 ```
 The syntax is fairly similar to that of Lua or Python. 
@@ -61,6 +62,7 @@ func _main()
 	arr[3][1] = "world"
 	
 	write_array(arr)
+	return 0
 end
 ```
 'write' isn't designated as an extern because it is a compiler intrinsic; it compiles directly
@@ -93,9 +95,27 @@ func _main()
 
 	writer = @write_number
 	call(writer, 10)
+	return 0
 end
 ```
-
+There are also dictionaries (with similar functionality to tables in Lua, or dictionaries in python)
+```
+# dict.mt -- demonstrates dictionaries
+func _main()
+	var d = { x = 10, y = 20 }
+	write(d.x)
+	write(d.y)
+	
+	d.color = [255, 255, 255] # shorthand for d["color"], d.color is also faster than d["color"]
+	
+	write("d.color:")
+	write(d.color[0])
+	write(d.color[1])
+	write(d.color[2])
+	
+	return 0
+end
+```
 
 # zlib License
 Copyright (c) 2015 Apaar Madan
