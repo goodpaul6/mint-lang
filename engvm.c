@@ -3,43 +3,25 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_ENTITIES 1024
+SDL_Window* window = NULL;
+SDL_Renderer* ren = NULL;
+SDL_Event event;
 
-typedef struct
+void Ext_SetColor(VM* vm)
 {
-	char alive;
-	float x, y;
-	float radius;
-} Entity;
+	Object* color = PopArrayObject(vm);
+	int r = (int)color->array.members[0]->number;
+	int g = (int)color->array.members[1]->number;
+	int b = (int)color->array.members[2]->number;
+	int a = (int)color->array.members[3]->number;
 
-Entity Entities[MAX_ENTITIES];
-int NumEntities = 0;
-
-void Ext_AddEnt(VM* vm)
-{
-	Entity* ent = &Entities[NumEntities++];
-	ent->alive = 1;
-	ent->x = 0;
-	ent->y = 0;
-	ent->radius = PopNumber(vm);
-	PushNumber(vm, NumEntities - 1);
+	SDL_SetRenderDrawColor(ren, r, g, b, a);
 }
 
-void Ext_Kill(VM* vm)
+void Ext_FillRect(VM* vm)
 {
-	int id = (int)PopNumber(vm);
-	Entities[id].alive = 0;
-}
-
-void Ext_Move(VM* vm)
-{
-	int id = (int)PopNumber(vm);
-	
-	float x = (int)PopNumber(vm);
-	float y = (int)PopNumber(vm);
-	
-	Entities[id].x += x;
-	Entities[id].y += y;
+	SDL_Rect dst = { (int)PopNumber(vm), (int)PopNumber(vm), (int)PopNumber(vm), (int)PopNumber(vm) };
+	SDL_RenderFillRect(ren, &dst);
 }
 
 void Ext_KeyDown(VM* vm)
@@ -47,17 +29,6 @@ void Ext_KeyDown(VM* vm)
 	int id = (int)PopNumber(vm);
 	const Uint8* keys = SDL_GetKeyboardState(NULL);
 	PushNumber(vm, keys[id]);
-}
-
-void DrawAll(SDL_Renderer* ren)
-{
-	SDL_SetRenderDrawColor(ren, 255, 0, 0, 255);
-	for(int i = 0; i < NumEntities; ++i)
-	{
-		Entity* ent = &Entities[i];
-		SDL_Rect dst = {ent->x - ent->radius, ent->y - ent->radius, ent->radius * 2, ent->radius * 2};
-		SDL_RenderFillRect(ren, &dst);
-	}
 }
 
 int main(int argc, char* argv[])
@@ -71,24 +42,26 @@ int main(int argc, char* argv[])
 		exit(1);
 	}
 	
+	if(argc == 2)
+		vm->debug = 1;
+	
 	LoadBinaryFile(vm, in);
 	fclose(in);
 	
 	HookStandardLibrary(vm);
 	
-	HookExternNoWarn(vm, "add", Ext_AddEnt);
-	HookExternNoWarn(vm, "kill", Ext_Kill);
-	HookExternNoWarn(vm, "move", Ext_Move);
+	HookExternNoWarn(vm, "setcolor", Ext_SetColor);
+	HookExternNoWarn(vm, "fillrect", Ext_FillRect);
 	HookExternNoWarn(vm, "keydown", Ext_KeyDown);
 	
 	SDL_Init(SDL_INIT_EVERYTHING);
 	
-	SDL_Window* window = SDL_CreateWindow("Engine", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_SHOWN);
-	SDL_Renderer* ren = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-	SDL_Event event;
+	window = SDL_CreateWindow("Engine", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_SHOWN);
+	ren = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	
 	int initId = GetFunctionId(vm, "init");
 	int updateId = GetFunctionId(vm, "update");
+	int drawId = GetFunctionId(vm, "draw");
 	
 	if(initId >= 0)
 		CallFunction(vm, initId, 0);
@@ -112,18 +85,12 @@ int main(int argc, char* argv[])
 			PushNumber(vm, dt);
 			CallFunction(vm, updateId, 1);
 		}
-		for(int i = 0; i < NumEntities; ++i)
-		{
-			if(!Entities[i].alive)
-			{
-				memmove(&Entities[i], &Entities[i + 1], sizeof(Entity) * (NumEntities - i - 1));
-				--NumEntities;
-			}
-		}
+		
 		
 		SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
 		SDL_RenderClear(ren);
-		DrawAll(ren);
+		if(drawId >= 0)
+			CallFunction(vm, drawId, 0);
 		SDL_RenderPresent(ren);
 	
 		SDL_Delay(12);

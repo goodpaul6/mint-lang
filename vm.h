@@ -28,6 +28,7 @@ enum
 	// fast dictionary operations
 	OP_DICT_SET,
 	OP_DICT_GET,
+	OP_DICT_PAIRS,
 	
 	OP_ADD,
 	OP_SUB,
@@ -46,6 +47,11 @@ enum
 	OP_LOGICAL_NOT,
 	OP_LOGICAL_AND,
 	OP_LOGICAL_OR,
+	
+	OP_CADD,
+	OP_CSUB,
+	OP_CMUL,
+	OP_CDIV,
 	
 	OP_SETINDEX,
 	OP_GETINDEX,
@@ -149,6 +155,7 @@ typedef struct _VM
 	Object* stack[MAX_STACK];
 	int stackSize;
 	
+	char** globalNames;
 	int numGlobals;
 	
 	int indirStack[MAX_INDIR];
@@ -176,10 +183,13 @@ void CheckExterns(VM* vm);
 int GetFunctionId(VM* vm, const char* name);
 void CallFunction(VM* vm, int id, Word numArgs);
 
+int GetGlobalId(VM* vm, const char* name);
+Object* GetGlobal(VM* vm, int id);
+
 void PushObject(VM* vm, Object* obj);
 void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
-void PushFunc(VM* vm, int id, Word isExtern);
+Object* PushFunc(VM* vm, int id, Word isExtern);
 Object* PushArray(VM* vm, int length);
 Object* PushDict(VM* vm);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));

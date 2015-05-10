@@ -5,6 +5,7 @@
 #include <string.h>
 #include <math.h>
 #include <malloc.h>
+#include <time.h>
 
 Object NullObject;
 
@@ -157,9 +158,18 @@ void Std_Tonumber(VM* vm)
 
 void Std_Tostring(VM* vm)
 {
-	double number = PopNumber(vm);
+	Object* obj = PopObject(vm);
 	char buf[128];
-	sprintf(buf, "%g", number);
+	switch(obj->type)
+	{
+		case OBJ_NULL: sprintf(buf, "null"); break;
+		case OBJ_STRING: PushString(vm, obj->string.raw); return;
+		case OBJ_NUMBER: sprintf(buf, "%g", obj->number); break;
+		case OBJ_ARRAY: sprintf(buf, "array(%i)", obj->array.length); break;
+		case OBJ_FUNC: sprintf(buf, "func %s", obj->func.isExtern ? vm->externNames[obj->func.index] : vm->functionNames[obj->func.index]); break;
+		case OBJ_DICT: sprintf(buf, "dict(%i)", obj->dict.numEntries); break; 
+	}
+	
 	PushString(vm, buf);
 }
 
@@ -196,6 +206,42 @@ void Std_Erase(VM* vm)
 	if(index < obj->array.length - 1 && obj->array.length > 1)
 		memmove(&obj->array.members[index], &obj->array.members[index + 1], sizeof(Object*) * (obj->array.length - index - 1));
 	--obj->array.length;
+}
+
+void Std_Fclose(void* fp)
+{
+	fclose(fp);
+}
+
+void Std_Fopen(VM* vm)
+{
+	const char* filename = PopString(vm);
+	const char* mode = PopString(vm);
+	
+	FILE* file = fopen(filename, mode);
+	if(!file)
+	{	
+		PushObject(vm, &NullObject);
+		return;
+	}
+	
+	PushNative(vm, file, Std_Fclose, NULL);
+}
+
+void Std_Getc(VM* vm)
+{
+	FILE* file = PopNative(vm);
+	PushNumber(vm, getc(file));
+}
+
+void Std_Srand(VM* vm)
+{
+	srand((unsigned int)time(NULL));
+}
+
+void Std_Rand(VM* vm)
+{
+	PushNumber(vm, (int)rand());
 }
 
 /* END OF STANDARD LIBRARY */
@@ -236,6 +282,8 @@ void InitVM(VM* vm)
 	vm->externs = NULL;
 
 	vm->debug = 0;
+	
+	memset(vm->stack, 0, sizeof(vm->stack));
 }
 
 VM* NewVM()
@@ -271,6 +319,13 @@ void ResetVM(VM* vm)
 		for(int i = 0; i < vm->numStringConstants; ++i)
 			free(vm->stringConstants[i]);
 		free(vm->stringConstants);
+	}
+
+	if(vm->globalNames)
+	{
+		for(int i = 0; i < vm->numGlobals; ++i)
+			free(vm->globalNames[i]);
+		free(vm->globalNames);
 	}
 	
 	vm->stackSize = 0;
@@ -309,6 +364,7 @@ program length (in words) as integer
 program code (must be no longer than program length specified previously)
 
 number of global variables as integer
+names of global variables as string lengths followed by characters
 
 number of functions as integer
 function entry points as integers
@@ -341,6 +397,18 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	
 	int numGlobals;
 	fread(&numGlobals, sizeof(int), 1, in);
+	
+	vm->globalNames = emalloc(sizeof(char*) * numGlobals);
+	
+	for(int i = 0; i < numGlobals; ++i)
+	{
+		int len;
+		fread(&len, sizeof(int), 1, in);
+		char* string = emalloc(len + 1);
+		fread(string, sizeof(char), len, in);
+		string[len] = '\0';
+		vm->globalNames[i] = string;
+	}
 	
 	vm->numGlobals = numGlobals;
 	vm->stackSize = numGlobals;
@@ -430,6 +498,8 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "type", Std_Type);
 	HookExternNoWarn(vm, "assert", Std_Assert);
 	HookExternNoWarn(vm, "erase", Std_Erase);
+	HookExternNoWarn(vm, "rand", Std_Rand);
+	HookExternNoWarn(vm, "srand", Std_Srand);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -654,7 +724,7 @@ void PushString(VM* vm, const char* string)
 	PushObject(vm, obj);
 }
 
-void PushFunc(VM* vm, int id, Word isExtern)
+Object* PushFunc(VM* vm, int id, Word isExtern)
 {
 	Object* obj = NewObject(vm, OBJ_FUNC);
 	
@@ -662,6 +732,8 @@ void PushFunc(VM* vm, int id, Word isExtern)
 	obj->func.isExtern = isExtern;
 	
 	PushObject(vm, obj);
+	
+	return obj;
 }
 
 Object* PushArray(VM* vm, int length)
@@ -835,6 +907,24 @@ void CallFunction(VM* vm, int id, Word numArgs)
 	
 	while(vm->fp >= startFp && vm->pc >= 0)
 		ExecuteCycle(vm);
+}
+
+
+int GetGlobalId(VM* vm, const char* name)
+{
+	for(int i = 0; i < vm->numGlobals; ++i)
+	{
+		if(strcmp(vm->globalNames[i], name) == 0)
+			return i;
+	}
+	
+	return -1;
+}
+
+Object* GetGlobal(VM* vm, int id)
+{
+	if(id < 0) return NULL;
+	return vm->stack[id];
 }
 
 void ExecuteCycle(VM* vm)
@@ -1017,9 +1107,38 @@ void ExecuteCycle(VM* vm)
 			if(value)
 				PushObject(vm, value);
 			else
-				PushNumber(vm, 0);
+				PushObject(vm, &NullObject);
 		} break;
-	
+
+		case OP_DICT_PAIRS:
+		{
+			if(vm->debug)
+				printf("dict_pairs\n");
+			++vm->pc;
+			Object* obj = PopDict(vm);
+			Object* aobj = PushArray(vm, obj->dict.numEntries);
+			
+			int len = 0;
+			for(int i = obj->dict.active.length - 1; i >= 0; --i)
+			{
+				DictNode* node = obj->dict.buckets[obj->dict.active.data[i]];
+				while(node)
+				{
+					Object* pair = PushArray(vm, 2);
+					
+					Object* key = NewObject(vm, OBJ_STRING);
+					key->string.raw = estrdup(node->key);
+					
+					pair->array.members[0] = key;
+					pair->array.members[1] = node->value;
+					
+					aobj->array.members[len++] = PopObject(vm);
+					
+					node = node->next;
+				}
+			}
+		} break;
+		
 		#define BIN_OP_TYPE(op, operator, type) case OP_##op: { if(vm->debug) printf("%s\n", #op); Object* val2 = PopObject(vm); Object* val1 = PopObject(vm); PushNumber(vm, (type)val1->number operator (type)val2->number); ++vm->pc; } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
@@ -1036,6 +1155,13 @@ void ExecuteCycle(VM* vm)
 		BIN_OP(GTE, >=)
 		BIN_OP_TYPE(LOGICAL_AND, &&, int)
 		BIN_OP_TYPE(LOGICAL_OR, ||, int)
+		
+		#define CBIN_OP(op, operator) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); a->number operator b->number; } break;
+		
+		CBIN_OP(CADD, +=)
+		CBIN_OP(CSUB, -=)
+		CBIN_OP(CMUL, *=)
+		CBIN_OP(CDIV, /=)
 		
 		case OP_EQU:
 		{
@@ -1171,7 +1297,6 @@ void ExecuteCycle(VM* vm)
 				int arrayLength = obj->array.length;
 				Object** members = obj->array.members;
 				
-				
 				if(index >= 0 && index < arrayLength)
 				{
 					if(members[index])
@@ -1208,7 +1333,7 @@ void ExecuteCycle(VM* vm)
 					exit(1);
 				}
 				
-				PushObject(vm, DictGet(&obj->dict, indexObj->string.raw));
+				PushObject(vm, (Object*)DictGet(&obj->dict, indexObj->string.raw));
 			}
 			else 
 			{
@@ -1236,7 +1361,11 @@ void ExecuteCycle(VM* vm)
 		{
 			++vm->pc;
 			int index = ReadInteger(vm);
-			PushObject(vm, (vm->stack[index]));
+			if(vm->stack[index])
+				PushObject(vm, (vm->stack[index]));
+			else
+				PushObject(vm, &NullObject);
+				
 			if(vm->debug)
 				printf("get %i\n", index);
 		} break;
@@ -1248,10 +1377,12 @@ void ExecuteCycle(VM* vm)
 			Object* top = PopObject(vm);
 			if(top->type == OBJ_NUMBER)
 				printf("%g\n", top->number);
-			if(top->type == OBJ_STRING)
+			else if(top->type == OBJ_STRING)
 				printf("%s\n", top->string);
-			if(top->type == OBJ_NATIVE)
+			else if(top->type == OBJ_NATIVE)
 				printf("native pointer\n");
+			else if(top->type == OBJ_NULL)
+				printf("null\n");
 			++vm->pc;
 		} break;
 		

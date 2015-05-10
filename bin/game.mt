@@ -1,26 +1,21 @@
-extern add
-extern kill
-extern move
-extern keydown
-
-var player
+var entities
 
 func init()
-	ents = [0]
-	player = add(8)
+	entities = []
+	
+	push(entities, player(100, 100))
 end
 
 func update(dt)
-	if keydown($4F) 
-		move(player, 100 * dt, 0)
+	for var i = 0, i < len(entities), i += 1
+		var ent = entities[i]
+		call(ent.update, ent, dt)
 	end
-	if keydown($50)
-		move(player, -100 * dt, 0)
-	end
-	if keydown($51)
-		move(player, 0, 100 * dt)
-	end
-	if keydown($52)
-		move(player, 0, -100 * dt)
+end
+
+func draw()
+	for var i = 0, i < len(entities), i += 1
+		var ent = entities[i]
+		call(ent.draw, ent)
 	end
 end

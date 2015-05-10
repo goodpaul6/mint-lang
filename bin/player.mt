@@ -1,56 +1,36 @@
-# runs on sdlvm
+extern keydown
 
-func init_player(x, y)
-	var my_pos = len(pos)
-	push(pos, x)
-	push(pos, y)
+func player(x, y)
+	var self = entity()
+	self.x = x
+	self.y = y
+	self.w = 10
+	self.h = 25
 	
-	var my_vel = len(vel)
-	push(vel, 0)
-	push(vel, 0)
+	self.update = @player_update
 	
-	push(size, 32)
-	push(update, @update_player)
-	
-	var data = [3]
-	data[0] = my_pos
-	data[1] = my_vel
-	data[2] = 0
-		
-	push(update_data, data)
+	return self
 end
 
-func update_player(data)
-	var my_pos = data[0]
-	var my_vel = data[1]
-	var shoot_timer = data[2]
-
-	if shoot_timer > 0
-		shoot_timer = shoot_timer - 1
-	end
-
-	vel[my_vel] = vel[my_vel] * 0.9
-	vel[my_vel + 1] = vel[my_vel + 1] * 0.9
-
-	if SDL_IsKeyDown(kleft)
-		vel[my_vel] = vel[my_vel] - 1
+func player_update(self, dt)
+	self.dx *= 0.9
+	self.dy *= 0.9
+	
+	if keydown($4F)
+		self.dx += 1000 * dt
 	end
 	
-	if SDL_IsKeyDown(kright)
-		vel[my_vel] = vel[my_vel] + 1
+	if keydown($50)
+		self.dx -= 1000 * dt
 	end
 	
-	if SDL_IsKeyDown(kup)
-		vel[my_vel + 1] = vel[my_vel + 1] - 1
+	if keydown($51)
+		self.dy += 1000 * dt
 	end
 	
-	if SDL_IsKeyDown(kdown)
-		vel[my_vel + 1] = vel[my_vel + 1] + 1
+	if keydown($52)
+		self.dy -= 1000 * dt
 	end
 	
-	#if is_mouse_down && (shoot_timer <= 0)
-	#	var ang = atan2(mouse_y - pos[my_pos + 1], mouse_x - pos[my_pos])
-	#	shoot(pos[my_pos], pos[my_pos + 1], ang)
-	#	shoot_timer = 10
-	#end
+	entity_update(self, dt)
 end

@@ -108,6 +108,7 @@ typedef struct _ConstDecl
 	};
 } ConstDecl;
 
+struct _Expr;
 typedef struct _FuncDecl
 {	
 	struct _FuncDecl* next;
@@ -152,6 +153,7 @@ program length (in words) as integer
 program code (must be no longer than program length specified previously)
 
 number of global variables as integer
+names of global variables as string lengths followed by characters
 
 number of functions as integer
 function entry points as integers
@@ -166,6 +168,7 @@ number constants as doubles
 number of string constants
 string length followed by string as chars
 */
+
 void OutputCode(FILE* out)
 {
 	printf("=================================\n");
@@ -186,6 +189,12 @@ void OutputCode(FILE* out)
 	fwrite(Code, sizeof(Word), CodeLength, out);
 	
 	fwrite(&NumGlobals, sizeof(int), 1, out);
+	for(VarDecl* decl = VarStack[0]; decl != NULL; decl = decl->next)
+	{
+		int len = strlen(decl->name);
+		fwrite(&len, sizeof(int), 1, out);
+		fwrite(decl->name, sizeof(char), len, out);
+	}
 	
 	fwrite(&NumFunctions, sizeof(int), 1, out);	
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
@@ -395,19 +404,7 @@ FuncDecl* ReferenceFunction(const char* name)
 }
 
 VarDecl* RegisterVariable(const char* name)
-{
-	for(int i = VarStackDepth; i >= 0; --i)
-	{
-		for(VarDecl* decl = VarStack[i]; decl != NULL; decl = decl->next)
-		{
-			if(strcmp(decl->name, name) == 0)
-			{					
-				ErrorExit("Attempted to redeclare variable '%s'\n", name);
-				
-			}
-		}
-	}
-	
+{	
 	VarDecl* decl = malloc(sizeof(VarDecl));
 	assert(decl);
 	
@@ -476,6 +473,15 @@ enum
 	TOK_ELIF = -19,
 	TOK_AND = -20,
 	TOK_OR = -21,
+	TOK_NULL = -22,
+	TOK_INLINE = -23,
+	TOK_LAMBDA = -24,
+	TOK_CADD = -25,
+	TOK_CSUB = -26,
+	TOK_CMUL = -27,
+	TOK_CDIV = -28,
+	TOK_CONTINUE = -29,
+	TOK_BREAK = -30,
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -530,6 +536,11 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "for") == 0) return TOK_FOR;
 		if(strcmp(Lexeme, "else") == 0) return TOK_ELSE;
 		if(strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
+		if(strcmp(Lexeme, "null") == 0) return TOK_NULL;
+		if(strcmp(Lexeme, "inline") == 0) return TOK_INLINE;
+		if(strcmp(Lexeme, "lambda") == 0) return TOK_LAMBDA;
+		if(strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
+		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
 		
 		return TOK_IDENT;
 	}
@@ -576,6 +587,8 @@ int GetToken(FILE* in)
 					case 'n': last = '\n'; break;
 					case 'r': last = '\r'; break;
 					case 't': last = '\t'; break;
+					case '"': last = '"'; break;
+					case '\'': last = '\''; break;
 				}
 			}
 			
@@ -586,6 +599,32 @@ int GetToken(FILE* in)
 		last = getc(in);
 		
 		return TOK_STRING;
+	}
+	
+	if(last == '\'')
+	{
+		last = getc(in);
+
+		if(last == '\\')
+		{
+			last = getc(in);
+			switch(last)
+			{
+				case 'n': last = '\n'; break;
+				case 'r': last = '\r'; break;
+				case 't': last = '\t'; break;
+				case '"': last = '"'; break;
+				case '\'': last = '\''; break;
+			}
+		}
+
+		sprintf(Lexeme, "%i", last);
+		
+		if(last != '\'')
+			ErrorExit("Expected ' after previous '\n");
+			
+		last = getc(in);
+		return TOK_NUMBER;
 	}
 	
 	if(last == '#')
@@ -633,6 +672,26 @@ int GetToken(FILE* in)
 		last = getc(in);
 		return TOK_OR;
 	}
+	else if(lastChar == '+' && last == '=')
+	{
+		last = getc(in);
+		return TOK_CADD;
+	}
+	else if(lastChar == '-' && last == '=')
+	{
+		last = getc(in);
+		return TOK_CSUB;
+	}
+	else if(lastChar == '*' && last == '=')
+	{
+		last = getc(in);
+		return TOK_CMUL;
+	}
+	else if(lastChar == '/' && last == '=')
+	{
+		last = getc(in);
+		return TOK_CDIV;
+	}
 	
 	return lastChar;
 }
@@ -657,7 +716,9 @@ typedef enum
 	EXP_FOR,
 	EXP_DOT,
 	EXP_DICT_LITERAL,
-	EXP_NULL
+	EXP_NULL,
+	EXP_CONTINUE,
+	EXP_BREAK,
 } ExprType;
 
 typedef struct _Expr
@@ -811,10 +872,24 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 		
-		case EXP_NULL:
+		case TOK_NULL:
 		{
 			GetNextToken(in);
 			Expr* exp = CreateExpr(EXP_NULL);
+			return exp;
+		} break;
+		
+		case TOK_CONTINUE:
+		{
+			GetNextToken(in);
+			Expr* exp = CreateExpr(EXP_CONTINUE);
+			return exp;
+		} break;
+		
+		case TOK_BREAK:
+		{
+			GetNextToken(in);
+			Expr* exp = CreateExpr(EXP_BREAK);
 			return exp;
 		} break;
 		
@@ -1235,7 +1310,7 @@ int GetTokenPrec()
 		
 		case TOK_AND: case TOK_OR: prec = 2; break;
 			
-		case '=': prec = 1; break;
+		case TOK_CADD: case TOK_CSUB: case TOK_CMUL: case TOK_CDIV: case '=': prec = 1; break;
 	}
 	
 	return prec;
@@ -1396,6 +1471,21 @@ void DebugExpr(Expr* exp)
 	}
 }
 
+char IsIntrinsic(const char* name)
+{
+	if(strcmp(name, "len") == 0) return 1;
+	if(strcmp(name, "write") == 0) return 1;
+	if(strcmp(name, "read") == 0) return 1;
+	if(strcmp(name, "push") == 0) return 1;
+	if(strcmp(name, "pop") == 0) return 1;
+	if(strcmp(name, "clear") == 0) return 1;
+	if(strcmp(name, "call") == 0) return 1;
+	if(strcmp(name, "array") == 0) return 1;
+	if(strcmp(name, "dict") == 0) return 1;
+	
+	return 0;
+}
+
 void CompileExpr(Expr* exp);
 char CompileIntrinsic(Expr* exp)
 {
@@ -1485,9 +1575,97 @@ char CompileIntrinsic(Expr* exp)
 	return 0;
 }
 
+void ResolveListSymbols(Expr* head);
+void ResolveSymbols(Expr* exp)
+{
+	switch(exp->type)
+	{
+		case EXP_IDENT:
+		{
+			if(!exp->varx.varDecl)
+			{
+				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
+				if(!exp->varx.varDecl)	
+					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
+			}
+		} break;
+		
+		case EXP_CALL:
+		{
+			if(!IsIntrinsic(exp->callx.funcName))
+			{
+				if(!exp->callx.decl)
+				{
+					FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
+					if(!decl)
+						ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
+					
+					exp->callx.decl = decl;
+				}
+			}
+		} break;
+		
+		case EXP_BIN:
+		{
+			ResolveSymbols(exp->binx.lhs);
+			ResolveSymbols(exp->binx.rhs);
+		} break;
+	}
+}
+
+void ResolveListSymbols(Expr* head)
+{
+	Expr* node = head;
+	while(node)
+	{
+		ResolveSymbols(node);
+		node = node->next;
+	}
+}
+
+typedef enum 
+{
+	PATCH_BREAK,
+	PATCH_CONTINUE
+} PatchType;
+
+typedef struct _Patch
+{
+	struct _Patch* next;
+	PatchType type;
+	int loc;
+} Patch;
+
+Patch* Patches = NULL;
+
+void AddPatch(PatchType type, int loc)
+{
+	Patch* p = malloc(sizeof(Patch));
+	assert(p);
+	
+	p->type = type;
+	p->loc = loc;
+	
+	p->next = Patches;
+	Patches = p;
+}
+
+void ClearPatches()
+{
+	Patch* next;
+	for(Patch* p = Patches; p != NULL; p = next)
+	{
+		next = p->next;
+		free(p);
+	}
+	Patches = NULL;
+}
+
 void CompileExprList(Expr* head);
 void CompileExpr(Expr* exp)
 {
+	ResolveSymbols(exp);
+	
 	switch(exp->type)
 	{
 		case EXP_NUMBER: case EXP_STRING:
@@ -1536,14 +1714,7 @@ void CompileExpr(Expr* exp)
 		} break;
 		
 		case EXP_IDENT:
-		{
-			if(!exp->varx.varDecl)
-			{
-				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
-				if(!exp->varx.varDecl)	
-					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
-			}
-			
+		{			
 			if(exp->varx.varDecl->isGlobal)
 			{
 				AppendCode(OP_GET);
@@ -1568,19 +1739,9 @@ void CompileExpr(Expr* exp)
 		{
 			if(!CompileIntrinsic(exp))
 			{
-				if(!exp->callx.decl)
-				{
-					FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
-					if(!decl)
-						ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
-					
-					exp->callx.decl = decl;
-				}
-			
 				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 					CompileExpr(exp->callx.args[i]);
 		
-				
 				if(!exp->callx.decl->isExtern)
 				{
 					AppendCode(OP_CALL);
@@ -1601,13 +1762,6 @@ void CompileExpr(Expr* exp)
 				
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
 				{
-					if(!exp->binx.lhs->varx.varDecl)
-					{
-						exp->binx.lhs->varx.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
-						if(!exp->binx.lhs->varx.varDecl)	
-							ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->binx.lhs->varx.name);
-					}
-				
 					if(exp->binx.lhs->varx.varDecl->isGlobal)
 					{
 						if(exp->binx.lhs->type == EXP_VAR) printf("Warning: assignment operations to global variables will not execute unless they are inside the entry point\n");
@@ -1626,6 +1780,9 @@ void CompileExpr(Expr* exp)
 				}
 				else if(exp->binx.lhs->type == EXP_DOT)
 				{
+					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
+						ErrorExit("Cannot assign dictionary entry 'pairs' to a value\n");
+					
 					CompileExpr(exp->binx.rhs);
 					
 					AppendCode(OP_PUSH_STRING);
@@ -1657,6 +1814,10 @@ void CompileExpr(Expr* exp)
 					case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
 					case TOK_AND: AppendCode(OP_LOGICAL_AND); break;
 					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
+					case TOK_CADD: AppendCode(OP_CADD); break;
+					case TOK_CSUB: AppendCode(OP_CSUB); break;
+					case TOK_CMUL: AppendCode(OP_CMUL); break;
+					case TOK_CDIV: AppendCode(OP_CDIV); break;
 					
 					default:
 						ErrorExit("Unsupported binary operator %c\n", exp->binx.op);		
@@ -1682,7 +1843,15 @@ void CompileExpr(Expr* exp)
 			AppendCode(OP_GOTO);
 			AppendInt(loopPc);
 			
+			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
+			
+			for(Patch* p = Patches; p != NULL; p = p->next)
+			{
+				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, loopPc);
+				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+			}
+			ClearPatches();
 		} break;
 		
 		case EXP_FOR:
@@ -1697,12 +1866,22 @@ void CompileExpr(Expr* exp)
 			
 			CompileExprList(exp->forx.bodyHead);
 			
+			int continueLoc = CodeLength;
+
 			CompileExpr(exp->forx.iter);
 			
 			AppendCode(OP_GOTO);
 			AppendInt(loopPc);
 			
+			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
+		
+			for(Patch* p = Patches; p != NULL; p = p->next)
+			{
+				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
+				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+			}
+			ClearPatches();
 		} break;
 		
 		case EXP_IF:
@@ -1738,10 +1917,7 @@ void CompileExpr(Expr* exp)
 			
 			if(strcmp(exp->funcx.decl->name, "_main") == 0) EntryPoint = CodeLength;
 			for(int i = 0; i < exp->funcx.decl->numLocals; ++i)
-			{
-				AppendCode(OP_PUSH_NUMBER);
-				AppendInt(RegisterNumber(0)->index);
-			}
+				AppendCode(OP_PUSH_NULL);
 			
 			CompileExprList(exp->funcx.bodyHead);
 			AppendCode(OP_RETURN);
@@ -1762,11 +1938,19 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_DOT:
 		{
-			AppendCode(OP_PUSH_STRING);
-			AppendInt(RegisterString(exp->dotx.name)->index);
-			CompileExpr(exp->dotx.dict);
+			if(strcmp(exp->dotx.name, "pairs") == 0)
+			{
+				CompileExpr(exp->dotx.dict);
+				AppendCode(OP_DICT_PAIRS);
+			}
+			else
+			{
+				AppendCode(OP_PUSH_STRING);
+				AppendInt(RegisterString(exp->dotx.name)->index);
+				CompileExpr(exp->dotx.dict);
 			
-			AppendCode(OP_DICT_GET);
+				AppendCode(OP_DICT_GET);
+			}
 		} break;
 		
 		case EXP_DICT_LITERAL:
@@ -1786,6 +1970,20 @@ void CompileExpr(Expr* exp)
 			}
 			AppendCode(OP_CREATE_DICT_BLOCK);
 			AppendInt(exp->dictx.length);
+		} break;
+		
+		case EXP_CONTINUE:
+		{
+			AppendCode(OP_GOTO);
+			AddPatch(PATCH_CONTINUE, CodeLength);
+			AllocatePatch(sizeof(int) / sizeof(Word));
+		} break;
+		
+		case EXP_BREAK:
+		{
+			AppendCode(OP_GOTO);
+			AddPatch(PATCH_BREAK, CodeLength);
+			AllocatePatch(sizeof(int) / sizeof(Word));
 		} break;
 		
 		default:
