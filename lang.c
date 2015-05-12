@@ -433,6 +433,7 @@ void RegisterArgument(const char* name, int numArgs)
 		ErrorExit("(INTERNAL) Must be inside function when registering arguments\n");
 	
 	VarDecl* decl = RegisterVariable(name);
+	--CurFunc->numLocals;
 	decl->index = -(++CurFunc->numArgs);
 }
 
@@ -719,6 +720,7 @@ typedef enum
 	EXP_NULL,
 	EXP_CONTINUE,
 	EXP_BREAK,
+	EXP_COLON,
 } ExprType;
 
 typedef struct _Expr
@@ -730,7 +732,7 @@ typedef struct _Expr
 	{
 		ConstDecl* constDecl; // NOTE: for both EXP_NUMBER and EXP_STRING
 		struct { VarDecl* varDecl; char name[MAX_ID_NAME_LENGTH]; } varx; // NOTE: for both EXP_IDENT and EXP_VAR
-		struct { struct _Expr* args[MAX_ARGS]; int numArgs; char funcName[MAX_ID_NAME_LENGTH]; FuncDecl* decl; } callx;
+		struct { struct _Expr* args[MAX_ARGS]; int numArgs; struct _Expr* func; } callx;
 		struct { struct _Expr *lhs, *rhs; int op; } binx;
 		struct _Expr* parenExpr;
 		struct { struct _Expr *cond, *bodyHead; } whilex;
@@ -744,6 +746,7 @@ typedef struct _Expr
 		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
 		struct { struct _Expr* pairsHead; int length; } dictx;
+		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
 	};
 } Expr;
 
@@ -962,39 +965,10 @@ Expr* ParseFactor(FILE* in)
 			
 			GetNextToken(in);
 			
-			if(CurTok != '(')
-			{
-				Expr* exp = CreateExpr(EXP_IDENT);
-				exp->varx.varDecl = ReferenceVariable(name);
-				strcpy(exp->varx.name, name);
-				return exp;
-			}
-			
-			GetNextToken(in);
-			
-			Expr* exp = CreateExpr(EXP_CALL);
-			
-			exp->callx.numArgs = 0;
-			strcpy(exp->callx.funcName, name);
-			
-			// NOTE: If the function's undeclared, the compiler will search again during the compilation phase
-			// and if it still cannot be found, the compiler will give an error prompt
-			exp->callx.decl = ReferenceFunction(name);
-			
-			while(CurTok != ')')
-			{
-				exp->callx.args[exp->callx.numArgs++] = ParseExpr(in);
-				if(CurTok == ',') GetNextToken(in);
-			}
-			
-			if(exp->callx.decl && !exp->callx.decl->isExtern)
-			{				
-				if(exp->callx.decl->numArgs != exp->callx.numArgs)
-					ErrorExit("Function '%s' expected %i argument(s) but you gave it %i\n", name, exp->callx.decl->numArgs, exp->callx.numArgs);
-			}
-			GetNextToken(in);
-			
-			return exp;
+			Expr* exp = CreateExpr(EXP_IDENT);
+			exp->varx.varDecl = ReferenceVariable(name);
+			strcpy(exp->varx.name, name);
+			return exp;		
 		} break;
 		
 		case TOK_VAR:
@@ -1125,26 +1099,25 @@ Expr* ParseFactor(FILE* in)
 			}
 			GetNextToken(in);
 			
+			FuncDecl* decl = EnterFunction(name);
+			
 			char args[MAX_ARGS][MAX_ID_NAME_LENGTH];
 			int numArgs = 0;
 			
 			while(CurTok != ')')
 			{
 				if(CurTok != TOK_IDENT)
-				{
-					ErrorExit("Expected identifier in argument list for function '%s' but received something else\n", name);
-					
-				}
+					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else\n", name);
 				
 				strcpy(args[numArgs++], Lexeme);
 				GetNextToken(in);
-				
+			
 				if(CurTok == ',') GetNextToken(in);
+				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
 			}
 			GetNextToken(in);
 			
 			PushScope();
-			FuncDecl* decl = EnterFunction(name);
 			
 			for(int i = 0; i < numArgs; ++i)
 				RegisterArgument(args[i], numArgs);
@@ -1228,7 +1201,7 @@ char IsPostOperator()
 {
 	switch(CurTok)
 	{
-		case '[': case '.': 
+		case '[': case '.':  case '(': case ':':
 			return 1;
 	}
 	return 0;
@@ -1268,6 +1241,43 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			return ParsePost(in, exp);
 		} break;
 		
+		case '(':
+		{
+			GetNextToken(in);
+			
+			Expr* exp = CreateExpr(EXP_CALL);
+			
+			exp->callx.numArgs = 0;
+			exp->callx.func = pre;
+			
+			while(CurTok != ')')
+			{
+				exp->callx.args[exp->callx.numArgs++] = ParseExpr(in);
+				if(CurTok == ',') GetNextToken(in);
+			}
+			
+			GetNextToken(in);
+			
+			if(!IsPostOperator()) return exp;
+			else return ParsePost(in, exp);
+		} break;
+		
+		case ':':
+		{
+			GetNextToken(in);
+			
+			if(CurTok != TOK_IDENT)
+				ErrorExit("Expected identfier after '.'\n");
+			
+			Expr* exp = CreateExpr(EXP_COLON);
+			strcpy(exp->colonx.name, Lexeme);
+			exp->colonx.dict = pre;
+			
+			GetNextToken(in);
+			if(!IsPostOperator()) return exp;
+			return ParsePost(in, exp);
+		} break;
+		
 		default:
 			return pre;
 	}
@@ -1277,7 +1287,7 @@ Expr* ParseUnary(FILE* in)
 {
 	switch(CurTok)
 	{
-		case '-': case '!': case '@':
+		case '-': case '!':
 		{
 			int op = CurTok;
 			
@@ -1373,7 +1383,8 @@ void DebugExpr(Expr* exp)
 		
 		case EXP_CALL:
 		{
-			printf("%s(", exp->callx.funcName);
+			DebugExpr(exp->callx.func);
+			printf("(");
 			for(int i = 0; i < exp->callx.numArgs; ++i)
 			{
 				DebugExpr(exp->callx.args[i]);
@@ -1487,9 +1498,9 @@ char IsIntrinsic(const char* name)
 }
 
 void CompileExpr(Expr* exp);
-char CompileIntrinsic(Expr* exp)
+char CompileIntrinsic(Expr* exp, const char* name)
 {
-	if(strcmp(exp->callx.funcName, "len") == 0)
+	if(strcmp(name, "len") == 0)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExit("Intrinsic 'len' only takes 1 argument\n");
@@ -1497,7 +1508,7 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_LENGTH);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "write") == 0)
+	else if(strcmp(name, "write") == 0)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExit("Intrinsic 'write' only takes 1 argument\n");
@@ -1505,14 +1516,14 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_WRITE);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "read") == 0)
+	else if(strcmp(name, "read") == 0)
 	{
 		if(exp->callx.numArgs != 0)
 			ErrorExit("Intrinsic 'read' takes no arguments\n");
 		AppendCode(OP_READ);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "push") == 0)
+	else if(strcmp(name, "push") == 0)
 	{
 		if(exp->callx.numArgs != 2)
 			ErrorExit("Intrinsic 'push' only takes 2 arguments\n");
@@ -1521,7 +1532,7 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_ARRAY_PUSH);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "pop") == 0)
+	else if(strcmp(name, "pop") == 0)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExit("Intrinsic 'push' only takes 1 argument\n");
@@ -1529,7 +1540,7 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_ARRAY_POP);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "clear") == 0)
+	else if(strcmp(name, "clear") == 0)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExit("Intrinsic 'clear' only takes 1 argument\n");
@@ -1537,7 +1548,7 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_ARRAY_CLEAR);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "call") == 0)
+	else if(strcmp(name, "call") == 0)
 	{
 		if(exp->callx.numArgs < 1)
 			ErrorExit("Intrinsic 'call' takes at least 1 argument (the function reference)\n");
@@ -1548,7 +1559,7 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(exp->callx.numArgs - 1);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "array") == 0)
+	else if(strcmp(name, "array") == 0)
 	{
 		if(exp->callx.numArgs > 1)
 			ErrorExit("Intrinsic 'array' only takes no more than 1 argument\n");
@@ -1564,7 +1575,7 @@ char CompileIntrinsic(Expr* exp)
 		AppendCode(OP_CREATE_ARRAY);
 		return 1;
 	}
-	else if(strcmp(exp->callx.funcName, "dict") == 0)
+	else if(strcmp(name, "dict") == 0)
 	{
 		if(exp->callx.numArgs != 0)
 			ErrorExit("Intrinsic 'dict' takes no arguments\n");
@@ -1580,31 +1591,6 @@ void ResolveSymbols(Expr* exp)
 {
 	switch(exp->type)
 	{
-		case EXP_IDENT:
-		{
-			if(!exp->varx.varDecl)
-			{
-				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
-				if(!exp->varx.varDecl)	
-					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
-			}
-		} break;
-		
-		case EXP_CALL:
-		{
-			if(!IsIntrinsic(exp->callx.funcName))
-			{
-				if(!exp->callx.decl)
-				{
-					FuncDecl* decl = ReferenceFunction(exp->callx.funcName);
-					if(!decl)
-						ErrorExit("Attempted to call undeclared/undefined function '%s'\n", exp->callx.funcName);
-					
-					exp->callx.decl = decl;
-				}
-			}
-		} break;
-		
 		case EXP_BIN:
 		{
 			ResolveSymbols(exp->binx.lhs);
@@ -1685,24 +1671,6 @@ void CompileExpr(Expr* exp)
 			{
 				case '-': CompileExpr(exp->unaryx.expr); AppendCode(OP_NEG); break;
 				case '!': CompileExpr(exp->unaryx.expr); AppendCode(OP_LOGICAL_NOT); break;
-				case '@':
-				{
-					Expr* func = exp->unaryx.expr;
-					if(func->type == EXP_IDENT)
-					{
-						if(func->varx.varDecl)
-							ErrorExit("Cannot reference variable '%s' using '@' operator\n", func->varx.name);
-						FuncDecl* decl = ReferenceFunction(func->varx.name);
-						if(!decl)
-							ErrorExit("Attempted to reference non-existent function '%s'\n", func->varx.name);
-						
-						AppendCode(OP_PUSH_FUNC);
-						AppendCode(decl->isExtern);
-						AppendInt(decl->index);
-					}
-					else
-						ErrorExit("Cannot apply '@' operator to anything but an identifier\n");
-				} break;
 			}
 		} break;
 		
@@ -1714,16 +1682,29 @@ void CompileExpr(Expr* exp)
 		} break;
 		
 		case EXP_IDENT:
-		{			
-			if(exp->varx.varDecl->isGlobal)
+		{	
+			if(!exp->varx.varDecl)
 			{
-				AppendCode(OP_GET);
-				AppendInt(exp->varx.varDecl->index);
+				FuncDecl* decl = ReferenceFunction(exp->varx.name);
+				if(!decl)
+					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
+				
+				AppendCode(OP_PUSH_FUNC);
+				AppendCode(decl->isExtern);
+				AppendInt(decl->index);
 			}
 			else
 			{
-				AppendCode(OP_GETLOCAL);
-				AppendInt(exp->varx.varDecl->index);
+				if(exp->varx.varDecl->isGlobal)
+				{
+					AppendCode(OP_GET);
+					AppendInt(exp->varx.varDecl->index);
+				}
+				else
+				{
+					AppendCode(OP_GETLOCAL);
+					AppendInt(exp->varx.varDecl->index);
+				}
 			}
 		} break;
 		
@@ -1737,20 +1718,64 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_CALL:
 		{
-			if(!CompileIntrinsic(exp))
+			if(exp->callx.func->type == EXP_IDENT)
+			{
+				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+				if(decl)
+				{	
+					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+						CompileExpr(exp->callx.args[i]);
+					
+					if(decl->isExtern)
+					{
+						AppendCode(OP_CALLF);
+						AppendInt(decl->index);
+					}
+					else
+					{	
+						if(exp->callx.numArgs != decl->numArgs)
+							ErrorExit("Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+					
+						AppendCode(OP_CALL);
+						AppendCode(exp->callx.numArgs);
+						AppendInt(decl->index);
+					}
+				}
+				else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
+				{
+					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+						CompileExpr(exp->callx.args[i]);
+						
+					CompileExpr(exp->callx.func);
+					
+					AppendCode(OP_CALLP);
+					AppendCode(exp->callx.numArgs);
+				}
+			}
+			else if(exp->callx.func->type == EXP_COLON)
 			{
 				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 					CompileExpr(exp->callx.args[i]);
-		
-				if(!exp->callx.decl->isExtern)
-				{
-					AppendCode(OP_CALL);
-					AppendCode(exp->callx.numArgs);
-				}
-				else
-					AppendCode(OP_CALLF);
+				CompileExpr(exp->callx.func->colonx.dict);
 				
-				AppendInt(exp->callx.decl->index);
+				AppendCode(OP_PUSH_STRING);
+				AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
+				CompileExpr(exp->callx.func->colonx.dict);
+			
+				AppendCode(OP_DICT_GET);
+				
+				AppendCode(OP_CALLP);
+				AppendCode(exp->callx.numArgs);
+			}
+			else
+			{			
+				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+					CompileExpr(exp->callx.args[i]);
+					
+				CompileExpr(exp->callx.func);
+				
+				AppendCode(OP_CALLP);
+				AppendCode(exp->callx.numArgs);
 			}
 		} break;
 		
@@ -1951,6 +1976,11 @@ void CompileExpr(Expr* exp)
 			
 				AppendCode(OP_DICT_GET);
 			}
+		} break;
+		
+		case EXP_COLON:
+		{
+			ErrorExit("Attempted to use ':' to index non-function value inside dictionary; use '.' instead (or call the function you're indexing)\n");
 		} break;
 		
 		case EXP_DICT_LITERAL:

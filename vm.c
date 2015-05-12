@@ -1323,7 +1323,8 @@ void ExecuteCycle(VM* vm)
 					exit(1);
 				}
 				
-				PushNumber(vm, obj->string.raw[(int)indexObj->number]);
+				char buf[2] = { obj->string.raw[(int)indexObj->number], '\0' };
+				PushString(vm, buf);
 			}
 			else if(obj->type == OBJ_DICT)
 			{
