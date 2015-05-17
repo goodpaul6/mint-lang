@@ -1,7 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - fix error message line numbers (store line numbers in expressions)
+ * - ellipsis (..., refer to arguments with 'args' array)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
  * - proper operators: need more operators
@@ -120,8 +120,6 @@ typedef struct _FuncDecl
 	int numLocals;
 	Word numArgs;
 	int pc;
-	
-	int type;
 } FuncDecl;
 
 typedef struct _VarDecl
@@ -427,7 +425,7 @@ VarDecl* RegisterVariable(const char* name)
 	return decl;
 }
 
-void RegisterArgument(const char* name, int numArgs)
+void RegisterArgument(const char* name)
 {
 	if(!CurFunc)
 		ErrorExit("(INTERNAL) Must be inside function when registering arguments\n");
@@ -483,6 +481,7 @@ enum
 	TOK_CDIV = -28,
 	TOK_CONTINUE = -29,
 	TOK_BREAK = -30,
+	TOK_ELLIPSIS = -31,
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -620,10 +619,11 @@ int GetToken(FILE* in)
 		}
 
 		sprintf(Lexeme, "%i", last);
-		
+		last = getc(in);
+			
 		if(last != '\'')
 			ErrorExit("Expected ' after previous '\n");
-			
+		
 		last = getc(in);
 		return TOK_NUMBER;
 	}
@@ -693,6 +693,14 @@ int GetToken(FILE* in)
 		last = getc(in);
 		return TOK_CDIV;
 	}
+	else if(lastChar == '.' && last == '.')
+	{
+		last = getc(in);
+		if(lastChar != '.')
+			ErrorExit("Invalid token '...'\n");
+		last = getc(in);
+		return TOK_ELLIPSIS;
+	}
 	
 	return lastChar;
 }
@@ -727,6 +735,8 @@ typedef struct _Expr
 {
 	struct _Expr* next;
 	ExprType type;
+	const char* file;
+	int line;
 	
 	union
 	{
@@ -750,6 +760,18 @@ typedef struct _Expr
 	};
 } Expr;
 
+void ErrorExitE(Expr* exp, const char* format, ...)
+{
+	fprintf(stderr, "Error (%s:%i): ", exp->file, exp->line);
+	
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+	
+	exit(1);
+}
+
 int GetNextToken(FILE* in)
 {
 	CurTok = GetToken(in);
@@ -763,6 +785,8 @@ Expr* CreateExpr(ExprType type)
 	
 	exp->next = NULL;
 	exp->type = type;
+	exp->file = FileName;
+	exp->line = LineNumber;
 
 	return exp;
 }
@@ -960,12 +984,13 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_IDENT:
 		{
+			Expr* exp = CreateExpr(EXP_IDENT);
+			
 			char name[MAX_ID_NAME_LENGTH];
 			strcpy(name, Lexeme);
 			
 			GetNextToken(in);
 			
-			Expr* exp = CreateExpr(EXP_IDENT);
 			exp->varx.varDecl = ReferenceVariable(name);
 			strcpy(exp->varx.name, name);
 			return exp;		
@@ -973,12 +998,13 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_VAR:
 		{
+			Expr* exp = CreateExpr(EXP_VAR);
+			
 			GetNextToken(in);
 			
 			if(CurTok != TOK_IDENT)
 				ErrorExit("Expected ident after 'var' but received something else\n");
 						
-			Expr* exp = CreateExpr(EXP_VAR);
 			exp->varx.varDecl = RegisterVariable(Lexeme);
 			strcpy(exp->varx.name, Lexeme);
 			
@@ -989,9 +1015,9 @@ Expr* ParseFactor(FILE* in)
 		
 		case '(':
 		{
+			Expr* exp = CreateExpr(EXP_PAREN);
 			GetNextToken(in);
 			
-			Expr* exp = CreateExpr(EXP_PAREN);
 			exp->parenExpr = ParseExpr(in);
 			
 			if(CurTok != ')')
@@ -1004,9 +1030,9 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_WHILE:
 		{
+			Expr* exp = CreateExpr(EXP_WHILE);
 			GetNextToken(in);
 			
-			Expr* exp = CreateExpr(EXP_WHILE);
 			exp->whilex.cond = ParseExpr(in);
 		
 			Expr* exprHead = NULL;
@@ -1036,10 +1062,10 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_FOR:
 		{
+			Expr* exp = CreateExpr(EXP_FOR);
 			GetNextToken(in);
 			
 			PushScope();
-			Expr* exp = CreateExpr(EXP_FOR);
 			exp->forx.init = ParseExpr(in);
 			
 			if(CurTok != ',')
@@ -1080,6 +1106,7 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_FUNC:
 		{
+			Expr* exp = CreateExpr(EXP_FUNC);
 			GetNextToken(in);
 			
 			char name[MAX_ID_NAME_LENGTH];
@@ -1093,10 +1120,7 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			if(CurTok != '(')
-			{
 				ErrorExit("Expected '(' after 'func' %s\n", name);
-				
-			}
 			GetNextToken(in);
 			
 			FuncDecl* decl = EnterFunction(name);
@@ -1105,7 +1129,7 @@ Expr* ParseFactor(FILE* in)
 			int numArgs = 0;
 			
 			while(CurTok != ')')
-			{
+			{	
 				if(CurTok != TOK_IDENT)
 					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else\n", name);
 				
@@ -1120,7 +1144,7 @@ Expr* ParseFactor(FILE* in)
 			PushScope();
 			
 			for(int i = 0; i < numArgs; ++i)
-				RegisterArgument(args[i], numArgs);
+				RegisterArgument(args[i]);
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
@@ -1142,7 +1166,6 @@ Expr* ParseFactor(FILE* in)
 			ExitFunction();
 			PopScope();
 			
-			Expr* exp = CreateExpr(EXP_FUNC);
 			exp->funcx.decl = decl;
 			exp->funcx.bodyHead = exprHead;
 			
@@ -1158,8 +1181,8 @@ Expr* ParseFactor(FILE* in)
 		{
 			if(CurFunc)
 			{
-				GetNextToken(in);
 				Expr* exp = CreateExpr(EXP_RETURN);
+				GetNextToken(in);
 				if(CurTok != ';')
 				{
 					exp->retExpr = ParseExpr(in);
@@ -1180,9 +1203,9 @@ Expr* ParseFactor(FILE* in)
 		
 		case TOK_EXTERN:
 		{
+			Expr* exp = CreateExpr(EXP_EXTERN);
 			GetNextToken(in);
 			
-			Expr* exp = CreateExpr(EXP_EXTERN);
 			exp->extDecl = RegisterExtern(Lexeme);
 			
 			GetNextToken(in);
@@ -1503,7 +1526,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	if(strcmp(name, "len") == 0)
 	{
 		if(exp->callx.numArgs != 1)
-			ErrorExit("Intrinsic 'len' only takes 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'len' only takes 1 argument\n");
 		CompileExpr(exp->callx.args[0]);
 		AppendCode(OP_LENGTH);
 		return 1;
@@ -1511,7 +1534,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "write") == 0)
 	{
 		if(exp->callx.numArgs != 1)
-			ErrorExit("Intrinsic 'write' only takes 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'write' only takes 1 argument\n");
 		CompileExpr(exp->callx.args[0]);
 		AppendCode(OP_WRITE);
 		return 1;
@@ -1519,14 +1542,14 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "read") == 0)
 	{
 		if(exp->callx.numArgs != 0)
-			ErrorExit("Intrinsic 'read' takes no arguments\n");
+			ErrorExitE(exp, "Intrinsic 'read' takes no arguments\n");
 		AppendCode(OP_READ);
 		return 1;
 	}
 	else if(strcmp(name, "push") == 0)
 	{
 		if(exp->callx.numArgs != 2)
-			ErrorExit("Intrinsic 'push' only takes 2 arguments\n");
+			ErrorExitE(exp, "Intrinsic 'push' only takes 2 arguments\n");
 		CompileExpr(exp->callx.args[1]);
 		CompileExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_PUSH);
@@ -1535,7 +1558,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "pop") == 0)
 	{
 		if(exp->callx.numArgs != 1)
-			ErrorExit("Intrinsic 'push' only takes 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'push' only takes 1 argument\n");
 		CompileExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_POP);
 		return 1;
@@ -1543,7 +1566,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "clear") == 0)
 	{
 		if(exp->callx.numArgs != 1)
-			ErrorExit("Intrinsic 'clear' only takes 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'clear' only takes 1 argument\n");
 		CompileExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_CLEAR);
 		return 1;
@@ -1551,7 +1574,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "call") == 0)
 	{
 		if(exp->callx.numArgs < 1)
-			ErrorExit("Intrinsic 'call' takes at least 1 argument (the function reference)\n");
+			ErrorExitE(exp, "Intrinsic 'call' takes at least 1 argument (the function reference)\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileExpr(exp->callx.args[i]);
@@ -1562,7 +1585,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "array") == 0)
 	{
 		if(exp->callx.numArgs > 1)
-			ErrorExit("Intrinsic 'array' only takes no more than 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'array' only takes no more than 1 argument\n");
 			
 		if(exp->callx.numArgs == 1)
 			CompileExpr(exp->callx.args[0]);
@@ -1578,7 +1601,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "dict") == 0)
 	{
 		if(exp->callx.numArgs != 0)
-			ErrorExit("Intrinsic 'dict' takes no arguments\n");
+			ErrorExitE(exp, "Intrinsic 'dict' takes no arguments\n");
 		AppendCode(OP_PUSH_DICT);
 		return 1; 
 	}
@@ -1684,10 +1707,13 @@ void CompileExpr(Expr* exp)
 		case EXP_IDENT:
 		{	
 			if(!exp->varx.varDecl)
+				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
+			
+			if(!exp->varx.varDecl)
 			{
 				FuncDecl* decl = ReferenceFunction(exp->varx.name);
 				if(!decl)
-					ErrorExit("Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
+					ErrorExitE(exp, "Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
 				
 				AppendCode(OP_PUSH_FUNC);
 				AppendCode(decl->isExtern);
@@ -1733,13 +1759,28 @@ void CompileExpr(Expr* exp)
 					}
 					else
 					{	
-						if(exp->callx.numArgs != decl->numArgs)
-							ErrorExit("Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-					
+						//if(!decl->hasEllipsis)
+						{
+							if(exp->callx.numArgs != decl->numArgs)
+								ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+						}
+						/*else
+						{
+							if(exp->callx.numArgs < decl->numArgs - 1)
+								ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+						}*/
+						
+						/*if(decl->hasEllipsis)
+						{
+							AppendCode(OP_CREATE_ARRAY_BLOCK);
+							AppendInt(exp->callx.numArgs - (decl->numArgs - 1));
+						}*/
+						
 						AppendCode(OP_CALL);
-						AppendCode(exp->callx.numArgs);
+						/* if(!decl->hasEllipsis) */ AppendCode(exp->callx.numArgs);
+						// else AppendCode(decl->numArgs);
 						AppendInt(decl->index);
-					}
+					}					
 				}
 				else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
 				{
@@ -1806,7 +1847,7 @@ void CompileExpr(Expr* exp)
 				else if(exp->binx.lhs->type == EXP_DOT)
 				{
 					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
-						ErrorExit("Cannot assign dictionary entry 'pairs' to a value\n");
+						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
 					
 					CompileExpr(exp->binx.rhs);
 					
@@ -1817,7 +1858,7 @@ void CompileExpr(Expr* exp)
 					AppendCode(OP_DICT_SET);
 				}
 				else
-					ErrorExit("Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %i\n", exp->binx.lhs->type);
+					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %i\n", exp->binx.lhs->type);
 			}
 			else
 			{
@@ -1845,7 +1886,7 @@ void CompileExpr(Expr* exp)
 					case TOK_CDIV: AppendCode(OP_CDIV); break;
 					
 					default:
-						ErrorExit("Unsupported binary operator %c\n", exp->binx.op);		
+						ErrorExitE(exp, "Unsupported binary operator %c\n", exp->binx.op);		
 				}
 			}
 		} break;
@@ -1980,7 +2021,7 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_COLON:
 		{
-			ErrorExit("Attempted to use ':' to index non-function value inside dictionary; use '.' instead (or call the function you're indexing)\n");
+			ErrorExitE(exp, "Attempted to use ':' to index non-function value inside dictionary; use '.' instead (or call the function you're indexing)\n");
 		} break;
 		
 		case EXP_DICT_LITERAL:
@@ -1988,9 +2029,11 @@ void CompileExpr(Expr* exp)
 			Expr* node = exp->dictx.pairsHead;
 			while(node)
 			{
-				if(node->type != EXP_BIN) ErrorExit("Non-binary expression in dictionary literal (Expected something = something_else)\n");
-				if(node->binx.op != '=') ErrorExit("Invalid dictionary literal binary operator '%c'\n", node->binx.op);
-				if(node->binx.lhs->type != EXP_IDENT) ErrorExit("Invalid lhs in dictionary literal (Expected identifier)\n");
+				if(node->type != EXP_BIN) ErrorExitE(exp, "Non-binary expression in dictionary literal (Expected something = something_else)\n");
+				if(node->binx.op != '=') ErrorExitE(exp, "Invalid dictionary literal binary operator '%c'\n", node->binx.op);
+				if(node->binx.lhs->type != EXP_IDENT) ErrorExitE(exp, "Invalid lhs in dictionary literal (Expected identifier)\n");
+				
+				if(strcmp(node->binx.lhs->varx.name, "pairs") == 0) ErrorExitE(exp, "Attempted to assign value to reserved key 'pairs' in dictionary literal\n");
 				
 				CompileExpr(node->binx.rhs);
 				AppendCode(OP_PUSH_STRING);

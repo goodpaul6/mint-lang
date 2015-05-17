@@ -15,17 +15,19 @@ static char* ObjectTypeNames[] =
 	"number",
 	"string",
 	"array",
-	"native pointer",
-	"function",
-	"dictionary"
+	"native",
+	"func",
+	"dict"
 };
 
-static void* emalloc(size_t size)
+static void* _emalloc(size_t size, int line)
 {
 	void* mem = malloc(size);
-	if(!mem) { fprintf(stderr, "Virtual machine ran out of memory!\n"); exit(1); }
+	if(!mem) { fprintf(stderr, "(vm.c:%i) Virtual machine ran out of memory!\n", line); exit(1); }
 	return mem;
 }
+
+#define emalloc(size) _emalloc((size), __LINE__)
 
 static void* ecalloc(size_t size, size_t nmemb)
 {
@@ -87,6 +89,55 @@ void Std_Atan2(VM* vm)
 	PushNumber(vm, atan2(y, x));
 }
 
+void WriteObject(VM* vm, Object* top)
+{
+	if(top->type == OBJ_NUMBER)
+		printf("%g", top->number);
+	else if(top->type == OBJ_STRING)
+		printf("%s", top->string);
+	else if(top->type == OBJ_NATIVE)
+		printf("native pointer");
+	else if(top->type == OBJ_FUNC)
+	{
+		if(top->func.isExtern)
+			printf("extern %s", vm->externNames[top->func.index]);
+		else
+			printf("func %s", vm->functionNames[top->func.index]);
+	}
+	else if(top->type == OBJ_ARRAY)
+	{
+		printf("[");
+		for(int i = 0; i < top->array.length; ++i)
+		{	
+			WriteObject(vm, top->array.members[i]);
+			if(i + 1 < top->array.length)
+				printf(",");
+		}
+		printf("]");
+	}
+	else if(top->type == OBJ_DICT)
+	{
+		printf("{ ");
+		for(int i = 0; i < top->dict.active.length; ++i)
+		{
+			DictNode* node = top->dict.buckets[top->dict.active.data[i]];
+			
+			while(node)
+			{
+				printf("%s = ", node->key);
+				WriteObject(vm, node->value);
+				
+				if(node->next || (i + 1 < top->dict.active.length))
+					printf(", ");
+				node = node->next;
+			}
+		}
+		printf(" }");
+	}
+	else if(top->type == OBJ_NULL)
+		printf("null");
+}
+
 void Std_Printf(VM* vm)
 {
 	const char* format = PopString(vm);
@@ -116,6 +167,11 @@ void Std_Printf(VM* vm)
 					case 'c':
 					{
 						printf("%c", (int)PopNumber(vm));
+					} break;
+
+					case 'o':
+					{
+						WriteObject(vm, PopObject(vm));
 					} break;
 					
 					default:
@@ -176,7 +232,7 @@ void Std_Tostring(VM* vm)
 void Std_Type(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	PushNumber(vm, obj->type);
+	PushString(vm, ObjectTypeNames[obj->type]);
 }
 
 void Std_Assert(VM* vm)
@@ -242,6 +298,45 @@ void Std_Srand(VM* vm)
 void Std_Rand(VM* vm)
 {
 	PushNumber(vm, (int)rand());
+}
+
+void Std_Char(VM* vm)
+{
+	static char buf[2] = {0};
+	buf[0] = (char)PopNumber(vm);
+	PushString(vm, buf);
+}
+
+void Std_Joinchars(VM* vm)
+{
+	Object* obj = PopArrayObject(vm);
+	if(obj->array.length == 0)
+	{
+		PushString(vm, "");
+		return;
+	}
+	
+	char* str = alloca(obj->array.length + 1);
+	for(int i = 0; i < obj->array.length; ++i)
+		str[i] = (char)obj->array.members[i]->number;
+	str[obj->array.length] = '\0';
+	PushString(vm, str);
+}
+
+void Std_Clock(VM* vm)
+{
+	clock_t start = clock();
+	PushNumber(vm, (double)start);
+}
+
+void Std_Clockspersec(VM* vm)
+{
+	PushNumber(vm, (double)CLOCKS_PER_SEC);
+}
+
+void Std_Halt(VM* vm)
+{
+	vm->pc = -1;
 }
 
 /* END OF STANDARD LIBRARY */
@@ -500,6 +595,11 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "erase", Std_Erase);
 	HookExternNoWarn(vm, "rand", Std_Rand);
 	HookExternNoWarn(vm, "srand", Std_Srand);
+	HookExternNoWarn(vm, "char", Std_Char);
+	HookExternNoWarn(vm, "joinchars", Std_Joinchars);
+	HookExternNoWarn(vm, "clock", Std_Clock);
+	HookExternNoWarn(vm, "getclockspersec", Std_Clockspersec);
+	HookExternNoWarn(vm, "halt", Std_Halt);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -745,8 +845,10 @@ Object* PushArray(VM* vm, int length)
 	else
 		obj->array.capacity = length;
 	
-	obj->array.members = ecalloc(sizeof(Object*), obj->array.capacity);
+	obj->array.members = emalloc(sizeof(Object*) * obj->array.capacity);
 	obj->array.length = length;
+	
+	memset(obj->array.members, (int)(&NullObject), sizeof(Object*) * obj->array.capacity); 
 	
 	PushObject(vm, obj);
 	return obj;
@@ -1323,8 +1425,7 @@ void ExecuteCycle(VM* vm)
 					exit(1);
 				}
 				
-				char buf[2] = { obj->string.raw[(int)indexObj->number], '\0' };
-				PushString(vm, buf);
+				PushNumber(vm, obj->string.raw[(int)indexObj->number]);
 			}
 			else if(obj->type == OBJ_DICT)
 			{
@@ -1376,14 +1477,8 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("write\n");
 			Object* top = PopObject(vm);
-			if(top->type == OBJ_NUMBER)
-				printf("%g\n", top->number);
-			else if(top->type == OBJ_STRING)
-				printf("%s\n", top->string);
-			else if(top->type == OBJ_NATIVE)
-				printf("native pointer\n");
-			else if(top->type == OBJ_NULL)
-				printf("null\n");
+			WriteObject(vm, top);
+			printf("\n");
 			++vm->pc;
 		} break;
 		

@@ -1,5 +1,6 @@
 #include "dict.h"
 #include "vm.h"
+#include "hash.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,13 +35,14 @@ static char* estrdup(const char* string)
 
 unsigned long HashFunction(const char* key)
 {
+	/*
 	unsigned long hash = 5381;
 	int c;
 	
 	while ((c = *key++))
 		hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-
-	return hash;
+		
+	return SuperFastHash(key, strlen(key));
 }
 
 void InitDict(Dict* dict)
