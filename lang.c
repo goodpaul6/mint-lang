@@ -1,7 +1,6 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - ellipsis (..., refer to arguments with 'args' array)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
  * - proper operators: need more operators
@@ -120,6 +119,8 @@ typedef struct _FuncDecl
 	int numLocals;
 	Word numArgs;
 	int pc;
+	
+	char hasEllipsis;
 } FuncDecl;
 
 typedef struct _VarDecl
@@ -340,6 +341,7 @@ FuncDecl* RegisterExtern(const char* name)
 	decl->numArgs = 0;
 	decl->numLocals = 0;
 	decl->pc = -1;
+	decl->hasEllipsis = 0;
 	
 	return decl;
 }
@@ -1130,6 +1132,15 @@ Expr* ParseFactor(FILE* in)
 			
 			while(CurTok != ')')
 			{	
+				if(CurTok == TOK_ELLIPSIS)
+				{
+					decl->hasEllipsis = 1;
+					GetNextToken(in);
+					if(CurTok != ')')
+						ErrorExit("Attempted to place ellipsis in the middle of an argument list\n");
+					break;
+				}
+				
 				if(CurTok != TOK_IDENT)
 					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else\n", name);
 				
@@ -1145,6 +1156,11 @@ Expr* ParseFactor(FILE* in)
 			
 			for(int i = 0; i < numArgs; ++i)
 				RegisterArgument(args[i]);
+			if(decl->hasEllipsis)
+			{
+				RegisterArgument("args");
+				--decl->numArgs;
+			}
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
@@ -1716,7 +1732,9 @@ void CompileExpr(Expr* exp)
 					ErrorExitE(exp, "Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
 				
 				AppendCode(OP_PUSH_FUNC);
+				AppendCode(decl->hasEllipsis);
 				AppendCode(decl->isExtern);
+				AppendCode(decl->numArgs);
 				AppendInt(decl->index);
 			}
 			else
@@ -1749,8 +1767,22 @@ void CompileExpr(Expr* exp)
 				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
 				if(decl)
 				{	
-					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-						CompileExpr(exp->callx.args[i]);
+					if(!decl->hasEllipsis)
+					{
+						for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+							CompileExpr(exp->callx.args[i]);
+					}
+					else
+					{						
+						for(int i = decl->numArgs; i < exp->callx.numArgs; ++i)
+							CompileExpr(exp->callx.args[i]);
+						
+						AppendCode(OP_CREATE_ARRAY_BLOCK);
+						AppendInt(exp->callx.numArgs - decl->numArgs);
+
+						for(int i = decl->numArgs - 1; i >= 0; --i)
+							CompileExpr(exp->callx.args[i]);
+					}
 					
 					if(decl->isExtern)
 					{
@@ -1759,26 +1791,20 @@ void CompileExpr(Expr* exp)
 					}
 					else
 					{	
-						//if(!decl->hasEllipsis)
+						if(!decl->hasEllipsis)
 						{
 							if(exp->callx.numArgs != decl->numArgs)
 								ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
 						}
-						/*else
+						else
 						{
-							if(exp->callx.numArgs < decl->numArgs - 1)
+							if(exp->callx.numArgs < decl->numArgs)
 								ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-						}*/
-						
-						/*if(decl->hasEllipsis)
-						{
-							AppendCode(OP_CREATE_ARRAY_BLOCK);
-							AppendInt(exp->callx.numArgs - (decl->numArgs - 1));
-						}*/
+						}
 						
 						AppendCode(OP_CALL);
-						/* if(!decl->hasEllipsis) */ AppendCode(exp->callx.numArgs);
-						// else AppendCode(decl->numArgs);
+						if(!decl->hasEllipsis) AppendCode(exp->callx.numArgs);
+						else AppendCode(decl->numArgs + 1);
 						AppendInt(decl->index);
 					}					
 				}

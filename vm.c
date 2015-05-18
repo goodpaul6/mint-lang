@@ -824,12 +824,14 @@ void PushString(VM* vm, const char* string)
 	PushObject(vm, obj);
 }
 
-Object* PushFunc(VM* vm, int id, Word isExtern)
+Object* PushFunc(VM* vm, int id, Word hasEllipsis, Word isExtern, Word numArgs)
 {
 	Object* obj = NewObject(vm, OBJ_FUNC);
 	
 	obj->func.index = id;
 	obj->func.isExtern = isExtern;
+	obj->func.hasEllipsis = hasEllipsis;
+	obj->func.numArgs = numArgs;
 	
 	PushObject(vm, obj);
 	
@@ -885,12 +887,16 @@ const char* PopString(VM* vm)
 	return obj->string.raw;
 }
 
-int PopFunc(VM* vm, Word* isExtern)
+int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs)
 {
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_FUNC) { fprintf(stderr, "Expected function but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
 	if(isExtern)
 		*isExtern = obj->func.isExtern;
+	if(hasEllipsis)
+		*hasEllipsis = obj->func.hasEllipsis;
+	if(numArgs)
+		*numArgs = obj->func.numArgs;
 	return obj->func.index;
 }
 
@@ -1070,10 +1076,13 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("push_func\n");
+			Word hasEllipsis = vm->program[++vm->pc];
 			Word isExtern = vm->program[++vm->pc];
+			Word numArgs = vm->program[++vm->pc];
 			++vm->pc;
 			int index = ReadInteger(vm);
-			PushFunc(vm, index, isExtern);
+			
+			PushFunc(vm, index, hasEllipsis, isExtern, numArgs);
 		} break;
 		
 		case OP_PUSH_DICT:
@@ -1532,10 +1541,10 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_CALLP:
 		{
-			Word isExtern;		
+			Word hasEllipsis, isExtern, numArgs;
 			Word nargs = vm->program[++vm->pc];
 			++vm->pc;
-			int id = PopFunc(vm, &isExtern);
+			int id = PopFunc(vm, &hasEllipsis, &isExtern, &numArgs);
 			
 			if(vm->debug)
 				printf("callp %s%s\n", isExtern ? "extern " : "", isExtern ? vm->externNames[id] : vm->functionNames[id]);
@@ -1544,7 +1553,68 @@ void ExecuteCycle(VM* vm)
 				vm->externs[id](vm);
 			else
 			{
-				PushIndir(vm, nargs);
+				if(!hasEllipsis)
+				{
+					if(nargs != numArgs)
+					{
+						fprintf(stderr, "Function '%s' expected %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
+						exit(1);
+					}
+				}
+				else
+				{
+					if(nargs < numArgs)
+					{
+						fprintf(stderr, "Function '%s' expected at least %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
+						exit(1);
+					}
+				}
+				
+				if(!hasEllipsis) PushIndir(vm, nargs);
+				else
+				{
+					// runtime collapsing of arguments:
+					// the concrete arguments (known during compilation) are on the top of
+					// the stack. We create an array (by pushing it and then decrementing the
+					// stack pointer) and fill it up with the ellipsed arguments (behind the
+					// concrete arguments). We then place this array just before the concrete
+					// arguments in the stack so that it can be accessed as an argument "args".
+					// The indirection info is pushed onto the indirection stack (the concrete and
+					// non-concrete [aside from the one that the 'args' array replaces] are still 
+					// present on the stack, so all of the arguments are to be removed)
+					
+					/*printf("args:\n");
+					for(int i = 0; i < nargs; ++i)
+					{
+						WriteObject(vm, vm->stack[vm->stackSize - i - 1]);
+						printf("\n");
+					}
+					printf("end\n");*/
+					
+					//printf("members:\n");
+					Object* obj = PushArray(vm, nargs - numArgs);
+					vm->stackSize -= 1;
+					for(int i = 0; i < obj->array.length; ++i)
+					{
+						obj->array.members[i] = vm->stack[vm->stackSize - numArgs - 1 - i];
+						/*WriteObject(vm, obj->array.members[i]);
+						printf("\n");*/
+					}
+					//printf("end\n");
+					
+					vm->stack[vm->stackSize - numArgs - 1] = obj;
+					
+					/*printf("final args:\n");
+					for(int i = 0; i < numArgs + 1; ++i)
+					{
+						WriteObject(vm, vm->stack[vm->stackSize - i - 1]);
+						printf("\n");
+					}
+					printf("end\n");*/
+					
+					PushIndir(vm, nargs);
+				}
+				
 				vm->pc = vm->functionPcs[id];
 			}
 		} break;

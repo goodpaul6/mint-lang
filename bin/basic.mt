@@ -8,8 +8,12 @@ extern type
 
 var std
 
-func _std_printf(format, args)
-	printf("%s", _std_mprintf(format, args))
+func _std_printf(format, ...)
+	printf("%s", _std_mprintf_args(format, args))
+end
+
+func _std_mprintf(format, ...)
+	return _std_mprintf_args(format, args)
 end
 
 func _std_mprintf_add_chars(buf, string)
@@ -63,7 +67,7 @@ func _std_mprintf_tostring(v)
 	end
 end
 
-func _std_mprintf(format, args)
+func _std_mprintf_args(format, args)
 	var buf = []
 	var arg = 0
 	
