@@ -591,6 +591,7 @@ int GetToken(FILE* in)
 					case 't': last = '\t'; break;
 					case '"': last = '"'; break;
 					case '\'': last = '\''; break;
+					case '\\': last = '\\'; break;
 				}
 			}
 			
@@ -617,6 +618,7 @@ int GetToken(FILE* in)
 				case 't': last = '\t'; break;
 				case '"': last = '"'; break;
 				case '\'': last = '\''; break;
+				case '\\': last = '\\'; break;
 			}
 		}
 
@@ -1142,7 +1144,7 @@ Expr* ParseFactor(FILE* in)
 				}
 				
 				if(CurTok != TOK_IDENT)
-					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else\n", name);
+					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else (%c, %i)\n", name, CurTok, CurTok);
 				
 				strcpy(args[numArgs++], Lexeme);
 				GetNextToken(in);
@@ -1601,7 +1603,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "array") == 0)
 	{
 		if(exp->callx.numArgs > 1)
-			ErrorExitE(exp, "Intrinsic 'array' only takes no more than 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'array' takes no more than 1 argument\n");
 			
 		if(exp->callx.numArgs == 1)
 			CompileExpr(exp->callx.args[0]);
@@ -1620,6 +1622,26 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'dict' takes no arguments\n");
 		AppendCode(OP_PUSH_DICT);
 		return 1; 
+	}
+	else if(strcmp(name, "get_func_id") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'get_func_id' only takes 1 argument\n");
+		
+		if(exp->callx.args[0]->type != EXP_IDENT)
+			ErrorExitE(exp->callx.args[0], "Argument to intrinisic 'get_func_id' must be an identifier!\n");
+		
+		FuncDecl* decl = ReferenceFunction(exp->callx.args[0]->varx.name);
+		if(!decl)
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(-1)->index);
+		}
+		else
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(decl->index)->index);
+		}	
 	}
 	
 	return 0;
@@ -1832,7 +1854,7 @@ void CompileExpr(Expr* exp)
 				AppendCode(OP_DICT_GET);
 				
 				AppendCode(OP_CALLP);
-				AppendCode(exp->callx.numArgs);
+				AppendCode(exp->callx.numArgs + 1);
 			}
 			else
 			{			

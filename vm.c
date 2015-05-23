@@ -290,6 +290,13 @@ void Std_Getc(VM* vm)
 	PushNumber(vm, getc(file));
 }
 
+void Std_Putc(VM* vm)
+{
+	FILE* file = PopNative(vm);
+	int c = (int)PopNumber(vm);
+	putc(c, file);
+}
+
 void Std_Srand(VM* vm)
 {
 	srand((unsigned int)time(NULL));
@@ -600,6 +607,9 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "clock", Std_Clock);
 	HookExternNoWarn(vm, "getclockspersec", Std_Clockspersec);
 	HookExternNoWarn(vm, "halt", Std_Halt);
+	HookExternNoWarn(vm, "fopen", Std_Fopen);
+	HookExternNoWarn(vm, "getc", Std_Getc);
+	HookExternNoWarn(vm, "putc", Std_Putc);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -1230,9 +1240,9 @@ void ExecuteCycle(VM* vm)
 			Object* aobj = PushArray(vm, obj->dict.numEntries);
 			
 			int len = 0;
-			for(int i = obj->dict.active.length - 1; i >= 0; --i)
+			for(int i = 0; i <= obj->dict.capacity; ++i)
 			{
-				DictNode* node = obj->dict.buckets[obj->dict.active.data[i]];
+				DictNode* node = obj->dict.buckets[i];
 				while(node)
 				{
 					Object* pair = PushArray(vm, 2);
@@ -1444,7 +1454,11 @@ void ExecuteCycle(VM* vm)
 					exit(1);
 				}
 				
-				PushObject(vm, (Object*)DictGet(&obj->dict, indexObj->string.raw));
+				Object* val = (Object*)DictGet(&obj->dict, indexObj->string.raw);
+				if(val)
+					PushObject(vm, val);
+				else
+					PushObject(vm, &NullObject);
 			}
 			else 
 			{

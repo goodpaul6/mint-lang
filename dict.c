@@ -45,17 +45,22 @@ unsigned long HashFunction(const char* key)
 	return SuperFastHash(key, strlen(key));
 }
 
-void InitDict(Dict* dict)
+void InternalInitDict(Dict* dict, int capacity)
 {
-	dict->buckets = ecalloc(sizeof(DictNode*), INIT_DICT_CAPACITY);
-	dict->capacity = INIT_DICT_CAPACITY;
+	dict->buckets = ecalloc(sizeof(DictNode*), capacity);
+	dict->capacity = capacity;
 	dict->used = 0;
 	
-	dict->active.data = ecalloc(sizeof(int), INIT_DICT_CAPACITY);
+	dict->active.data = ecalloc(sizeof(int), capacity);
 	dict->active.length = 0;
-	dict->active.capacity = INIT_DICT_CAPACITY;
+	dict->active.capacity = capacity;
 	
 	dict->numEntries = 0;
+}
+
+void InitDict(Dict* dict)
+{
+	InternalInitDict(dict, INIT_DICT_CAPACITY);
 }
 
 void DictResize(Dict* dict, int newCapacity);
@@ -90,35 +95,25 @@ void DictPutNode(Dict* dict, DictNode* node)
 }
 
 void DictResize(Dict* dict, int newCapacity)
-{
-	int oldCapacity = dict->capacity;
-	DictNode** oldBuckets = ecalloc(sizeof(DictNode*), oldCapacity);
-	memcpy(oldBuckets, dict->buckets, sizeof(DictNode*) * oldCapacity);
+{	
+	Dict newDict;
+	InternalInitDict(&newDict, dict->capacity * 2);
 	
-	dict->numEntries = 0;
-	
-	free(dict->active.data);
-	dict->active.data = ecalloc(sizeof(int), newCapacity);
-	dict->active.length = 0;
-	dict->active.capacity = newCapacity;
-	
-	free(dict->buckets);
-	dict->buckets = ecalloc(sizeof(DictNode*), newCapacity);
-	dict->used = 0;
-	dict->capacity = newCapacity;
-	
-	for(int i = 0; i < oldCapacity; ++i)
+	for(int i = 0; i < dict->capacity; ++i)
 	{
-		DictNode* node = oldBuckets[i];
+		DictNode* node = dict->buckets[i];
 		while(node)
 		{
-			DictNode* next = node->next;
-			DictPutNode(dict, node);
-			node = next;
+			DictPut(&newDict, node->key, node->value);
+			node = node->next;
 		}
 	}
 	
-	free(oldBuckets);
+	Dict swap = *dict;
+	*dict = newDict;
+	newDict = swap;
+	
+	FreeDict(&newDict);
 }
 
 void DictPut(Dict* dict, const char* key, void* value)
@@ -191,16 +186,14 @@ void FreeDict(Dict* dict)
 		while(node)
 		{
 			next = node->next;
-			
-			if(node->activeIndex + 1 < dict->active.length)
-				memmove(&dict->active.data[node->activeIndex], &dict->active.data[node->activeIndex + 1], sizeof(int) * (dict->active.length - node->activeIndex - 1));
-			--dict->active.length;
-			
 			free(node->key);
 			free(node);
 			node = next;
 		}	
 	}
 	dict->numEntries = 0;
+	free(dict->active.data);
+	dict->active.length = 0;
+	dict->active.capacity = 0;
 	free(dict->buckets);
 }
