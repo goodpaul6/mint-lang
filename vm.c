@@ -346,6 +346,62 @@ void Std_Halt(VM* vm)
 	vm->pc = -1;
 }
 
+typedef struct
+{
+	size_t length;
+	unsigned char* bytes;
+} ByteArray;
+
+void Std_FreeBytes(void* pba)
+{
+	ByteArray* ba = pba;
+	free(ba->bytes);
+}
+
+void Std_Bytes(VM* vm)
+{
+	size_t length = (size_t)PopNumber(vm);
+	ByteArray* ba = emalloc(sizeof(ByteArray));
+	
+	ba->length = length;
+	ba->bytes = ecalloc(sizeof(unsigned char), length);
+	
+	PushNative(vm, ba, Std_FreeBytes, NULL);
+}
+
+void Std_GetByte(VM* vm)
+{
+	ByteArray* ba = PopNative(vm);
+	size_t i = (size_t)PopNumber(vm);
+	
+	PushNumber(vm, ba->bytes[i]);
+}
+
+void Std_SetByte(VM* vm)
+{
+	ByteArray* ba = PopNative(vm);
+	size_t i = (size_t)PopNumber(vm);
+	unsigned char value = (unsigned char)PopNumber(vm);
+	ba->bytes[i] = value;
+}
+
+void Std_SetInt(VM* vm)
+{
+	ByteArray* ba = PopNative(vm);
+	size_t i = (size_t)PopNumber(vm);
+	int value = (int)PopNumber(vm);
+	unsigned char* vp = (unsigned char*)(&value);
+	
+	for(int i = 0; i < sizeof(int) / sizeof(unsigned char); ++i)
+		ba->bytes[i] = *vp++;
+}
+
+void Std_BytesLength(VM* vm)
+{
+	ByteArray* ba = PopNative(vm);
+	PushNumber(vm, ba->length);
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -610,6 +666,11 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "fopen", Std_Fopen);
 	HookExternNoWarn(vm, "getc", Std_Getc);
 	HookExternNoWarn(vm, "putc", Std_Putc);
+	HookExternNoWarn(vm, "bytes", Std_Bytes);
+	HookExternNoWarn(vm, "getbyte", Std_GetByte);
+	HookExternNoWarn(vm, "setbyte", Std_SetByte);
+	HookExternNoWarn(vm, "setint", Std_SetInt);
+	HookExternNoWarn(vm, "lenbytes", Std_BytesLength);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)

@@ -9,6 +9,11 @@ extern strcat
 extern fopen
 extern getc
 extern putc
+extern bytes
+extern getbyte
+extern setbyte
+extern setint
+extern lenbytes
 
 var std
 
@@ -98,6 +103,10 @@ func mprintf_raw(format, ...)
 	end
 	
 	return buf
+end
+
+func mprintf_args(format, args)
+	return _std_mprintf_args(format, args)
 end
 
 func _std_mprintf_args(format, args)

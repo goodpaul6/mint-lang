@@ -1,0 +1,3 @@
+x = 20
+y = 30
+eval "print ((tostring x) # (tostring y) end"

@@ -52,21 +52,16 @@ end
 
 func prim_eval(args)
 	var prev_tok = cur_tok
-	var prev_lexeme = lexeme
 	
 	var s = std.stream(args[0])
 	
-	last_char = ' '
-	lexeme = ""
-	
+	cur_tok = ' '
 	get_next_tok(s)
 	
 	var e = parse_expr(s)
 	var result = interpret(e)
 	
 	cur_tok = prev_tok
-	lexeme = prev_lexeme
-	
 	return result
 end
 
