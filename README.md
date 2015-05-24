@@ -16,55 +16,6 @@ func _main()
 end
 ```
 The syntax is fairly similar to that of Lua or Python. 
-Here is a more complex example:
-```
-# types_and_arrays.mt -- type handling and arrays
-
-extern type
-extern assert
-
-var number
-var string
-var array
-
-func write_object(o)
-	var ot = type(o)
-	if ot == number
-		write(tostring(o))
-	elif ot == string
-		write(o)
-	elif ot == array
-		write_array(o)
-	end
-end
-
-func write_array(a)
-	assert(type(a) == array, "Expected array as first argument to write_array")
-
-	for var i = 0, i < len(a), i = i + 1
-		write_object(a[i])
-	end
-end
-
-func _main()
-	number = type(0)
-	string = type("")
-	array = type([0])
-	
-	# creates array of length 4 and puts it in variable 'arr'
-	var arr = [4]
-	
-	arr[0] = "hello"
-	arr[1] = 10
-	arr[2] = "world"
-	arr[3] = [2]
-	arr[3][0] = "goodbye"
-	arr[3][1] = "world"
-	
-	write_array(arr)
-	return 0
-end
-```
 'write' isn't designated as an extern because it is a compiler intrinsic; it compiles directly
 to a bytecode instruction which writes the first argument to stdout.
 
@@ -86,15 +37,12 @@ func write_number(g)
 end
 
 func _main()
-	writer = @write_string
-	
-	# call is a compiler intrinsic which takes a variable number of 
-    # arguments and passes them on to the function in
-	# the function pointer
-	call(writer, "hello world")
+	writer = write_string
+	write("hello world")
 
-	writer = @write_number
-	call(writer, 10)
+	writer = write_number
+	writer(10)
+	
 	return 0
 end
 ```
