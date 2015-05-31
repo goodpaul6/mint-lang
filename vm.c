@@ -411,6 +411,10 @@ void InitVM(VM* vm)
 	vm->program = NULL;
 	vm->programLength = 0;
 	
+	vm->hasExecutedGlobalCode = 0;
+	vm->globalCode = NULL;
+	vm->globalCodeLength = 0;
+	
 	vm->entryPoint = 0;
 	
 	vm->numFunctions = 0;
@@ -457,7 +461,9 @@ void ResetVM(VM* vm)
 	
 	if(vm->program)
 		free(vm->program);
-	vm->program = NULL;
+	
+	if(vm->globalCode)
+		free(vm->globalCode);
 	
 	if(vm->functionPcs)
 		free(vm->functionPcs);
@@ -731,25 +737,35 @@ int GetFunctionId(VM* vm, const char* name)
 	return -1;
 }
 
-void MarkObject(Object* obj)
+void MarkObject(VM* vm, Object* obj)
 {
+	if(!obj)
+	{
+		fprintf(stderr, "Attempted to mark null object\n");
+		return;
+	}
+	
+	if(obj == &NullObject) return;
 	if(obj->marked) return;
+	
+	if(vm->debug)
+		printf("marking %s\n", ObjectTypeNames[obj->type]); 
 	
 	if(obj->type == OBJ_NATIVE)
 	{
 		if(obj->native.onMark)
 			obj->native.onMark(obj->native.value);
 	}
-	if(obj->type == OBJ_ARRAY)
+	else if(obj->type == OBJ_ARRAY)
 	{
 		for(int i = 0; i < obj->array.length; ++i)
 		{
 			Object* mem = obj->array.members[i];
 			if(mem)
-				MarkObject(mem);
+				MarkObject(vm, mem);
 		}
 	}
-	if(obj->type == OBJ_DICT)
+	else if(obj->type == OBJ_DICT)
 	{
 		for(int i = 0; i < obj->dict.capacity; ++i)
 		{	
@@ -757,7 +773,10 @@ void MarkObject(Object* obj)
 			
 			while(node)
 			{
-				MarkObject(node->value);
+				if(vm->debug)
+					printf("marking node %s value\n", node->key);
+				if(node->value)
+					MarkObject(vm, node->value);
 				node = node->next;
 			}
 		}
@@ -772,7 +791,7 @@ void MarkAll(VM* vm)
 	{
 		Object* reachable = vm->stack[i];
 		if(reachable)
-			MarkObject(reachable);
+			MarkObject(vm, reachable);
 	}
 }
 
@@ -918,10 +937,8 @@ Object* PushArray(VM* vm, int length)
 	else
 		obj->array.capacity = length;
 	
-	obj->array.members = emalloc(sizeof(Object*) * obj->array.capacity);
+	obj->array.members = ecalloc(sizeof(Object*), obj->array.capacity);
 	obj->array.length = length;
-	
-	memset(obj->array.members, (int)(&NullObject), sizeof(Object*) * obj->array.capacity); 
 	
 	PushObject(vm, obj);
 	return obj;
@@ -998,6 +1015,14 @@ void* PopNative(VM* vm)
 {
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_NATIVE) { fprintf(stderr, "Expected native pointer but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	return obj->native.value;
+}
+
+void* PopNativeOrNull(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_NATIVE && obj->type != OBJ_NULL) { fprintf(stderr, "Expected native pointer or null but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type == OBJ_NULL) return NULL;
 	return obj->native.value;
 }
 
@@ -1136,10 +1161,10 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_PUSH_STRING:
 		{
-			if(vm->debug)
-				printf("push_string\n");
 			++vm->pc;
 			int index = ReadInteger(vm);
+			if(vm->debug)
+				printf("push_string %s\n", vm->stringConstants[index]);
 			PushString(vm, vm->stringConstants[index]);
 		} break;
 		
@@ -1301,7 +1326,7 @@ void ExecuteCycle(VM* vm)
 			Object* aobj = PushArray(vm, obj->dict.numEntries);
 			
 			int len = 0;
-			for(int i = 0; i <= obj->dict.capacity; ++i)
+			for(int i = 0; i < obj->dict.capacity; ++i)
 			{
 				DictNode* node = obj->dict.buckets[i];
 				while(node)

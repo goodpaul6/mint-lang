@@ -125,7 +125,7 @@ typedef struct _Object
  
 #define MAX_INDIR		1024
 #define MAX_STACK		1024
-#define INIT_GC_THRESH	128
+#define INIT_GC_THRESH	32
 
 typedef struct _VM
 {
@@ -133,6 +133,11 @@ typedef struct _VM
 	
 	Word* program;
 	int programLength;
+	
+	// This is to be executed at least once when the virtual machine is run
+	char hasExecutedGlobalCode;
+	Word* globalCode;
+	int globalCodeLength;
 	
 	int entryPoint;
 	
@@ -202,6 +207,7 @@ Object** PopArray(VM* vm, int* length);
 Object* PopArrayObject(VM* vm);
 Object* PopDict(VM* vm);
 void* PopNative(VM* vm);
+void* PopNativeOrNull(VM* vm);
 
 void RunVM(VM* vm);
 

@@ -48,7 +48,7 @@ void ErrorExit(const char* format, ...)
 }
 
 void AppendCode(Word code)
-{
+{	
 	while(CodeLength + 1 >= CodeCapacity)
 	{
 		if(!Code) CodeCapacity = 8;
@@ -58,7 +58,7 @@ void AppendCode(Word code)
 		assert(newCode);
 		Code = newCode;
 	}
-	
+
 	Code[CodeLength++] = code;
 }
 
@@ -78,11 +78,8 @@ void AllocatePatch(int length)
 void EmplaceInt(int loc, int value)
 {
 	if(loc >= CodeLength)
-	{
 		ErrorExit("Compiler error: attempted to emplace in outside of code array\n");
 		
-	}
-	
 	Word* code = (Word*)(&value);
 	for(int i = 0; i < sizeof(int) / sizeof(Word); ++i)
 		Code[loc + i] = *code++;
@@ -484,6 +481,7 @@ enum
 	TOK_CONTINUE = -29,
 	TOK_BREAK = -30,
 	TOK_ELLIPSIS = -31,
+	TOK_NEW = -32,
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -543,6 +541,7 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "lambda") == 0) return TOK_LAMBDA;
 		if(strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
 		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
+		if(strcmp(Lexeme, "new") == 0) return TOK_NEW;
 		
 		return TOK_IDENT;
 	}
@@ -733,6 +732,7 @@ typedef enum
 	EXP_CONTINUE,
 	EXP_BREAK,
 	EXP_COLON,
+	EXP_NEW,
 } ExprType;
 
 typedef struct _Expr
@@ -741,6 +741,7 @@ typedef struct _Expr
 	ExprType type;
 	const char* file;
 	int line;
+	FuncDecl* curFunc;
 	
 	union
 	{
@@ -761,6 +762,7 @@ typedef struct _Expr
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
 		struct { struct _Expr* pairsHead; int length; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
+		struct _Expr* newExpr;
 	};
 } Expr;
 
@@ -791,6 +793,7 @@ Expr* CreateExpr(ExprType type)
 	exp->type = type;
 	exp->file = FileName;
 	exp->line = LineNumber;
+	exp->curFunc = CurFunc;
 
 	return exp;
 }
@@ -907,6 +910,14 @@ Expr* ParseFactor(FILE* in)
 		{
 			GetNextToken(in);
 			Expr* exp = CreateExpr(EXP_NULL);
+			return exp;
+		} break;
+		
+		case TOK_NEW:
+		{
+			GetNextToken(in);
+			Expr* exp = CreateExpr(EXP_NEW);
+			exp->newExpr = ParseExpr(in);
 			return exp;
 		} break;
 		
@@ -1551,10 +1562,13 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	}
 	else if(strcmp(name, "write") == 0)
 	{
-		if(exp->callx.numArgs != 1)
-			ErrorExitE(exp, "Intrinsic 'write' only takes 1 argument\n");
-		CompileExpr(exp->callx.args[0]);
-		AppendCode(OP_WRITE);
+		if(exp->callx.numArgs < 1)
+			ErrorExitE(exp, "Intrinsic 'write' takes at least 1 argument\n");
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+		{
+			CompileExpr(exp->callx.args[i]);
+			AppendCode(OP_WRITE);
+		}
 		return 1;
 	}
 	else if(strcmp(name, "read") == 0)
@@ -1711,6 +1725,8 @@ void ClearPatches()
 void CompileExprList(Expr* head);
 void CompileExpr(Expr* exp)
 {
+	// printf("compiling expression (%s:%i)\n", exp->file, exp->line);
+	 
 	ResolveSymbols(exp);
 	
 	switch(exp->type)
@@ -1752,6 +1768,9 @@ void CompileExpr(Expr* exp)
 				FuncDecl* decl = ReferenceFunction(exp->varx.name);
 				if(!decl)
 					ErrorExitE(exp, "Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
+				
+				if(decl->hasEllipsis)
+					ErrorExitE(exp, "Attempted to get function pointer to variadic function '%s', which is not supported yet.\nPlease use the function directly", exp->varx.name);
 				
 				AppendCode(OP_PUSH_FUNC);
 				AppendCode(decl->hasEllipsis);
@@ -1876,6 +1895,13 @@ void CompileExpr(Expr* exp)
 				
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
 				{
+					if(!exp->binx.lhs->varx.varDecl)
+					{
+						exp->binx.lhs->varx.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
+						if(!exp->binx.lhs->varx.varDecl)
+							ErrorExitE(exp, "Attempted to assign to non-existent variable '%s'\n", exp->binx.lhs->varx.name);
+					}
+					
 					if(exp->binx.lhs->varx.varDecl->isGlobal)
 					{
 						if(exp->binx.lhs->type == EXP_VAR) printf("Warning: assignment operations to global variables will not execute unless they are inside the entry point\n");
