@@ -654,7 +654,7 @@ void HookSFML(VM* vm)
 	HookExternNoWarn(vm, "sfEvent_type", Ext_sfEvent_type);
 	HookExternNoWarn(vm, "sfEvent_size_width", Ext_sfEvent_size_width);
 	HookExternNoWarn(vm, "sfEvent_size_height", Ext_sfEvent_size_height);
-	HookExternNoWarn(vm, "sfEvent_size_key_code", Ext_sfEvent_key_code);
+	HookExternNoWarn(vm, "sfEvent_key_code", Ext_sfEvent_key_code);
 	
 	HookExternNoWarn(vm, "sfTexture_createFromFile", Ext_sfTexture_createFromFile);
 	HookExternNoWarn(vm, "sfTexture_getSize", Ext_sfTexture_getSize);

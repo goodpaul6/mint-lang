@@ -6,6 +6,7 @@
 #include <math.h>
 #include <malloc.h>
 #include <time.h>
+#include <stdarg.h>
 
 Object NullObject;
 
@@ -48,6 +49,18 @@ static char* estrdup(const char* string)
 	char* newString = emalloc(strlen(string) + 1);
 	strcpy(newString, string);
 	return newString;
+}
+
+void ErrorExit(VM* vm, const char* format, ...)
+{
+	fprintf(stderr, "Error at pc %i (last function called: %s):\n", vm->pc, vm->lastFunctionName);
+	
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+	
+	exit(1);
 }
 
 /* STANDARD LIBRARY */
@@ -196,10 +209,7 @@ void Std_Strcat(VM* vm)
 	
 	char* newString = alloca(la + lb + 1);
 	if(!newString)
-	{
-		fprintf(stderr, "Out of stack space when alloca'ing\n");
-		exit(1);
-	}
+		ErrorExit(vm, "out of memory when alloca'ing\n");
 	strcpy(newString, a);
 	strcpy(newString + la, b);
 	
@@ -241,11 +251,7 @@ void Std_Assert(VM* vm)
 	const char* message = PopString(vm);
 	
 	if(!result)
-	{
-		fprintf(stderr, "Assertion failed (pc %i)\n", vm->pc);
-		fprintf(stderr, "%s\n", message);
-		exit(1);
-	}
+		ErrorExit(vm, "Assertion failed: %s\n", message);
 }
 
 void Std_Erase(VM* vm)
@@ -254,10 +260,7 @@ void Std_Erase(VM* vm)
 	int index = (int)PopNumber(vm);
 	
 	if(index < 0 || index >= obj->array.length)
-	{
-		fprintf(stderr, "Attempted to erase non-existent index %i\n", index);
-		exit(1);
-	}
+		ErrorExit(vm, "Attempted to erase non-existent index %i\n", index);
 	
 	if(index < obj->array.length - 1 && obj->array.length > 1)
 		memmove(&obj->array.members[index], &obj->array.members[index + 1], sizeof(Object*) * (obj->array.length - index - 1));
@@ -411,14 +414,12 @@ void InitVM(VM* vm)
 	vm->program = NULL;
 	vm->programLength = 0;
 	
-	vm->hasExecutedGlobalCode = 0;
-	vm->globalCode = NULL;
-	vm->globalCodeLength = 0;
-	
 	vm->entryPoint = 0;
 	
 	vm->numFunctions = 0;
 	vm->functionPcs = NULL;
+	
+	vm->lastFunctionName = NULL;
 	
 	vm->numNumberConstants = 0;
 	vm->numberConstants = NULL;
@@ -457,13 +458,10 @@ VM* NewVM()
 
 void ResetVM(VM* vm)
 {
-	if(vm->pc != -1) { fprintf(stderr, "Attempted to reset a running virtual machine\n"); exit(1); }
+	if(vm->pc != -1) ErrorExit(vm, "Attempted to reset a running virtual machine\n");
 	
 	if(vm->program)
 		free(vm->program);
-	
-	if(vm->globalCode)
-		free(vm->globalCode);
 	
 	if(vm->functionPcs)
 		free(vm->functionPcs);
@@ -718,10 +716,7 @@ void CheckExterns(VM* vm)
 	for(int i = 0; i < vm->numExterns; ++i)
 	{
 		if(!vm->externs[i])
-		{
-			fprintf(stderr, "Unbound extern '%s'\n", vm->externNames[i]);
-			exit(1);
-		}
+			ErrorExit(vm, "Unbound extern '%s'\n", vm->externNames[i]);
 	}
 }
 
@@ -747,6 +742,8 @@ void MarkObject(VM* vm, Object* obj)
 	
 	if(obj == &NullObject) return;
 	if(obj->marked) return;
+	
+	obj->marked = 1;
 	
 	if(vm->debug)
 		printf("marking %s\n", ObjectTypeNames[obj->type]); 
@@ -781,8 +778,6 @@ void MarkObject(VM* vm, Object* obj)
 			}
 		}
 	}
-
-	obj->marked = 1;
 }
 
 void MarkAll(VM* vm)
@@ -888,13 +883,13 @@ Object* NewObject(VM* vm, ObjectType type)
 
 void PushObject(VM* vm, Object* obj)
 {
-	if(vm->stackSize == MAX_STACK) { fprintf(stderr, "Stack overflow!\n"); exit(1); }
+	if(vm->stackSize == MAX_STACK) ErrorExit(vm, "Stack overflow!\n");
 	vm->stack[vm->stackSize++] = obj;
 }
 
 Object* PopObject(VM* vm)
 {
-	if(vm->stackSize == vm->numGlobals) { fprintf(stderr, "Stack underflow!\n"); exit(1); }
+	if(vm->stackSize == vm->numGlobals) ErrorExit(vm, "Stack underflow!\n");
 	return vm->stack[--vm->stackSize];
 }
 
@@ -964,21 +959,21 @@ void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)())
 double PopNumber(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_NUMBER) { fprintf(stderr, "Expected number but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_NUMBER) ErrorExit(vm, "Expected number but recieved %s\n", ObjectTypeNames[obj->type]);
 	return obj->number;
 }
 
 const char* PopString(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_STRING) { fprintf(stderr, "Expected string but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_STRING) ErrorExit(vm, "Expected string but recieved %s\n", ObjectTypeNames[obj->type]);
 	return obj->string.raw;
 }
 
 int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_FUNC) { fprintf(stderr, "Expected function but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_FUNC) ErrorExit(vm, "Expected function but received %s\n", ObjectTypeNames[obj->type]);
 	if(isExtern)
 		*isExtern = obj->func.isExtern;
 	if(hasEllipsis)
@@ -991,7 +986,7 @@ int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs)
 Object** PopArray(VM* vm, int* length)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_ARRAY) { fprintf(stderr, "Expected array but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_ARRAY) ErrorExit(vm, "Expected array but recieved %s\n", ObjectTypeNames[obj->type]);
 	if(length)
 		*length = obj->array.length;
 	return obj->array.members;
@@ -1000,28 +995,28 @@ Object** PopArray(VM* vm, int* length)
 Object* PopArrayObject(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_ARRAY) { fprintf(stderr, "Expected array but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_ARRAY) ErrorExit(vm, "Expected array but received %s\n", ObjectTypeNames[obj->type]);
 	return obj;
 }
 
 Object* PopDict(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_DICT) { fprintf(stderr, "Expected dictionary but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_DICT) ErrorExit(vm, "Expected dictionary but received %s\n", ObjectTypeNames[obj->type]);
 	return obj;
 }
 
 void* PopNative(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_NATIVE) { fprintf(stderr, "Expected native pointer but recieved %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_NATIVE) ErrorExit(vm, "Expected native pointer but recieved %s\n", ObjectTypeNames[obj->type]);
 	return obj->native.value;
 }
 
 void* PopNativeOrNull(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_NATIVE && obj->type != OBJ_NULL) { fprintf(stderr, "Expected native pointer or null but received %s\n", ObjectTypeNames[obj->type]); exit(1); }
+	if(obj->type != OBJ_NATIVE && obj->type != OBJ_NULL) ErrorExit(vm, "Expected native pointer or null but received %s\n", ObjectTypeNames[obj->type]);
 	if(obj->type == OBJ_NULL) return NULL;
 	return obj->native.value;
 }
@@ -1231,6 +1226,22 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 
+		case OP_PUSH_STACK:
+		{
+			if(vm->debug)
+				printf("push_stack\n");
+			++vm->pc;
+			vm->indirStack[vm->indirStackSize++] = vm->stackSize;
+		} break;
+		
+		case OP_POP_STACK:
+		{
+			if(vm->debug)
+				printf("pop_stack\n");
+			++vm->pc;
+			vm->stackSize = vm->indirStack[--vm->indirStackSize];
+		} break;
+
 		case OP_LENGTH:
 		{
 			if(vm->debug)
@@ -1242,10 +1253,7 @@ void ExecuteCycle(VM* vm)
 			else if(obj->type == OBJ_ARRAY)
 				PushNumber(vm, obj->array.length);
 			else
-			{
-				fprintf(stderr, "Attempted to get length of %s\n", ObjectTypeNames[obj->type]);
-				exit(1);
-			}
+				ErrorExit(vm, "Attempted to get length of %s\n", ObjectTypeNames[obj->type]);
 		} break;
 		
 		case OP_ARRAY_PUSH:
@@ -1273,10 +1281,7 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			Object* obj = PopArrayObject(vm);
 			if(obj->array.length <= 0)
-			{
-				fprintf(stderr, "Cannot pop from empty array\n");
-				exit(1);
-			}
+				ErrorExit(vm, "Cannot pop from empty array\n");
 			
 			PushObject(vm, obj->array.members[--obj->array.length]);
 		} break;
@@ -1433,10 +1438,7 @@ void ExecuteCycle(VM* vm)
 			if(obj->type == OBJ_ARRAY)
 			{
 				if(indexObj->type != OBJ_NUMBER)
-				{
-					fprintf(stderr, "Attempted to index array with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to index array with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
 				
 				int index = (int)indexObj->number;
 				
@@ -1446,42 +1448,27 @@ void ExecuteCycle(VM* vm)
 				if(index >= 0 && index < arrayLength)
 					members[index] = value;
 				else
-				{
-					fprintf(stderr, "Invalid array index %i\n", index);
-					exit(1);
-				}
+					ErrorExit(vm, "Invalid array index %i\n", index);
 			}
 			else if(obj->type == OBJ_STRING)
 			{				
 				if(indexObj->type != OBJ_NUMBER)
-				{
-					fprintf(stderr, "Attempted to index string with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to index string with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
 				
 				if(value->type != OBJ_NUMBER)
-				{
-					fprintf(stderr, "Attempted to assign a %s to an index of a string '%s' (expected number/character)\n", ObjectTypeNames[value->type], obj->string.raw);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to assign a %s to an index of a string '%s' (expected number/character)\n", ObjectTypeNames[value->type], obj->string.raw);
 				
 				obj->string.raw[(int)indexObj->number] = (char)value->number;
 			}
 			else if(obj->type == OBJ_DICT)
 			{
 				if(indexObj->type != OBJ_STRING)
-				{
-					fprintf(stderr, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
 				
 				DictPut(&obj->dict, indexObj->string.raw, value);
 			}
 			else
-			{
-				fprintf(stderr, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
-				exit(1);
-			}
+				ErrorExit(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
 		} break;
 
 		case OP_GETINDEX:
@@ -1494,10 +1481,7 @@ void ExecuteCycle(VM* vm)
 			if(obj->type == OBJ_ARRAY)
 			{
 				if(indexObj->type != OBJ_NUMBER)
-				{
-					fprintf(stderr, "Attempted to index array with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to index array with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
 				
 				int index = (int)indexObj->number;
 				
@@ -1509,36 +1493,24 @@ void ExecuteCycle(VM* vm)
 					if(members[index])
 						PushObject(vm, members[index]);
 					else
-					{
-						fprintf(stderr, "attempted to index non-existent value in array\n");
-						exit(1);
-					}
+						PushObject(vm, &NullObject);
 					if(vm->debug)
 						printf("getindex %i\n", index);
 				}
 				else
-				{
-					fprintf(stderr, "Invalid array index %i\n", index);
-					exit(1);
-				}
+					ErrorExit(vm, "Invalid array index %i\n", index);
 			}
 			else if(obj->type == OBJ_STRING)
 			{
 				if(indexObj->type != OBJ_NUMBER)
-				{
-					fprintf(stderr, "Attempted to index string with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to index string with a %s (expected number)\n", ObjectTypeNames[indexObj->type]);
 				
 				PushNumber(vm, obj->string.raw[(int)indexObj->number]);
 			}
 			else if(obj->type == OBJ_DICT)
 			{
 				if(indexObj->type != OBJ_STRING)
-				{
-					fprintf(stderr, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
-					exit(1);
-				}
+					ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
 				
 				Object* val = (Object*)DictGet(&obj->dict, indexObj->string.raw);
 				if(val)
@@ -1547,10 +1519,7 @@ void ExecuteCycle(VM* vm)
 					PushObject(vm, &NullObject);
 			}
 			else 
-			{
-				fprintf(stderr, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
-				exit(1);
-			}
+				ErrorExit(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
 		} break;
 
 		case OP_SET:
@@ -1633,7 +1602,8 @@ void ExecuteCycle(VM* vm)
 
 			if(vm->debug)
 				printf("call %s\n", vm->functionNames[index]);
-
+			vm->lastFunctionName = vm->functionNames[index];
+			
 			PushIndir(vm, nargs);
 
 			vm->pc = vm->functionPcs[index];
@@ -1648,6 +1618,7 @@ void ExecuteCycle(VM* vm)
 			
 			if(vm->debug)
 				printf("callp %s%s\n", isExtern ? "extern " : "", isExtern ? vm->externNames[id] : vm->functionNames[id]);
+			vm->lastFunctionName = isExtern ? vm->externNames[id] : vm->functionNames[id];
 			
 			if(isExtern)
 				vm->externs[id](vm);
@@ -1656,18 +1627,12 @@ void ExecuteCycle(VM* vm)
 				if(!hasEllipsis)
 				{
 					if(nargs != numArgs)
-					{
-						fprintf(stderr, "Function '%s' expected %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
-						exit(1);
-					}
+						ErrorExit(vm, "Function '%s' expected %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
 				}
 				else
 				{
 					if(nargs < numArgs)
-					{
-						fprintf(stderr, "Function '%s' expected at least %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
-						exit(1);
-					}
+						ErrorExit(vm, "Function '%s' expected at least %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
 				}
 				
 				if(!hasEllipsis) PushIndir(vm, nargs);
@@ -1769,6 +1734,15 @@ void ExecuteCycle(VM* vm)
 			vm->pc = -1;
 		} break;
 		
+		case OP_SETVMDEBUG:
+		{
+			if(vm->debug)
+				printf("setvmdebug\n");
+			char debug = vm->program[++vm->pc];
+			++vm->pc;
+			vm->debug = debug;
+		} break;
+		
 		default:
 			printf("Invalid instruction %i\n", vm->program[vm->pc]);
 			break;
@@ -1790,7 +1764,7 @@ void RunVM(VM* vm)
 
 void DeleteVM(VM* vm)
 {
-	if(vm->pc != -1) { fprintf(stderr, "Attempted to delete a running virtual machine\n"); exit(1); }
+	if(vm->pc != -1) ErrorExit(vm, "Attempted to delete a running virtual machine\n");
 	ResetVM(vm);
 	free(vm);	
 }

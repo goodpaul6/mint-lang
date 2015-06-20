@@ -15,6 +15,12 @@ extern setbyte
 extern setint
 extern lenbytes
 extern assert
+extern sin
+extern cos
+extern atan2
+extern sqrt
+extern rand
+extern srand
 
 var eof
 var on_exit

@@ -1,6 +1,9 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
+ * - show line number where error occurred (in vm):
+ * - enums
+ * - compound binary operators do not work (fix that, remove them, etc)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
  * - proper operators: need more operators
@@ -372,6 +375,7 @@ FuncDecl* EnterFunction(const char* name)
 	}
 	
 	decl->isExtern = 0;
+	decl->hasEllipsis = 0;
 	
 	strcpy(decl->name, name);
 	decl->index = NumFunctions++;
@@ -1245,7 +1249,6 @@ Expr* ParseFactor(FILE* in)
 	
 	ErrorExit("Unexpected token '%c' (%i) (%s)\n", CurTok, CurTok, Lexeme);
 	
-	
 	return NULL;
 }
 
@@ -1534,7 +1537,7 @@ void DebugExpr(Expr* exp)
 	}
 }
 
-char IsIntrinsic(const char* name)
+/*char IsIntrinsic(const char* name)
 {
 	if(strcmp(name, "len") == 0) return 1;
 	if(strcmp(name, "write") == 0) return 1;
@@ -1547,7 +1550,7 @@ char IsIntrinsic(const char* name)
 	if(strcmp(name, "dict") == 0) return 1;
 	
 	return 0;
-}
+}*/
 
 void CompileExpr(Expr* exp);
 char CompileIntrinsic(Expr* exp, const char* name)
@@ -1637,25 +1640,47 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		AppendCode(OP_PUSH_DICT);
 		return 1; 
 	}
-	else if(strcmp(name, "get_func_id") == 0)
+	else if(strcmp(name, "assert_func_exists") == 0)
 	{
-		if(exp->callx.numArgs != 1)
-			ErrorExitE(exp, "Intrinsic 'get_func_id' only takes 1 argument\n");
+		if(exp->callx.numArgs != 2)
+			ErrorExitE(exp, "Intrinsic 'assert_func_exists' only takes 2 arguments\n");
 		
 		if(exp->callx.args[0]->type != EXP_IDENT)
-			ErrorExitE(exp->callx.args[0], "Argument to intrinisic 'get_func_id' must be an identifier!\n");
+			ErrorExitE(exp->callx.args[0], "The first argument to intrinisic 'assert_func_exists' must be an identifier!\n");
+			
+		if(exp->callx.args[1]->type != EXP_STRING)
+			ErrorExitE(exp->callx.args[1], "The second argument to intrinsic 'assert_func_exists' must be a string!\n");
 		
 		FuncDecl* decl = ReferenceFunction(exp->callx.args[0]->varx.name);
 		if(!decl)
-		{
-			AppendCode(OP_PUSH_NUMBER);
-			AppendInt(RegisterNumber(-1)->index);
-		}
-		else
-		{
-			AppendCode(OP_PUSH_NUMBER);
-			AppendInt(RegisterNumber(decl->index)->index);
-		}	
+			ErrorExitE(exp, "%s\n", exp->callx.args[1]->constDecl->string);
+		return 1;
+	}
+	else if(strcmp(name, "setvmdebug") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'setvmdebug' only takes 1 argument\n");
+		
+		if(exp->callx.args[0]->type != EXP_NUMBER)
+			ErrorExitE(exp->callx.args[0], "Argument to intrinsic 'setvmdebug' must be a number/boolean!\n");
+		
+		AppendCode(OP_SETVMDEBUG);
+		AppendCode((Word)exp->callx.args[0]->constDecl->number);
+		return 1;
+	}
+	else if(strcmp(name, "push_stack") == 0)
+	{
+		if(exp->callx.numArgs != 0)
+			ErrorExitE(exp, "Intrinsic 'push_stack' takes no arguments\n");
+		AppendCode(OP_PUSH_STACK);
+		return 1;
+	}
+	else if(strcmp(name, "pop_stack") == 0)
+	{
+		if(exp->callx.numArgs != 0)
+			ErrorExitE(exp, "Intrinsic 'push_stack' takes no arguments\n");
+		AppendCode(OP_POP_STACK);
+		return 1;
 	}
 	
 	return 0;
@@ -1664,14 +1689,14 @@ char CompileIntrinsic(Expr* exp, const char* name)
 void ResolveListSymbols(Expr* head);
 void ResolveSymbols(Expr* exp)
 {
-	switch(exp->type)
+	/*switch(exp->type)
 	{
 		case EXP_BIN:
 		{
 			ResolveSymbols(exp->binx.lhs);
 			ResolveSymbols(exp->binx.rhs);
 		} break;
-	}
+	}*/
 }
 
 void ResolveListSymbols(Expr* head)
@@ -1922,8 +1947,6 @@ void CompileExpr(Expr* exp)
 				{
 					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
 						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
-					
-					CompileExpr(exp->binx.rhs);
 					
 					AppendCode(OP_PUSH_STRING);
 					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);

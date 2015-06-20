@@ -20,6 +20,11 @@ enum
 	OP_PUSH_DICT,
 	OP_CREATE_DICT_BLOCK,
 	
+	// stores current stack size
+	OP_PUSH_STACK,
+	// returns to previously stored stack size
+	OP_POP_STACK,
+	
 	OP_LENGTH,
 	OP_ARRAY_PUSH,
 	OP_ARRAY_POP,
@@ -76,6 +81,8 @@ enum
 	OP_SETLOCAL,
 	
 	OP_HALT,
+	
+	OP_SETVMDEBUG,
 
 	NUM_OPCODES
 };
@@ -124,7 +131,7 @@ typedef struct _Object
 } Object;
  
 #define MAX_INDIR		1024
-#define MAX_STACK		1024
+#define MAX_STACK		4096
 #define INIT_GC_THRESH	32
 
 typedef struct _VM
@@ -134,16 +141,13 @@ typedef struct _VM
 	Word* program;
 	int programLength;
 	
-	// This is to be executed at least once when the virtual machine is run
-	char hasExecutedGlobalCode;
-	Word* globalCode;
-	int globalCodeLength;
-	
 	int entryPoint;
 	
 	int numFunctions;
 	int* functionPcs;
 	char** functionNames;
+	
+	const char* lastFunctionName;
 	
 	int numNumberConstants;
 	double* numberConstants;
