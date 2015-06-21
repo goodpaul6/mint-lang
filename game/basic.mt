@@ -15,34 +15,26 @@ extern setbyte
 extern setint
 extern lenbytes
 extern assert
-extern sin
-extern cos
-extern atan2
-extern sqrt
 extern rand
 extern srand
+extern sqrt
+extern atan2
+extern sin
+extern cos
 
-var eof
-var on_exit
-
-var number_type
-var string_type
-var array_type
-var func_type
-var dict_type
-var native_type
+var std
 
 func mprintf(format, ...)
-	return mprintf_args(format, args)
+	return _std_mprintf_args(format, args)
 end
 
-func _mprintf_add_chars(buf, string)
-	for var i = 0, i < len(string), i += 1
+func _std_mprintf_add_chars(buf, string)
+	for var i = 0, i < len(string), i = i + 1
 		push(buf, string[i])
 	end
 end
 
-func _mprintf_tostring(v)
+func _std_mprintf_tostring(v)
 	var t = type(v)
 	if t == "string"
 		return v
@@ -53,12 +45,12 @@ func _mprintf_tostring(v)
 		push(buf, '{')
 		push(buf, ' ')
 		
-		for var i = 0, i < len(p), i += 1
-			_mprintf_add_chars(buf, p[i][0])
+		for var i = 0, i < len(p), i = i + 1
+			_std_mprintf_add_chars(buf, p[i][0])
 			push(buf, ' ')
 			push(buf, '=')
 			push(buf, ' ')
-			_mprintf_add_chars(buf, _mprintf_tostring(p[i][1]))
+			_std_mprintf_add_chars(buf, _std_mprintf_tostring(p[i][1]))
 			
 			if i + 1 < len(p)
 				push(buf, ',')
@@ -73,8 +65,8 @@ func _mprintf_tostring(v)
 	elif t == "array"
 		var buf = []
 		push(buf, '[')
-		for var i = 0, i < len(v), i += 1
-			_mprintf_add_chars(buf, _mprintf_tostring(v[i]))
+		for var i = 0, i < len(v), i = i + 1
+			_std_mprintf_add_chars(buf, _std_mprintf_tostring(v[i]))
 			if i + 1 < len(v)
 				push(buf, ',')
 			end
@@ -91,9 +83,9 @@ func mprintf_raw(format, ...)
 	var buf = []
 	var arg = 0
 	
-	for var i = 0, i < len(format), i += 1
+	for var i = 0, i < len(format), i = i + 1
 		if format[i] == '%'
-			i += 1
+			i = i + 1
 			if arg >= len(args)
 				printf("mprintf format overflow\n")
 				return buf
@@ -102,16 +94,16 @@ func mprintf_raw(format, ...)
 			if format[i] == 'c'
 				push(buf, args[arg])
 			elif format[i] == 'g'
-				_mprintf_add_chars(buf, tostring(args[arg]))
+				_std_mprintf_add_chars(buf, tostring(args[arg]))
 			elif format[i] == 's'
-				_mprintf_add_chars(buf, args[arg])
+				_std_mprintf_add_chars(buf, args[arg])
 			elif format[i] == 'o'
-				_mprintf_add_chars(buf, _mprintf_tostring(args[arg]))
+				_std_mprintf_add_chars(buf, _std_mprintf_tostring(args[arg]))
 			else
 				printf("invalid mprintf format specifier '%c'\n", format[i])
 				return joinchars(buf)
 			end
-			arg += 1
+			arg = arg + 1
 		else
 			push(buf, format[i])
 		end
@@ -121,12 +113,16 @@ func mprintf_raw(format, ...)
 end
 
 func mprintf_args(format, args)
+	return _std_mprintf_args(format, args)
+end
+
+func _std_mprintf_args(format, args)
 	var buf = []
 	var arg = 0
 	
-	for var i = 0, i < len(format), i += 1
+	for var i = 0, i < len(format), i = i + 1
 		if format[i] == '%'
-			i += 1
+			i = i + 1
 			if arg >= len(args)
 				printf("mprintf format overflow\n")
 				return joinchars(buf)
@@ -135,16 +131,16 @@ func mprintf_args(format, args)
 			if format[i] == 'c'
 				push(buf, args[arg])
 			elif format[i] == 'g'
-				_mprintf_add_chars(buf, tostring(args[arg]))
+				_std_mprintf_add_chars(buf, tostring(args[arg]))
 			elif format[i] == 's'
-				_mprintf_add_chars(buf, args[arg])
+				_std_mprintf_add_chars(buf, args[arg])
 			elif format[i] == 'o'
-				_mprintf_add_chars(buf, _mprintf_tostring(args[arg]))
+				_std_mprintf_add_chars(buf, _std_mprintf_tostring(args[arg]))
 			else
 				printf("invalid mprintf format specifier '%c'\n", format[i])
 				return joinchars(buf)
 			end
-			arg += 1
+			arg = arg + 1
 		else
 			push(buf, format[i])
 		end
@@ -153,19 +149,19 @@ func mprintf_args(format, args)
 	return joinchars(buf)
 end
 
-func number_cmp(x, y)
+func _std_number_cmp(x, y)
 	return x - y
 end
 
-func string_cmp(x, y)
+func _std_string_cmp(x, y)
 	if len(x) < len(y)
-		for var i = 0, i < len(x), i += 1
+		for var i = 0, i < len(x), i = i + 1
 			if x[i] != y[i]
 				return x[i] - y[i]
 			end
 		end
 	else
-		for var i = 0, i < len(x), i += 1
+		for var i = 0, i < len(x), i = i + 1
 			if x[i] != y[i]
 				return x[i] - y[i]
 			end
@@ -175,9 +171,9 @@ func string_cmp(x, y)
 	return 0
 end
 
-func sort(v, comp)
-	for var i = 0, i < len(v), i += 1
-		for var j = 0, j < len(v) - 1, j += 1
+func _std_sort(v, comp)
+	for var i = 0, i < len(v), i = i + 1
+		for var j = 0, j < len(v) - 1, j = j + 1
 			var c = comp(v[j], v[j + 1])
 			
 			if c > 0
@@ -189,133 +185,133 @@ func sort(v, comp)
 	end
 end
 
-func isalpha(c)
+func _std_isalpha(c)
 	if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') return true end
 	return false
 end
 
-func isdigit(c)
+func _std_isdigit(c)
 	if (c >= '0' && c <= '9') return true end
 	return false
 end
 
-func isalnum(c)
-	if isalpha(c) || isdigit(c) return true end
+func _std_isalnum(c)
+	if _std_isalpha(c) || _std_isdigit(c) return true end
 	return false
 end
 
-func isspace(c)
+func _std_isspace(c)
 	if c == '\n' || c == '\t' || c == ' ' return true end
 	return false
 end
 
-func stream(...)
+func _std_stream(...)
 	var raw = ""
 	if len(args) > 0
 		raw = args[0]
 	end
 
-	return { _raw = raw, _ext = [], pos = 0, read = stream_read, write = stream_write 
-			 write_u8 = stream_write_u8, write_u16 = stream_write_u16, write_u32 = stream_write_u32, 
-			 write_bytes = stream_write_bytes, close = stream_close, _file_handle = null, _mode = null }
+	return { _raw = raw, _ext = [], pos = 0, read = _std_stream_read, write = _std_stream_write 
+			 write_u8 = _std_stream_write_u8, write_u16 = _std_stream_write_u16, write_u32 = _std_stream_write_u32, 
+			 write_bytes = _std_stream_write_bytes, close = _std_stream_close, _file_handle = null, _mode = null }
 end
 
-func stream_is_eof(self)
-	_stream_ext(self)
+func _std_stream_is_eof(self)
+	_std_stream_ext(self)
 	return (len(self._raw) - self.pos) == 0
 end
 
-func _stream_ext(self)
+func _std_stream_ext(self)
 	if len(self._ext) > 0
 		self._raw = strcat(self._raw, joinchars(self._ext))
 		clear(self._ext)
 	end
 end
 
-func stream_read(self)
-	_stream_ext(self)
+func _std_stream_read(self)
+	_std_stream_ext(self)
 	if self.pos >= len(self._raw)
-		return eof
+		return std.eof
 	end
 	
 	var c = self._raw[self.pos]
-	self.pos += 1
+	self.pos = self.pos + 1
 	
 	return c
 end
 
-func stream_write(self, c)
+func _std_stream_write(self, c)
 	if self.pos >= len(self._raw)
-		if type(c) == number_type
+		if type(c) == std.number_type
 			push(self._ext, c)
-		elif type(c) == string_type || type(c) == array_type
-			for var i = 0, i < len(c), i += 1
-				stream_write(self, c[i])
+		elif type(c) == std.string_type || type(c) == std.array_type
+			for var i = 0, i < len(c), i = i + 1
+				_std_stream_write(self, c[i])
 			end
 		end
 	else
-		if type(c) == number_type
+		if type(c) == std.number_type
 			self._raw[self.pos] = c
-			self.pos += 1
-		elif type(c) == string_type || type(c) == array_type
-			for var i = 0, i < len(c), i += 1
-				stream_write(self, c[i])
+			self.pos = self.pos + 1
+		elif type(c) == std.string_type || type(c) == std.array_type
+			for var i = 0, i < len(c), i = i + 1
+				_std_stream_write(self, c[i])
 			end
 		end
 	end
 end
 
-func stream_write_u8(self, value)
-	stream_write(self, floor(value % 256))
+func _std_stream_write_u8(self, value)
+	_std_stream_write(self, floor(value % 256))
 end
 
-func stream_write_u16(self, value)
-	stream_write(self, floor(value % 65535))
+func _std_stream_write_u16(self, value)
+	_std_stream_write(self, floor(value % 65535))
 end
 
-func stream_write_u32(self, value)
-	stream_write(self, floor(value % 4294967295))
+func _std_stream_write_u32(self, value)
+	_std_stream_write(self, floor(value % 4294967295))
 end
 
-func stream_write_bytes(self, array)
-	for var i = 0, i < len(array), i += 1
-		stream_write(self, floor(array[i] % 256))
+func _std_stream_write_bytes(self, array)
+	for var i = 0, i < len(array), i = i + 1
+		_std_stream_write(self, floor(array[i] % 256))
 	end
 end
 
-func stream_close(self)
+func _std_stream_close(self)
 	if self._file_handle != null && self._mode[0] == 'w'
-		_stream_ext(self)
-		for var i = 0, i < len(self._raw), i += 1
+		_std_stream_ext(self)
+		for var i = 0, i < len(self._raw), i = i + 1
 			putc(self._file_handle, self._raw[i])
 		end
 	end
 end
 
-func fstream(path, mode)
+func _std_fstream(path, mode)
 	var f = fopen(path, mode)
 	var buf = []
 	var c = getc(f)
 	
-	while c != eof
+	while c != std.eof
 		push(buf, c)
 		c = getc(f)
 	end
 	
-	var s = stream(joinchars(buf))
+	var s = _std_stream(joinchars(buf))
 	s._file_handle = f
 	s._mode = mode
 	return s
 end
 
 func at_exit(f, ...)
-	push(on_exit, [f, args])
+	push(std.on_exit, [f, args])
 end
 
-func exit()
-	for var i = 0, i < len(on_exit), i += 1
-		var f = on_exit[i][0]
-		var args = on_exit[i][1]
+func _std_exit()
+	for var i = 0, i < len(std.on_exit), i = i + 1
+		var f = std.at_exit[i][0]
+		var args = std.at_exit[i][1]
 		
 		f(args)
 	end
@@ -325,21 +321,33 @@ func exit()
 end
 
 func _main()
-	eof = -1
-	on_exit = []
-
-	number_type = type(0)
-	string_type = type("")
-	array_type = type([])
-	func_type = type(_main)
-	dict_type = type({})
-	native_type = "native"
+	std = {
+		on_exit = [],
+		exit = _std_exit,
+		eof = -1,
+		sort = _std_sort,
+		numcmp = _std_number_cmp,
+		strcmp = _std_string_cmp,
+		isalpha = _std_isalpha,
+		isdigit = _std_isdigit,
+		isalnum = _std_isalnum,
+		isspace = _std_isspace,
+		stream = _std_stream,
+		fstream = _std_fstream,
+		null_type = type(null),
+		number_type = type(0),
+		string_type = type(""),
+		array_type = type([]),
+		native_type = "native",
+		func_type = type(_main),
+		dict_type = type({})
+	}
 	
 	var r = main()
 	
-	for var i = 0, i < len(on_exit), i += 1
-		var f = on_exit[i][0]
-		var args = on_exit[i][1]
+	for var i = 0, i < len(std.on_exit), i = i + 1
+		var f = std.on_exit[i][0]
+		var args = std.on_exit[i][1]
 		
 		f(args)
 	end

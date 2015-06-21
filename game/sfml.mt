@@ -578,8 +578,8 @@ func sprite_batch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, s
 	
 	sfTransform_identity(self.transform)
 	
-	ox *= scaleX
-	oy *= scaleY
+	ox = ox * scaleX
+	oy = oy * scaleY
 	
 	sfTransform_translate(self.transform, [x - ox, y - oy])
 	sfTransform_translate(self.transform, [ox, oy])

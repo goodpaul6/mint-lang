@@ -15,6 +15,10 @@ extern setbyte
 extern setint
 extern lenbytes
 extern assert
+extern rand
+extern srand
+extern sqrt
+extern atan2
 
 var std
 
@@ -23,7 +27,7 @@ func mprintf(format, ...)
 end
 
 func _std_mprintf_add_chars(buf, string)
-	for var i = 0, i < len(string), i += 1
+	for var i = 0, i < len(string), i = i + 1
 		push(buf, string[i])
 	end
 end
@@ -39,7 +43,7 @@ func _std_mprintf_tostring(v)
 		push(buf, '{')
 		push(buf, ' ')
 		
-		for var i = 0, i < len(p), i += 1
+		for var i = 0, i < len(p), i = i + 1
 			_std_mprintf_add_chars(buf, p[i][0])
 			push(buf, ' ')
 			push(buf, '=')
@@ -59,7 +63,7 @@ func _std_mprintf_tostring(v)
 	elif t == "array"
 		var buf = []
 		push(buf, '[')
-		for var i = 0, i < len(v), i += 1
+		for var i = 0, i < len(v), i = i + 1
 			_std_mprintf_add_chars(buf, _std_mprintf_tostring(v[i]))
 			if i + 1 < len(v)
 				push(buf, ',')
@@ -77,9 +81,9 @@ func mprintf_raw(format, ...)
 	var buf = []
 	var arg = 0
 	
-	for var i = 0, i < len(format), i += 1
+	for var i = 0, i < len(format), i = i + 1
 		if format[i] == '%'
-			i += 1
+			i = i + 1
 			if arg >= len(args)
 				printf("mprintf format overflow\n")
 				return buf
@@ -114,9 +118,9 @@ func _std_mprintf_args(format, args)
 	var buf = []
 	var arg = 0
 	
-	for var i = 0, i < len(format), i += 1
+	for var i = 0, i < len(format), i = i + 1
 		if format[i] == '%'
-			i += 1
+			i = i + 1
 			if arg >= len(args)
 				printf("mprintf format overflow\n")
 				return joinchars(buf)
@@ -149,13 +153,13 @@ end
 
 func _std_string_cmp(x, y)
 	if len(x) < len(y)
-		for var i = 0, i < len(x), i += 1
+		for var i = 0, i < len(x), i = i + 1
 			if x[i] != y[i]
 				return x[i] - y[i]
 			end
 		end
 	else
-		for var i = 0, i < len(x), i += 1
+		for var i = 0, i < len(x), i = i + 1
 			if x[i] != y[i]
 				return x[i] - y[i]
 			end
@@ -166,7 +170,7 @@ func _std_string_cmp(x, y)
 end
 
 func _std_sort(v, comp)
-	for var i = 0, i < len(v), i += 1
+	for var i = 0, i < len(v), i = i + 1
 		for var j = 0, j < len(v) - 1, j += 1
 			var c = comp(v[j], v[j + 1])
 			
@@ -239,7 +243,7 @@ func _std_stream_write(self, c)
 		if type(c) == std.number_type
 			push(self._ext, c)
 		elif type(c) == std.string_type || type(c) == std.array_type
-			for var i = 0, i < len(c), i += 1
+			for var i = 0, i < len(c), i = i + 1
 				_std_stream_write(self, c[i])
 			end
 		end
@@ -248,7 +252,7 @@ func _std_stream_write(self, c)
 			self._raw[self.pos] = c
 			self.pos += 1
 		elif type(c) == std.string_type || type(c) == std.array_type
-			for var i = 0, i < len(c), i += 1
+			for var i = 0, i < len(c), i = i + 1
 				_std_stream_write(self, c[i])
 			end
 		end
@@ -268,7 +272,7 @@ func _std_stream_write_u32(self, value)
 end
 
 func _std_stream_write_bytes(self, array)
-	for var i = 0, i < len(array), i += 1
+	for var i = 0, i < len(array), i = i + 1
 		_std_stream_write(self, floor(array[i] % 256))
 	end
 end
@@ -276,7 +280,7 @@ end
 func _std_stream_close(self)
 	if self._file_handle != null && self._mode[0] == 'w'
 		_std_stream_ext(self)
-		for var i = 0, i < len(self._raw), i += 1
+		for var i = 0, i < len(self._raw), i = i + 1
 			putc(self._file_handle, self._raw[i])
 		end
 	end
@@ -303,7 +307,7 @@ func _std_at_exit(f, ...)
 end
 
 func _std_exit()
-	for var i = 0, i < len(std.on_exit), i += 1
+	for var i = 0, i < len(std.on_exit), i = i + 1
 		var f = std.at_exit[i][0]
 		var args = std.at_exit[i][1]
 		
@@ -340,7 +344,7 @@ func _main()
 	
 	var r = main()
 	
-	for var i = 0, i < len(std.on_exit), i += 1
+	for var i = 0, i < len(std.on_exit), i = i + 1
 		var f = std.on_exit[i][0]
 		var args = std.on_exit[i][1]
 		

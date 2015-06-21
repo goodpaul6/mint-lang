@@ -1297,25 +1297,29 @@ void ExecuteCycle(VM* vm)
 
 		case OP_DICT_SET:
 		{
-			if(vm->debug)
-				printf("dict_set\n");
 			++vm->pc;
+			int keyIndex = ReadInteger(vm);
+			
+			if(vm->debug)
+				printf("dict_set %s\n", vm->stringConstants[keyIndex]);
+				
 			Object* obj = PopDict(vm);
-			const char* key = PopString(vm);
 			Object* value = PopObject(vm);
 			
-			DictPut(&obj->dict, key, value);
+			DictPut(&obj->dict, vm->stringConstants[keyIndex], value);
 		} break;
 		
 		case OP_DICT_GET:
 		{
-			if(vm->debug)
-				printf("dict_get\n");
 			++vm->pc;
-			Object* obj = PopDict(vm);
-			const char* key = PopString(vm);
+			int keyIndex = ReadInteger(vm);
 			
-			Object* value = DictGet(&obj->dict, key);
+			if(vm->debug)
+				printf("dict_get %s\n", vm->stringConstants[keyIndex]);
+				
+			Object* obj = PopDict(vm);
+			
+			Object* value = DictGet(&obj->dict, vm->stringConstants[keyIndex]);
 			if(value)
 				PushObject(vm, value);
 			else

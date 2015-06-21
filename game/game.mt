@@ -1,3 +1,27 @@
+extern joinchars
+extern printf
+extern floor
+extern halt
+extern tostring
+extern erase
+extern type
+extern strcat
+extern fopen
+extern getc
+extern putc
+extern bytes
+extern getbyte
+extern setbyte
+extern setint
+extern lenbytes
+extern assert
+extern rand
+extern srand
+extern sqrt
+extern atan2
+extern sin
+extern cos
+
 var assets
 var keys
 
@@ -66,8 +90,8 @@ end
 func tilemap_update(self)
 	self.batch:clear()
 	
-	for var y = 0, y < self.height, y += 1
-		for var x = 0, x < self.width, x += 1
+	for var y = 0, y < self.height, y = y + 1
+		for var x = 0, x < self.width, x = x + 1
 			var tile = self.data[x + y * self.width]
 			if tile == null
 				tile = -1
@@ -114,18 +138,18 @@ func room_create(window)
 	self.draw = room_draw
 	self.hasCollision = room_hasCollision
 	
-	for var y = 0, y < height, y += 1
+	for var y = 0, y < height, y = y + 1
 		data[y * width] = rand() % 2
 		data[(width - 1) + y * width] = rand() % 2
 	end
 	
-	for var x = 0, x < width, x += 1
+	for var x = 0, x < width, x = x + 1
 		data[x] = rand() % 2
 		data[x + (height - 1) * width] = rand() % 2
 	end
 	
-	for var y = 1, y < height - 1, y += 1
-		for var x = 1, x < width - 1, x += 1
+	for var y = 1, y < height - 1, y = y + 1
+		for var x = 1, x < width - 1, x = x + 1
 			var r = rand() % 50
 			if r > 1
 				data[x + y * width] = 2
@@ -141,17 +165,16 @@ func room_create(window)
 end
 
 func room_add(self, e)
-	setvmdebug(true)
 	push(self.toAdd, e)
-	setvmdebug(false)
 end
 
 func room_update(self)
-	for var i = 0, i < len(self.entities), i += 1
+	for var i = 0, i < len(self.entities), i = i + 1
 		var e = self.entities[i]
+		e.room = self
 		e:update()
 		
-		for var j = i + 1, j < len(self.entities), j += 1
+		for var j = i + 1, j < len(self.entities), j = j + 1
 			var a = self.entities[i]
 			var b = self.entities[j]
 			
@@ -165,7 +188,7 @@ func room_update(self)
 		end
 	end
 	
-	for var i = 0, i < len(self.toAdd), i += 1
+	for var i = 0, i < len(self.toAdd), i = i + 1
 		self.toAdd[i].room = self
 		push(self.entities, self.toAdd[i])
 	end
@@ -174,7 +197,7 @@ end
 
 func room_draw(self, window, states)
 	sfRenderWindow_draw(window, self.map, states)
-	for var i = 0, i < len(self.entities), i += 1
+	for var i = 0, i < len(self.entities), i = i + 1
 		var e = self.entities[i]
 		sfRenderWindow_draw(window, e, states)
 	end
@@ -225,7 +248,7 @@ func entity_create()
 end
 
 func entity_update(self)
-	for var i = 0, i < 5, i += 1
+	for var i = 0, i < 5, i = i + 1
 		if self.room:hasCollision(self.x + self.dx / 5, self.y, self.radius)
 			if self:hitWallX() break
 			else self.x = self.x + self.dx / 5 end
@@ -234,7 +257,7 @@ func entity_update(self)
 		end
 	end
 
-	for var i = 0, i < 5, i += 1
+	for var i = 0, i < 5, i = i + 1
 		if self.room:hasCollision(self.x, self.y + self.dy / 5, self.radius)
 			if self:hitWallY() break
 			else self.y = self.y + self.dy / 5 end
@@ -332,7 +355,7 @@ func player_update(self)
 	
 	if keys[sfKeyW]
 		if self.grounded
-			self.dy = -5
+			self.dy = -10
 			self.grounded = false
 		end
 	end
@@ -362,7 +385,7 @@ func player_update(self)
 		elif keys[sfKeyRight] dir = 1
 		elif keys[sfKeyDown] dir = 2
 		elif keys[sfKeyLeft] dir = 3 end
-
+		
 		if dir == 0 self.shotCooldown = self.shoot(self.room, self.x, self.y, atan2(-1, 0))
 		elif dir == 1 self.shotCooldown = self.shoot(self.room, self.x, self.y, atan2(0, 1))
 		elif dir == 2 self.shotCooldown = self.shoot(self.room, self.x, self.y, atan2(1, 0))
@@ -434,8 +457,8 @@ func zombie_update(self)
 		var dist = player:dist(self)
 		
 		if dist > self.radius + player.radius + 100
-			self.dx += cos(ang)
-			self.dy += sin(ang)
+			self.dx = self.dx + cos(ang)
+			self.dy = self.dy + sin(ang)
 		else
 			# TODO: make zombie attack with cooldown
 		end
@@ -576,7 +599,7 @@ func blood_contact(self, other)
 	return false
 end
 
-func main()
+func _main()
 	sfInit()
 
 	srand()

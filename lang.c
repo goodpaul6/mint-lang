@@ -1889,13 +1889,13 @@ void CompileExpr(Expr* exp)
 			{
 				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 					CompileExpr(exp->callx.args[i]);
+				// first argument to function is dictionary
 				CompileExpr(exp->callx.func->colonx.dict);
 				
-				AppendCode(OP_PUSH_STRING);
-				AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
+				// retrieve function from dictionary
 				CompileExpr(exp->callx.func->colonx.dict);
-			
 				AppendCode(OP_DICT_GET);
+				AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
 				
 				AppendCode(OP_CALLP);
 				AppendCode(exp->callx.numArgs + 1);
@@ -1948,11 +1948,9 @@ void CompileExpr(Expr* exp)
 					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
 						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
 					
-					AppendCode(OP_PUSH_STRING);
-					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
 					CompileExpr(exp->binx.lhs->dotx.dict);
-					
 					AppendCode(OP_DICT_SET);
+					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
 				}
 				else
 					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %i\n", exp->binx.lhs->type);
@@ -1977,13 +1975,13 @@ void CompileExpr(Expr* exp)
 					case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
 					case TOK_AND: AppendCode(OP_LOGICAL_AND); break;
 					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
-					case TOK_CADD: AppendCode(OP_CADD); break;
+					/*case TOK_CADD: AppendCode(OP_CADD); break;
 					case TOK_CSUB: AppendCode(OP_CSUB); break;
 					case TOK_CMUL: AppendCode(OP_CMUL); break;
-					case TOK_CDIV: AppendCode(OP_CDIV); break;
+					case TOK_CDIV: AppendCode(OP_CDIV); break;*/
 					
 					default:
-						ErrorExitE(exp, "Unsupported binary operator %c\n", exp->binx.op);		
+						ErrorExitE(exp, "Unsupported binary operator %c (%i)\n", exp->binx.op, exp->binx.op);		
 				}
 			}
 		} break;
@@ -2108,11 +2106,9 @@ void CompileExpr(Expr* exp)
 			}
 			else
 			{
-				AppendCode(OP_PUSH_STRING);
-				AppendInt(RegisterString(exp->dotx.name)->index);
 				CompileExpr(exp->dotx.dict);
-			
 				AppendCode(OP_DICT_GET);
+				AppendInt(RegisterString(exp->dotx.name)->index);
 			}
 		} break;
 		

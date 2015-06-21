@@ -130,9 +130,10 @@ typedef struct _Object
 	};
 } Object;
  
-#define MAX_INDIR		1024
-#define MAX_STACK		4096
-#define INIT_GC_THRESH	32
+#define MAX_INDIR						1024
+#define MAX_STACK						4096
+#define INIT_GC_THRESH					32
+#define MAX_TRACKED_CALLSTACK_LENGTH 	8
 
 typedef struct _VM
 {
