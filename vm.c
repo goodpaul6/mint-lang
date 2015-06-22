@@ -53,7 +53,8 @@ static char* estrdup(const char* string)
 
 void ErrorExit(VM* vm, const char* format, ...)
 {
-	fprintf(stderr, "Error at pc %i (last function called: %s):\n", vm->pc, vm->lastFunctionName);
+	if(!vm->hasCodeMetadata) fprintf(stderr, "Error at pc %i (last function called: %s):\n", vm->pc, vm->lastFunctionName);
+	else fprintf(stderr, "Error (%s:%i) (last function called: %s):\n", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc], vm->lastFunctionName);
 	
 	va_list args;
 	va_start(args, format);
@@ -411,6 +412,10 @@ void InitVM(VM* vm)
 {
 	NullObject.type = OBJ_NULL;
 	
+	vm->hasCodeMetadata = 0;
+	vm->pcLineTable = NULL;
+	vm->pcFileTable = NULL;
+	
 	vm->program = NULL;
 	vm->programLength = 0;
 	
@@ -459,6 +464,11 @@ VM* NewVM()
 void ResetVM(VM* vm)
 {
 	if(vm->pc != -1) ErrorExit(vm, "Attempted to reset a running virtual machine\n");
+	
+	if(vm->pcLineTable)
+		free(vm->pcLineTable);
+	if(vm->pcFileTable)
+		free(vm->pcFileTable);
 	
 	if(vm->program)
 		free(vm->program);
@@ -540,6 +550,11 @@ number constants as doubles
 
 number of string constants
 string length followed by string as chars
+
+whether the program has code metadata (i.e line numbers and file names for errors) (represented by char)
+if so (length of each of the arrays below must be the same as program length):
+line numbers mapping to pcs
+file names as indices into string table (integers)
 */
 
 void LoadBinaryFile(VM* vm, FILE* in)
@@ -642,6 +657,18 @@ void LoadBinaryFile(VM* vm, FILE* in)
 		string[stringLength] = '\0';
 		
 		vm->stringConstants[i] = string;
+	}
+	
+	char hasCodeMetadata;
+	fread(&hasCodeMetadata, sizeof(char), 1, in);
+	vm->hasCodeMetadata = hasCodeMetadata;
+	if(hasCodeMetadata)
+	{
+		vm->pcLineTable = emalloc(sizeof(int) * programLength);
+		vm->pcFileTable = emalloc(sizeof(int) * programLength);
+		
+		fread(vm->pcLineTable, sizeof(int), programLength, in);
+		fread(vm->pcFileTable, sizeof(int), programLength, in);
 	}
 }
 

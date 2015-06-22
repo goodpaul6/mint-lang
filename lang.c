@@ -40,7 +40,7 @@ int CodeLength = 0;
 struct
 {
 	int* lineNumbers;
-	char** fileNames;
+	int* fileNameIndices;
 	int length;
 	int capacity;
 } Debug = { NULL, NULL, 0, 0 };
@@ -57,7 +57,7 @@ void ErrorExit(const char* format, ...)
 	exit(1);
 }
 
-void AppendCode(Word code)
+void _AppendCode(Word code, int line, int fileNameIndex)
 {	
 	while(CodeLength + 1 >= CodeCapacity)
 	{
@@ -70,20 +70,44 @@ void AppendCode(Word code)
 	}
 
 	Code[CodeLength++] = code;
+	
+	while(Debug.length + 1 >= Debug.capacity)
+	{
+		if(Debug.capacity == 0) Debug.capacity = 8;
+		else Debug.capacity *= 2;
+		
+		int* newLineNumbers = realloc(Debug.lineNumbers, sizeof(int) * Debug.capacity);
+		assert(newLineNumbers);
+		Debug.lineNumbers = newLineNumbers;
+		
+		int* newFileNameIndices = realloc(Debug.fileNameIndices, sizeof(int) * Debug.capacity);
+		assert(newFileNameIndices);
+		Debug.fileNameIndices = newFileNameIndices;
+	}
+	
+	Debug.lineNumbers[Debug.length] = line;
+	Debug.fileNameIndices[Debug.length] = fileNameIndex;
+	Debug.length += 1;
 }
 
-void AppendInt(int value)
+#define AppendCode(code) _AppendCode((code), exp->line, RegisterString(exp->file)->index)
+
+void _AppendInt(int value, int line, int file)
 {
 	Word* code = (Word*)(&value);
 	for(int i = 0; i < sizeof(int) / sizeof(Word); ++i)
-		AppendCode(*code++);
+		_AppendCode(*code++, line, file);
 }
 
-void AllocatePatch(int length)
+#define AppendInt(value) _AppendInt((value), exp->line, RegisterString(exp->file)->index)
+
+void _AllocatePatch(int length, int line, int file)
 {
 	for(int i = 0; i < length; ++i)
-		AppendCode(0);
+		_AppendCode(0, line, file);
 }
+
+#define AllocatePatch(length) _AllocatePatch((length), exp->line, RegisterString(exp->file)->index)
 
 void EmplaceInt(int loc, int value)
 {
@@ -173,6 +197,11 @@ number constants as doubles
 
 number of string constants
 string length followed by string as chars
+
+whether the program has code metadata (i.e line numbers and file names for errors) (represented by char)
+if so (length of each of the arrays below must be the same as program length):
+line numbers mapping to pcs
+file names as indices into string table (integers)
 */
 
 void OutputCode(FILE* out)
@@ -246,6 +275,11 @@ void OutputCode(FILE* out)
 			fwrite(decl->string, sizeof(char), len, out);
 		}
 	}
+	
+	char hasCodeMetadata = 1;
+	fwrite(&hasCodeMetadata, sizeof(char), 1, out);
+	fwrite(Debug.lineNumbers, sizeof(int), Debug.length, out);
+	fwrite(Debug.fileNameIndices, sizeof(int), Debug.length, out);
 }
 
 ConstDecl* RegisterNumber(double number)
@@ -2241,7 +2275,7 @@ int main(int argc, char* argv[])
 	}					
 	
 	CompileExprList(exprHead);
-	AppendCode(OP_HALT);
+	_AppendCode(OP_HALT, LineNumber, RegisterString(FileName)->index);
 	
 	FILE* out;
 	

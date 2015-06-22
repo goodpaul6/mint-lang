@@ -136,6 +136,10 @@ typedef struct _VM
 {
 	int pc, fp;
 	
+	char hasCodeMetadata;
+	int* pcLineTable;
+	int* pcFileTable;
+	
 	Word* program;
 	int programLength;
 	
