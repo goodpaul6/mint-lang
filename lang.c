@@ -1,11 +1,10 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - show line number where error occurred (in vm):
  * - enums
- * - compound binary operators do not work (fix that, remove them, etc)
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
+ * - using compound binary operators causes an error
  * - proper operators: need more operators
  * - include/require other scripts (copy bytecode into vm at runtime?): can only include things at compile time (with cmd line)
  */
@@ -37,6 +36,14 @@ int EntryPoint = 0;
 Word* Code = NULL;
 int CodeCapacity = 0;
 int CodeLength = 0;
+
+struct
+{
+	int* lineNumbers;
+	char** fileNames;
+	int length;
+	int capacity;
+} Debug = { NULL, NULL, 0, 0 };
 
 void ErrorExit(const char* format, ...)
 {
@@ -475,17 +482,19 @@ enum
 	TOK_ELIF = -19,
 	TOK_AND = -20,
 	TOK_OR = -21,
-	TOK_NULL = -22,
-	TOK_INLINE = -23,
-	TOK_LAMBDA = -24,
-	TOK_CADD = -25,
-	TOK_CSUB = -26,
-	TOK_CMUL = -27,
-	TOK_CDIV = -28,
-	TOK_CONTINUE = -29,
-	TOK_BREAK = -30,
-	TOK_ELLIPSIS = -31,
-	TOK_NEW = -32,
+	TOK_LSHIFT = -22,
+	TOK_RSHIFT = -23,
+	TOK_NULL = -24,
+	TOK_INLINE = -25,
+	TOK_LAMBDA = -26,
+	TOK_CADD = -27,
+	TOK_CSUB = -28,
+	TOK_CMUL = -29,
+	TOK_CDIV = -30,
+	TOK_CONTINUE = -31,
+	TOK_BREAK = -32,
+	TOK_ELLIPSIS = -33,
+	TOK_NEW = -34,
 };
 
 char Lexeme[MAX_LEX_LENGTH];
@@ -669,6 +678,16 @@ int GetToken(FILE* in)
 	{
 		last = getc(in);
 		return TOK_GTE;
+	}
+	else if(lastChar == '<' && last == '<')
+	{
+		last = getc(in);
+		return TOK_LSHIFT;
+	}
+	else if(lastChar == '>' && last == '>')
+	{
+		last = getc(in);
+		return TOK_RSHIFT;
 	}
 	else if(lastChar == '&' && last == '&')
 	{
@@ -1969,12 +1988,16 @@ void CompileExpr(Expr* exp)
 					case '%': AppendCode(OP_MOD); break;
 					case '<': AppendCode(OP_LT); break;
 					case '>': AppendCode(OP_GT); break;
+					case '|': AppendCode(OP_OR); break;
+					case '&': AppendCode(OP_AND); break;
 					case TOK_EQUALS: AppendCode(OP_EQU); break;
 					case TOK_LTE: AppendCode(OP_LTE); break;
 					case TOK_GTE: AppendCode(OP_GTE); break;
 					case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
 					case TOK_AND: AppendCode(OP_LOGICAL_AND); break;
 					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
+					case TOK_LSHIFT: AppendCode(OP_SHL); break;
+					case TOK_RSHIFT: AppendCode(OP_SHR); break;
 					/*case TOK_CADD: AppendCode(OP_CADD); break;
 					case TOK_CSUB: AppendCode(OP_CSUB); break;
 					case TOK_CMUL: AppendCode(OP_CMUL); break;
@@ -2175,7 +2198,7 @@ void DebugExprList(Expr* head)
 int main(int argc, char* argv[])
 {
 	if(argc == 1)
-		ErrorExit("Error: no input files detected!\n");
+		ErrorExit("no input files detected!\n");
 	
 	const char* outPath = NULL;
 

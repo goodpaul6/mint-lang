@@ -528,7 +528,7 @@ func sprite_draw(self, window, states)
 	end
 end
 
-func sprite_batch(window)
+func spritebatch(window)
 	var vertexArray = sfVertexArray_create()
 	
 	return {
@@ -539,26 +539,26 @@ func sprite_batch(window)
 		states = sfRenderStates_createDefault(),
 		transform = sfTransform_create(),
 		
-		clear = sprite_batch_clear,
-		flush = sprite_batch_flush,
-		append = sprite_batch_append,
-		appendEx = sprite_batch_appendEx,
-		draw = sprite_batch_draw,
+		clear = spritebatch_clear,
+		flush = spritebatch_flush,
+		append = spritebatch_append,
+		appendEx = spritebatch_appendEx,
+		draw = spritebatch_draw,
 	}
 end
 
-func sprite_batch_clear(self)
+func spritebatch_clear(self)
 	sfVertexArray_clear(self.vertexArray)
 end
 
-func sprite_batch_flush(self)
+func spritebatch_flush(self)
 	sfVertexArray_setPrimitiveType(self.vertexArray, sfQuads)
 	sfRenderStates_setTexture(self.states, self.texture)
 	sfRenderWindow_drawVertexArray(self.window, self.vertexArray, self.states)
 	sfVertexArray_clear(self.vertexArray)
 end
 
-func sprite_batch_append(self, x, y, texture)
+func spritebatch_append(self, x, y, texture)
 	if self.texture != texture
 		self.texture = texture
 		if self.texture != null
@@ -570,7 +570,7 @@ func sprite_batch_append(self, x, y, texture)
 	sfVertexArray_appendQuad(self.vertexArray, size[0], size[1], [255, 255, 255, 255])
 end
 
-func sprite_batch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, scaleY, ox, oy)
+func spritebatch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, scaleY, ox, oy)
 	if self.texture != texture
 		self.texture = texture
 		self:flush()
@@ -615,7 +615,7 @@ func sprite_batch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, s
 	sfVertexArray_append(self.vertexArray, self.vertex)
 end
 
-func sprite_batch_draw(self, window, states)
+func spritebatch_draw(self, window, states)
 	self.window = window
 	self:flush()
 end

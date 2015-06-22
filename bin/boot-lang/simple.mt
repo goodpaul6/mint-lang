@@ -13,14 +13,14 @@ var lexeme
 var cur_tok
 
 func lex(s)
-	while std.isspace(last_char)
+	while isspace(last_char)
 		last_char = s:read()
 	end
 	
-	if std.isalpha(last_char)
+	if isalpha(last_char)
 		var buf = []
 		
-		while std.isalnum(last_char) || last_char == '_'
+		while isalnum(last_char) || last_char == '_'
 			push(buf, last_char)
 			last_char = s:read()
 		end
@@ -30,10 +30,10 @@ func lex(s)
 		if lexeme == "end" return tok_end end
 		
 		return tok_ident
-	elif std.isdigit(last_char)
+	elif isdigit(last_char)
 		var buf = []
 		
-		while std.isdigit(last_char) || last_char == '.'
+		while isdigit(last_char) || last_char == '.'
 			push(buf, last_char)
 			last_char = s:read()
 		end
@@ -53,7 +53,7 @@ func lex(s)
 		
 		lexeme = joinchars(buf)
 		return tok_string
-	elif last_char == std.eof
+	elif last_char == EOF
 		return tok_eof
 	end
 	
@@ -84,6 +84,14 @@ func parse_factor(s)
 			var e = parse_expr(s)
 			
 			return { type = "print", expr = e }
+		elif lexeme == "return"
+			get_next_tok(s)
+			if cur_tok != ';'
+				var e = parse_expr(s)
+				return { type = "retval", expr = e }
+			end
+			get_next_tok(s)
+			return { type = "ret" }
 		elif lexeme == "func"
 			get_next_tok(s)
 			
@@ -110,19 +118,34 @@ func parse_factor(s)
 			end
 			get_next_tok(s)
 			
-			return { type = "func", args = args, body = body }
+			return { type = "func", name = name, args = args, body = body }
 		else
 			var id = lexeme
 			get_next_tok(s)
 		
 			return { type = "ident", name = id }
 		end
+	elif cur_tok == '['
+		get_next_tok(s)
+		var values = []
+		var i = 0
+		while cur_tok != ']'
+			var e = parse_expr(s)
+			if cur_tok == ','
+				get_next_tok(s)
+			end
+			values[i] = e
+			i = i + 1
+		end
+		get_next_tok(s)
+		
+		return { type = "array_literal", values = values }
 	elif cur_tok == '('
 		get_next_tok(s)
 		var e = parse_expr(s)
 		if cur_tok != ')'
 			printf("Expected ')' after previous '('\n")
-			std.exit()
+			exit()
 		end
 		get_next_tok(s)
 		
@@ -130,7 +153,39 @@ func parse_factor(s)
 	end
 	
 	printf("Unexpected token %g, %c\n", cur_tok, cur_tok)
-	std.exit()
+	exit()
+end
+
+func parse_post(s, pre)
+	if cur_tok == '('
+		get_next_tok(s)
+		
+		var args = []
+		while cur_tok != ')'
+			push(args, parse_expr(s))
+			if cur_tok == ','
+				get_next_tok(s)
+			end
+		end
+		get_next_tok(s)
+		
+		return parse_post(s, { type = "call", efunc = pre, args = args })
+	elif cur_tok == '['
+		get_next_tok(s)
+		
+		var index = parse_expr(s)
+		assert(cur_tok == ']', "expected ']' after previous '['\n")
+		get_next_tok(s)
+		
+		return parse_post(s, { type = "array_index", arr = pre, index = index })
+	else
+		return pre
+	end
+end
+
+func parse_unary(s)
+	var e = parse_factor(s)
+	return parse_post(s, e)
 end
 
 func get_token_prec()
@@ -153,7 +208,7 @@ func parse_bin_rhs(s, eprec, lhs)
 		
 		get_next_tok(s)
 		
-		var rhs = parse_factor(s)
+		var rhs = parse_unary(s)
 		var next_prec = get_token_prec()
 		
 		if next_prec > prec
@@ -166,7 +221,7 @@ func parse_bin_rhs(s, eprec, lhs)
 end
 
 func parse_expr(s)
-	var lhs = parse_factor(s)
+	var lhs = parse_unary(s)
 	return parse_bin_rhs(s, 0, lhs)
 end
 
@@ -188,47 +243,92 @@ func write_expr(e)
 	end
 end
 
-func compile(e)
+func compile(e, code)
 	if e.type == "number" || e.type == "string"
-		push(vm_code, op_push)
-		push(vm_code, e.value)
+		push(code, op_push)
+		push(code, e.value)
 	elif e.type == "ident"
-		push(vm_code, op_get)
-		push(vm_code, e.name)
+		push(code, op_get)
+		push(code, e.name)
 	elif e.type == "print"
-		compile(e.expr)
-		push(vm_code, op_write)
+		compile(e.expr, code)
+		push(code, op_write)
 	elif e.type == "func"
-		for var i = 0, i < len(e.body), i += 1
-			compile(e.body[i])
+		push(code, op_pushfunc)
+		var func_code = []
+		for var i = 0, i < len(e.body), i = i + 1
+			compile(e.body[i], func_code)
 		end
-	elif e.type == "bin"
-		compile(e.rhs)
-		if e.op == '='
-			if e.lhs.type != "ident"
-				printf("left hand side of assignment operator must be an identifier\n")
-				std.exit()
-			end
-			
-			push(vm_code, op_set)
-			push(vm_code, e.lhs.name)
+		push(code, { arg_names = e.args, code = func_code })
+		
+		push(code, op_set)
+		push(code, e.name)
+	elif e.type == "ret"
+		push(code, op_ret)
+	elif e.type == "retval"
+		compile(e.expr, code)
+		push(code, op_retval)
+	elif e.type == "array_literal"
+		push(code, op_createarray)
+		if len(e.values) == 0
+			push(code, [])
 		else
-			compile(e.lhs)
+			var values = []
+			for var i = 0, i < len(e.values), i = i + 1
+				var rcode = []
+				compile(e.values[i], rcode)
+				push(values, rcode)
+			end
+			push(code, values)
+		end
+	elif e.type == "array_index"
+		compile(e.arr, code)
+		compile(e.index, code)
+		push(code, op_getindex)
+	elif e.type == "bin"
+		if e.op == '='
+			if e.lhs.type == "ident"
+				compile(e.rhs, code)
+				push(code, op_set)
+				push(code, e.lhs.name)
+			elif e.lhs.type == "array_index"
+				compile(e.lhs.arr, code)
+				compile(e.lhs.index, code)
+				compile(e.rhs, code)
+				push(code, op_setindex)
+			end
+		else
+			compile(e.rhs, code)
+			compile(e.lhs, code)
 			
 			if e.op == '+'
-				push(vm_code, op_add)
+				push(code, op_add)
 			elif e.op == '-'
-				push(vm_code, op_sub)
+				push(code, op_sub)
 			elif e.op == '*'
-				push(vm_code, op_mul)
+				push(code, op_mul)
 			elif e.op == '/'
-				push(vm_code, op_div)
+				push(code, op_div)
 			elif e.op == '#'
-				push(vm_code, op_cat)
+				push(code, op_cat)
 			end
 		end
 	elif e.type == "paren"
-		compile(e.expr)
+		compile(e.expr, code)
+	elif e.type == "call"
+		compile(e.efunc, code)
+		push(code, op_call)
+		var args = []
+		for var i = 0, i < len(e.args), i = i + 1
+			var acode = []
+			compile(e.args[i], acode)
+			push(args, acode)
+		end
+		if len(e.args) == 0
+			push(code, [])
+		else
+			push(code, args)
+		end
 	end
 end
 
@@ -245,20 +345,20 @@ func main()
 	
 	cur_tok = 0
 
-	var s = std.fstream("boot.mt", "r")
+	var s = fstream("boot.mt", "r")
 	
 	vm_reset()
 	
 	get_next_tok(s)
 	while cur_tok != tok_eof
-		compile(parse_expr(s))
+		compile(parse_expr(s), vm_code)
 	end
 	push(vm_code, op_halt)
 	
 	vm_ip = 0
 	
 	while vm_ip != -1
-		vm_cycle()
+		vm_ip = vm_cycle(vm_code, vm_ip)
 	end
 	
 	return 0

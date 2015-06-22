@@ -1371,13 +1371,15 @@ void ExecuteCycle(VM* vm)
 		BIN_OP(GTE, >=)
 		BIN_OP_TYPE(LOGICAL_AND, &&, int)
 		BIN_OP_TYPE(LOGICAL_OR, ||, int)
+		BIN_OP_TYPE(SHL, >>, int)
+		BIN_OP_TYPE(SHR, >>, int)
 		
-		#define CBIN_OP(op, operator) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); a->number operator b->number; } break;
+		/*#define CBIN_OP(op, operator) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); a->number operator b->number; } break;
 		
 		CBIN_OP(CADD, +=)
 		CBIN_OP(CSUB, -=)
 		CBIN_OP(CMUL, *=)
-		CBIN_OP(CDIV, /=)
+		CBIN_OP(CDIV, /=)*/
 		
 		case OP_EQU:
 		{

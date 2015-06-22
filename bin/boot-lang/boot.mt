@@ -1,3 +1,1 @@
-x = "hello "
-y = "world"
-print (x # y)
+[10, 20, 30]

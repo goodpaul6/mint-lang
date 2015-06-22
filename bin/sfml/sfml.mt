@@ -1,4 +1,4 @@
-# sfml.mt -- testing sfml
+# sfml.mt -- binding of csfml to mint
 
 extern type
 
@@ -49,6 +49,7 @@ extern sfRenderWindow_drawVertexArray
 
 extern sfEvent_create
 extern sfEvent_type
+extern sfEvent_key_code
 
 extern sfTexture_createFromFile
 extern sfTexture_getSize
@@ -76,6 +77,109 @@ var sfEvtTouchMoved
 var sfEvtTouchEnded
 var sfEvtSensorChanged
 var sfPi
+
+var sfKeyA
+var sfKeyB
+var sfKeyC
+var sfKeyD
+var sfKeyE
+var sfKeyF
+var sfKeyG
+var sfKeyH
+var sfKeyI
+var sfKeyJ
+var sfKeyK
+var sfKeyL
+var sfKeyM
+var sfKeyN
+var sfKeyO
+var sfKeyP
+var sfKeyQ
+var sfKeyR
+var sfKeyS
+var sfKeyT
+var sfKeyU
+var sfKeyV
+var sfKeyW
+var sfKeyX
+var sfKeyY
+var sfKeyZ
+var sfKeyNum0
+var sfKeyNum1
+var sfKeyNum2
+var sfKeyNum3
+var sfKeyNum4
+var sfKeyNum5
+var sfKeyNum6
+var sfKeyNum7
+var sfKeyNum8
+var sfKeyNum9
+var sfKeyEscape
+var sfKeyLControl
+var sfKeyLShift
+var sfKeyLAlt
+var sfKeyLSystem
+var sfKeyRControl
+var sfKeyRShift
+var sfKeyRAlt
+var sfKeyRSystem
+var sfKeyMenu
+var sfKeyLBracket
+var sfKeyRBracket
+var sfKeySemiColon
+var sfKeyComma
+var sfKeyPeriod
+var sfKeyQuote
+var sfKeySlash
+var sfKeyBackSlash
+var sfKeyTilde
+var sfKeyEqual
+var sfKeyDash
+var sfKeySpace
+var sfKeyReturn
+var sfKeyBackSpace
+var sfKeyTab
+var sfKeyPageUp
+var sfKeyPageDown
+var sfKeyEnd
+var sfKeyHome
+var sfKeyInsert
+var sfKeyDelete
+var sfKeyAdd
+var sfKeySubtract
+var sfKeyMultiply
+var sfKeyDivide
+var sfKeyLeft
+var sfKeyRight
+var sfKeyUp
+var sfKeyDown
+var sfKeyNumpad0
+var sfKeyNumpad1
+var sfKeyNumpad2
+var sfKeyNumpad3
+var sfKeyNumpad4
+var sfKeyNumpad5
+var sfKeyNumpad6
+var sfKeyNumpad7
+var sfKeyNumpad8
+var sfKeyNumpad9
+var sfKeyF1
+var sfKeyF2
+var sfKeyF3
+var sfKeyF4
+var sfKeyF5
+var sfKeyF6
+var sfKeyF7
+var sfKeyF8
+var sfKeyF9
+var sfKeyF10
+var sfKeyF11
+var sfKeyF12
+var sfKeyF13
+var sfKeyF14
+var sfKeyF15
+var sfKeyPause
+var sfNumKeys
 
 var sfBlendAlpha
 var sfBlendAdd
@@ -114,6 +218,110 @@ func sfInit()
 	sfEvtTouchEnded = 20
 	sfEvtSensorChanged = 21
 	sfPi = 3.141592653
+	
+	sfKeyA = 0
+	sfKeyB = 1
+	sfKeyC = 2
+	sfKeyD = 3
+	sfKeyE = 4
+	sfKeyF = 5
+	sfKeyG = 6
+	sfKeyH = 7
+	sfKeyI = 8
+	sfKeyJ = 9
+	sfKeyK = 10
+	sfKeyL = 11
+	sfKeyM = 12
+	sfKeyN = 13
+	sfKeyO = 14
+	sfKeyP = 15
+	sfKeyQ = 16
+	sfKeyR = 17
+	sfKeyS = 18
+	sfKeyT = 19
+	sfKeyU = 20
+	sfKeyV = 21
+	sfKeyW = 22
+	sfKeyX = 23
+	sfKeyY = 24
+	sfKeyZ = 25
+	sfKeyNum0 = 26
+	sfKeyNum1 = 27
+	sfKeyNum2 = 28
+	sfKeyNum3 = 29
+	sfKeyNum4 = 30
+	sfKeyNum5 = 31
+	sfKeyNum6 = 32
+	sfKeyNum7 = 33
+	sfKeyNum8 = 34
+	sfKeyNum9 = 35
+	sfKeyEscape = 36
+	sfKeyLControl = 37
+	sfKeyLShift = 38
+	sfKeyLAlt = 39
+	sfKeyLSystem = 40
+	sfKeyRControl = 41
+	sfKeyRShift = 42
+	sfKeyRAlt = 43
+	sfKeyRSystem = 44
+	sfKeyMenu = 45
+	sfKeyLBracket = 46
+	sfKeyRBracket = 47
+	sfKeySemiColon = 48
+	sfKeyComma = 49
+	sfKeyPeriod = 50
+	sfKeyQuote = 51
+	sfKeySlash = 52
+	sfKeyBackSlash = 53
+	sfKeyTilde = 54
+	sfKeyEqual = 55
+	sfKeyDash = 56
+	sfKeySpace = 57
+	sfKeyReturn = 58
+	sfKeyBackSpace = 59
+	sfKeyTab = 60
+	sfKeyPageUp = 61
+	sfKeyPageDown = 62
+	sfKeyEnd = 63
+	sfKeyHome = 64
+	sfKeyInsert = 65
+	sfKeyDelete = 66
+	sfKeyAdd = 67
+	sfKeySubtract = 68
+	sfKeyMultiply = 69
+	sfKeyDivide = 70
+	sfKeyLeft = 71
+	sfKeyRight = 72
+	sfKeyUp = 73
+	sfKeyDown = 74
+	sfKeyNumpad0 = 75
+	sfKeyNumpad1 = 76
+	sfKeyNumpad2 = 77
+	sfKeyNumpad3 = 78
+	sfKeyNumpad4 = 79
+	sfKeyNumpad5 = 80
+	sfKeyNumpad6 = 81
+	sfKeyNumpad7 = 82
+	sfKeyNumpad8 = 83
+	sfKeyNumpad9 = 84
+	sfKeyF1 = 85
+	sfKeyF2 = 86
+	sfKeyF3 = 87
+	sfKeyF4 = 88
+	sfKeyF5 = 89
+	sfKeyF6 = 90
+	sfKeyF7 = 91
+	sfKeyF8 = 92
+	sfKeyF9 = 93
+	sfKeyF10 = 94
+	sfKeyF11 = 95
+	sfKeyF12 = 96
+	sfKeyF13 = 97
+	sfKeyF14 = 98
+	sfKeyF15 = 99
+	sfKeyPause = 100
+	
+	sfNumKeys = 256
 	
 	sfBlendAlpha = sfBlendMode_getBlendAlpha()
 	sfBlendAdd = sfBlendMode_getBlendAdd()
@@ -270,10 +478,12 @@ func sprite()
 	self.vertexArray = vertexArray
 	self.states = states
 	self.textureRect = null
+	self.color = [255, 255, 255, 255]
 	self.needUpdateVertexArray = false
 	
 	self.setTexture = sprite_setTexture
 	self.setTextureRect = sprite_setTextureRect
+	self.setColor = sprite_setColor
 	self.draw = sprite_draw
 	
 	return self
@@ -293,6 +503,11 @@ func sprite_setTextureRect(self, textureRect)
 	self.needUpdateVertexArray = true
 end
 
+func sprite_setColor(self, color)
+	self.color = color
+	self.needUpdateVertexArray = true
+end
+
 func sprite_draw(self, window, states)
 	sfRenderStates_setTransform(self.states, self:getTransform())
 	sfRenderStates_setTexture(self.states, self.texture)
@@ -300,7 +515,7 @@ func sprite_draw(self, window, states)
 	if self.texture
 		if self.needUpdateVertexArray
 			sfVertexArray_clear(self.vertexArray)
-			sfVertexArray_appendQuadEx(self.vertexArray, 0, 0, self.textureRect[2], self.textureRect[3], [255, 255, 255, 255], 
+			sfVertexArray_appendQuadEx(self.vertexArray, 0, 0, self.textureRect[2], self.textureRect[3], self.color, 
 			[self.textureRect[0], self.textureRect[1]],
 			[self.textureRect[0] + self.textureRect[2], self.textureRect[1]],
 			[self.textureRect[0] + self.textureRect[2], self.textureRect[1] + self.textureRect[3]],
@@ -313,7 +528,7 @@ func sprite_draw(self, window, states)
 	end
 end
 
-func sprite_batch(window)
+func spritebatch(window)
 	var vertexArray = sfVertexArray_create()
 	
 	return {
@@ -324,21 +539,26 @@ func sprite_batch(window)
 		states = sfRenderStates_createDefault(),
 		transform = sfTransform_create(),
 		
-		flush = sprite_batch_flush,
-		append = sprite_batch_append,
-		appendEx = sprite_batch_appendEx,
-		draw = sprite_batch_draw
+		clear = spritebatch_clear,
+		flush = spritebatch_flush,
+		append = spritebatch_append,
+		appendEx = spritebatch_appendEx,
+		draw = spritebatch_draw,
 	}
 end
 
-func sprite_batch_flush(self)
+func spritebatch_clear(self)
+	sfVertexArray_clear(self.vertexArray)
+end
+
+func spritebatch_flush(self)
 	sfVertexArray_setPrimitiveType(self.vertexArray, sfQuads)
 	sfRenderStates_setTexture(self.states, self.texture)
 	sfRenderWindow_drawVertexArray(self.window, self.vertexArray, self.states)
 	sfVertexArray_clear(self.vertexArray)
 end
 
-func sprite_batch_append(self, x, y, texture)
+func spritebatch_append(self, x, y, texture)
 	if self.texture != texture
 		self.texture = texture
 		if self.texture != null
@@ -350,7 +570,7 @@ func sprite_batch_append(self, x, y, texture)
 	sfVertexArray_appendQuad(self.vertexArray, size[0], size[1], [255, 255, 255, 255])
 end
 
-func sprite_batch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, scaleY, ox, oy)
+func spritebatch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, scaleY, ox, oy)
 	if self.texture != texture
 		self.texture = texture
 		self:flush()
@@ -358,8 +578,8 @@ func sprite_batch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, s
 	
 	sfTransform_identity(self.transform)
 	
-	ox *= scaleX
-	oy *= scaleY
+	ox = ox * scaleX
+	oy = oy * scaleY
 	
 	sfTransform_translate(self.transform, [x - ox, y - oy])
 	sfTransform_translate(self.transform, [ox, oy])
@@ -395,7 +615,7 @@ func sprite_batch_appendEx(self, x, y, texture, sx, sy, sw, sh, angle, scaleX, s
 	sfVertexArray_append(self.vertexArray, self.vertex)
 end
 
-func sprite_batch_draw(self, window, states)
+func spritebatch_draw(self, window, states)
 	self.window = window
 	self:flush()
 end
