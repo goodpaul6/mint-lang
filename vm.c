@@ -7,6 +7,7 @@
 #include <malloc.h>
 #include <time.h>
 #include <stdarg.h>
+#include <ctype.h>
 
 Object NullObject;
 
@@ -51,6 +52,19 @@ static char* estrdup(const char* string)
 	return newString;
 }
 
+void WriteObject(VM* vm, Object* top);
+void WriteNonVerbose(VM* vm, Object* obj)
+{
+	if(obj->type == OBJ_NUMBER || obj->type == OBJ_STRING || obj->type == OBJ_FUNC)
+	{
+		WriteObject(vm, obj);
+		printf("\n");
+	}
+	else
+		printf("%s\n", ObjectTypeNames[obj->type]);
+}
+
+Object* GetLocal(VM* vm, int index);
 void ErrorExit(VM* vm, const char* format, ...)
 {
 	if(!vm->hasCodeMetadata) fprintf(stderr, "Error at pc %i (last function called: %s):\n", vm->pc, vm->lastFunctionName);
@@ -61,6 +75,17 @@ void ErrorExit(VM* vm, const char* format, ...)
 	vfprintf(stderr, format, args);
 	va_end(args);
 	
+#if 0
+	for(int stackIndex = vm->stackSize - 1; stackIndex >= 0; --stackIndex)
+	{
+		Object* obj = vm->stack[stackIndex];
+		printf("%i: ", stackIndex);
+		WriteNonVerbose(vm, obj);
+	}
+#endif
+	
+	printf("pc: %i, fp: %i, stackSize: %i\n", vm->pc, vm->fp, vm->stackSize);
+
 	exit(1);
 }
 
@@ -475,6 +500,9 @@ void ResetVM(VM* vm)
 	
 	if(vm->functionPcs)
 		free(vm->functionPcs);
+	
+	if(vm->functionNumArgs)
+		free(vm->functionNumArgs);
 		
 	if(vm->functionNames)
 	{
@@ -540,6 +568,7 @@ names of global variables as string lengths followed by characters
 
 number of functions as integer
 function entry points as integers
+number of arguments to each function as integers
 function names [string length followed by string as chars]
 
 number of external functions referenced as integer
@@ -597,12 +626,16 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	int numFunctions, numNumberConstants, numStringConstants;
 	
 	fread(&numFunctions, sizeof(int), 1, in);
-	
-	vm->functionNames = emalloc(sizeof(char*) * numFunctions);
-	vm->functionPcs = emalloc(sizeof(int) * numFunctions);
 	vm->numFunctions = numFunctions;
 	
-	fread(vm->functionPcs, sizeof(int), numFunctions, in);
+	if(numFunctions > 0)
+	{
+		vm->functionNames = emalloc(sizeof(char*) * numFunctions);
+		vm->functionNumArgs = emalloc(sizeof(int) * numFunctions);
+		vm->functionPcs = emalloc(sizeof(int) * numFunctions);
+		fread(vm->functionPcs, sizeof(int), numFunctions, in);
+		fread(vm->functionNumArgs, sizeof(int), numFunctions, in);
+	}
 	
 	for(int i = 0; i < numFunctions; ++i)
 	{
@@ -618,8 +651,12 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	fread(&numExterns, sizeof(int), 1, in);
 	
 	vm->numExterns = numExterns;
-	vm->externNames = emalloc(sizeof(char*) * numExterns);
-	vm->externs = emalloc(sizeof(ExternFunction) * numExterns);
+	
+	if(numExterns > 0)
+	{
+		vm->externNames = emalloc(sizeof(char*) * numExterns);
+		vm->externs = emalloc(sizeof(ExternFunction) * numExterns);
+	}
 	
 	for(int i = 0; i < vm->numExterns; ++i)
 	{
@@ -635,16 +672,21 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	}
 	
 	fread(&numNumberConstants, sizeof(int), 1, in);
-	
-	vm->numberConstants = emalloc(sizeof(double) * numNumberConstants);
 	vm->numNumberConstants = numNumberConstants;
 	
-	fread(vm->numberConstants, sizeof(double), numNumberConstants, in);
+	if(numNumberConstants > 0)
+	{
+		vm->numberConstants = emalloc(sizeof(double) * numNumberConstants);
+		fread(vm->numberConstants, sizeof(double), numNumberConstants, in);
+	}
 	
 	fread(&numStringConstants, sizeof(int), 1, in);
 	
-	vm->stringConstants = emalloc(sizeof(char*) * numStringConstants);
-	vm->numStringConstants = numStringConstants;
+	if(numStringConstants > 0)
+	{
+		vm->stringConstants = emalloc(sizeof(char*) * numStringConstants);
+		vm->numStringConstants = numStringConstants;
+	}
 	
 	for(int i = 0; i < numStringConstants; ++i)
 	{

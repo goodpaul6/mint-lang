@@ -302,7 +302,7 @@ func fstream(path, mode)
 		c = getc(f)
 	end
 	
-	var s = _stream(joinchars(buf))
+	var s = stream(joinchars(buf))
 	s._file_handle = f
 	s._mode = mode
 	return s

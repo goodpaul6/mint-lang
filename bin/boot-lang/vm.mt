@@ -1,5 +1,5 @@
 # TODO:
-# implement data structures like arrays and dicts
+# dicts
 
 var op_push
 var op_add
@@ -20,6 +20,7 @@ var op_ret
 var op_createarray
 var op_getindex
 var op_setindex
+var op_len
 
 var vm_code
 var vm_stack
@@ -46,6 +47,7 @@ func vm_reset()
 	op_createarray = 16
 	op_getindex = 17
 	op_setindex = 18
+	op_len = 19
 	
 	vm_code = []
 	vm_stack = []
@@ -72,6 +74,10 @@ func vm_cycle(exec_code, current_ip)
 		ip = ip + 1
 		push(vm_stack, code[ip])
 		ip = ip + 1
+	elif c == op_len
+		ip = ip + 1
+		var container = pop(vm_stack)
+		push(vm_stack, len(container))
 	elif c == op_createarray
 		ip = ip + 1
 		var values = code[ip]

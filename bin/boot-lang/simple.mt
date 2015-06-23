@@ -7,6 +7,8 @@ var tok_number
 var tok_string
 var tok_eof
 var tok_end
+var tok_else
+var tok_elif
 
 var lexeme
 
@@ -67,6 +69,12 @@ func get_next_tok(s)
 	return cur_tok
 end
 
+func parse_if(s)
+	get_next_tok(s)
+	
+	var cond = parse_expr(s)
+end
+
 func parse_factor(s)
 	if cur_tok == tok_number
 		var value = lexeme
@@ -92,6 +100,12 @@ func parse_factor(s)
 			end
 			get_next_tok(s)
 			return { type = "ret" }
+		elif lexeme == "len"
+			get_next_tok(s)
+			
+			var e = parse_expr(s)
+			
+			return { type = "len", expr = e }
 		elif lexeme == "func"
 			get_next_tok(s)
 			
@@ -134,7 +148,7 @@ func parse_factor(s)
 			if cur_tok == ','
 				get_next_tok(s)
 			end
-			values[i] = e
+			push(values, e)
 			i = i + 1
 		end
 		get_next_tok(s)
@@ -268,6 +282,9 @@ func compile(e, code)
 	elif e.type == "retval"
 		compile(e.expr, code)
 		push(code, op_retval)
+	elif e.type == "len"
+		compile(e.expr, code)
+		push(code, op_len)
 	elif e.type == "array_literal"
 		push(code, op_createarray)
 		if len(e.values) == 0
@@ -340,6 +357,8 @@ func main()
 	tok_string = -3
 	tok_eof = -4
 	tok_end = -5
+	tok_else = -6
+	tok_elif = -7
 	
 	lexeme = ""
 	

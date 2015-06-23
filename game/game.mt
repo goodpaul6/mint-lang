@@ -37,7 +37,7 @@ end
 func tilemap_create(window)
 	var self = {}
 
-	self.batch = sprite_batch(window)
+	self.batch = spritebatch(window)
 	self.texture = null
 	self.data = null
 	self.width = 0
@@ -171,19 +171,21 @@ end
 func room_update(self)
 	for var i = 0, i < len(self.entities), i = i + 1
 		var e = self.entities[i]
-		e.room = self
-		e:update()
 		
-		for var j = i + 1, j < len(self.entities), j = j + 1
-			var a = self.entities[i]
-			var b = self.entities[j]
+		if e.hp > 0
+			e.room = self
+			e:update()
 			
-			if a:overlaps(b)
-				a:seperate(b)
+			for var j = i + 1, j < len(self.entities), j = j + 1
+				var a = self.entities[i]
+				var b = self.entities[j]
+				
+				if a:overlaps(b)
+					a:seperate(b)
+				end
 			end
-		end
-		
-		if e.hp <= 0
+			
+		else
 			erase(self.entities, i)
 		end
 	end
@@ -265,11 +267,12 @@ func entity_update(self)
 			self.y = self.y + self.dy / 5
 		end
 	end
-	
-	sfVertexArray_clear(self.rect)
-	sfVertexArray_appendQuadEx(self.rect, self.x - self.radius, self.y - self.radius, self.radius * 2, self.radius * 2, [255, 0, 0, 100], [0, 0], [0, 0], [0, 0], [0, 0])
 
-	self.sprite:setPosition([self.x - self.radius, self.y - self.radius])
+	var xx = self.x
+	var yy = self.y
+	
+	
+	self.sprite:setPosition([xx - self.radius, yy - self.radius])
 end
 
 func entity_hitWallX(self)
@@ -468,34 +471,14 @@ func zombie_update(self)
 	self.sprite:setPosition([self.x - 16, self.y - 16])
 end
 
-var bullet_pool
-var bullet_pool_index
-
 func bullet_create(x, y, angle)
-	if bullet_pool == null
-		bullet_pool = array(300)
-		for var i = 0, i < len(bullet_pool), i = i + 1
-			var self = entity_create()
-			
-			self.sprite:setTexture(assets.bullet)
-			
-			self.radius = 2
-			
-			self.contact = bullet_contact
-			self.hitWallX = bullet_hitWallX
-			self.hitWallY = bullet_hitWallY
-			
-			bullet_pool[i] = self
-		end
-		bullet_pool_index = 0
-	end
+	var self = entity_create()
 	
-	var self = bullet_pool[bullet_pool_index]
-		
-	bullet_pool_index = bullet_pool_index + 1
-	if bullet_pool_index >= len(bullet_pool)
-		bullet_pool_index = 0
-	end
+	self.sprite:setTexture(assets.bullet)
+	self.radius = 2
+	self.contact = bullet_contact
+	self.hitWallX = bullet_hitWallX
+	self.hitWallY = bullet_hitWallY
 	
 	self.sprite:setPosition([x, y])
 	
@@ -523,12 +506,12 @@ end
 
 func bullet_hitWallX(self)
 	self.hp = 0
-	emit_blood(self.room, self.x, self.y, 2)
+	# emit_blood(self.room, self.x, self.y, 2)
 end
 
 func bullet_hitWallY(self)
 	self.hp = 0
-	emit_blood(self.room, self.x, self.y, 2)
+	# emit_blood(self.room, self.x, self.y, 2)
 end
 
 var blood_pool

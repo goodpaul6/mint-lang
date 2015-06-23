@@ -147,6 +147,7 @@ typedef struct _VM
 	
 	int numFunctions;
 	int* functionPcs;
+	int* functionNumArgs;
 	char** functionNames;
 	
 	const char* lastFunctionName;

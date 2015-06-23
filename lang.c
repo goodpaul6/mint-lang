@@ -1,6 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
+ * - virtual machine knows how many arguments each function takes; stop supplying it as integers in the bytecode (fix CompileExpr, ExecuteCycle)
  * - enums
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
@@ -176,6 +177,7 @@ FuncDecl* FunctionsCurrent = NULL;
 VarDecl* VarStack[MAX_SCOPES];
 int VarStackDepth = 0;
 
+
 /* BINARY FORMAT:
 entry point as integer
 
@@ -187,6 +189,7 @@ names of global variables as string lengths followed by characters
 
 number of functions as integer
 function entry points as integers
+number of arguments to each function as integers
 function names [string length followed by string as chars]
 
 number of external functions referenced as integer
@@ -236,6 +239,11 @@ void OutputCode(FILE* out)
 	{
 		if(!decl->isExtern)
 			fwrite(&decl->pc, sizeof(int), 1, out);
+	}
+	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
+	{
+		if(!decl->isExtern)
+			fwrite(&decl->numArgs, sizeof(int), 1, out);
 	}
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
@@ -397,7 +405,7 @@ void PopScope()
 	--VarStackDepth;
 }
 
-FuncDecl* EnterFunction(const char* name)
+FuncDecl* DeclareFunction(const char* name)
 {
 	FuncDecl* decl = malloc(sizeof(FuncDecl));
 	assert(decl);
@@ -424,9 +432,13 @@ FuncDecl* EnterFunction(const char* name)
 	decl->numLocals = 0;
 	decl->pc = -1;
 	
-	CurFunc = decl;
-	
 	return decl;
+}
+
+FuncDecl* EnterFunction(const char* name)
+{
+	CurFunc = DeclareFunction(name);	
+	return CurFunc;
 }
 
 void ExitFunction()
@@ -681,8 +693,25 @@ int GetToken(FILE* in)
 	if(last == '#')
 	{
 		last = getc(in);
-		while(last != '\n' && last != '\r' && last != EOF)
-			last = getc(in);
+		if(last == '~')
+		{
+			while(last != EOF)
+			{
+				last = getc(in);
+				if(last == '\n' || last == '\r') ++LineNumber;
+				if(last == '~')
+				{
+					last = getc(in);
+					if(last == '#')
+						break;
+				}
+			}
+		}
+		else
+		{
+			while(last != '\n' && last != '\r' && last != EOF)
+				last = getc(in);
+		}
 		if(last == EOF) return TOK_EOF;
 		else return GetToken(in);
 	}
@@ -790,6 +819,7 @@ typedef enum
 	EXP_BREAK,
 	EXP_COLON,
 	EXP_NEW,
+	EXP_LINKED_BINARY_CODE
 } ExprType;
 
 typedef struct _Expr
@@ -820,6 +850,7 @@ typedef struct _Expr
 		struct { struct _Expr* pairsHead; int length; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
 		struct _Expr* newExpr;
+		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int numFunctions; } code;
 	};
 } Expr;
 
@@ -2209,6 +2240,21 @@ void CompileExpr(Expr* exp)
 			AllocatePatch(sizeof(int) / sizeof(Word));
 		} break;
 		
+		case EXP_LINKED_BINARY_CODE:
+		{
+			for(int i = 0; i < exp->code.numFunctions; ++i)
+			{
+				exp->code.toBeRetargeted[i]->pc += CodeLength;
+				if(strcmp(exp->code.toBeRetargeted[i]->name, "_main") == 0) EntryPoint = exp->code.toBeRetargeted[i]->pc;
+			}
+			
+			AppendCode(OP_HALT);
+			for(int i = 0; i < exp->code.length; ++i)
+				AppendCode(exp->code.bytes[i]);
+				
+			free(exp->code.toBeRetargeted);
+		} break;
+		
 		default:
 		{
 			// NO CODE GENERATION NECESSARY
@@ -2229,6 +2275,248 @@ void DebugExprList(Expr* head)
 	printf("\n");
 }
 
+
+/* BINARY FORMAT:
+entry point as integer
+
+program length (in words) as integer
+program code (must be no longer than program length specified previously)
+
+number of global variables as integer
+names of global variables as string lengths followed by characters
+
+number of functions as integer
+function entry points as integers
+number of arguments to each function as integers
+function names [string length followed by string as chars]
+
+number of external functions referenced as integer
+string length followed by string as chars (names of external functions as referenced in the code)
+
+number of number constants as integer
+number constants as doubles
+
+number of string constants
+string length followed by string as chars
+
+whether the program has code metadata (i.e line numbers and file names for errors) (represented by char)
+if so (length of each of the arrays below must be the same as program length):
+line numbers mapping to pcs
+file names as indices into string table (integers)
+*/
+
+char** ReadStringArrayFromBinaryFile(FILE* in, int amount)
+{
+	char** strings = malloc(sizeof(char*) * amount);
+	assert(strings);
+	
+	for(int i = 0; i < amount; ++i)
+	{
+		int length;
+		fread(&length, sizeof(int), 1, in);
+		char* str = malloc(length + 1);
+		fread(str, sizeof(char), length, in);
+		str[length] = '\0';
+		strings[i] = str;
+	}
+	
+	return strings;
+}
+
+void FreeStringArray(char** array, int length)
+{
+	for(int i = 0; i < length; ++i)
+		free(array[i]);
+	free(array);
+}
+
+Expr* ParseBinaryFile(FILE* bin, const char* fileName)
+{
+	Expr* exp = CreateExpr(EXP_LINKED_BINARY_CODE);
+	
+	int entryPoint;
+	fread(&entryPoint, sizeof(int), 1, bin);
+	
+	int programLength;
+	fread(&programLength, sizeof(int), 1, bin);
+	
+	Word* program = malloc(sizeof(Word) * programLength);
+	fread(program, sizeof(Word), programLength, bin);
+	
+	int numGlobals;
+	fread(&numGlobals, sizeof(int), 1, bin);
+	
+	int* globalIndexTable = NULL;
+	if(numGlobals > 0)
+	{
+		// this table is for retargeting global accesses in the binary file to the binary file produced in this execution of the compiler
+		globalIndexTable = malloc(sizeof(int) * numGlobals);
+		assert(globalIndexTable);
+		
+		char** globalNames = ReadStringArrayFromBinaryFile(bin, numGlobals);
+		for(int i = 0; i < numGlobals; ++i)
+		{
+			VarDecl* decl = RegisterVariable(globalNames[i]);
+			globalIndexTable[i] = decl->index;
+		}
+		FreeStringArray(globalNames, numGlobals);
+	}
+	
+	int numFunctions;
+	fread(&numFunctions, sizeof(int), 1, bin);
+	
+	exp->code.numFunctions = numFunctions;
+	
+	int* functionIndexTable = NULL;
+	if(numFunctions > 0)
+	{
+		functionIndexTable = malloc(sizeof(int) * numFunctions);
+		assert(functionIndexTable);
+		
+		int* functionPcs = malloc(sizeof(int) * numFunctions);
+		assert(functionPcs);
+		
+		fread(functionPcs, sizeof(int), numFunctions, bin);
+		
+		int* functionNumArgs = malloc(sizeof(int) * numFunctions);
+		assert(functionNumArgs);
+		
+		fread(functionNumArgs, sizeof(int), numFunctions, bin);
+		
+		char** functionNames = ReadStringArrayFromBinaryFile(bin, numFunctions);
+		
+		exp->code.toBeRetargeted = malloc(sizeof(FuncDecl*) * numFunctions);
+		for(int i = 0; i < numFunctions; ++i)
+		{
+			FuncDecl* decl = DeclareFunction(functionNames[i]);
+			decl->pc = functionPcs[i];
+			decl->numArgs = functionNumArgs[i];
+			exp->code.toBeRetargeted[i] = decl;
+			functionIndexTable[i] = decl->index;
+		}
+		FreeStringArray(functionNames, numFunctions);
+		free(functionPcs);
+		free(functionNumArgs);
+	}
+	
+	int numExterns;
+	fread(&numExterns, sizeof(int), 1, bin);
+	
+	int* externIndexTable = NULL;
+	if(numExterns > 0)
+	{
+		externIndexTable = malloc(sizeof(int) * numExterns);
+		assert(externIndexTable);
+		
+		char** externNames = ReadStringArrayFromBinaryFile(bin, numExterns);
+		for(int i = 0; i < numExterns; ++i)
+			externIndexTable[i] = RegisterExtern(externNames[i])->index;
+		FreeStringArray(externNames, numExterns);
+	}
+	
+	for(int i = 0; i < programLength; ++i)
+	{
+		switch(program[i])
+		{
+			case OP_PUSH_NULL: break;
+			case OP_PUSH_NUMBER: i += sizeof(int) / sizeof(Word); break;
+			case OP_PUSH_STRING: i += sizeof(int) / sizeof(Word); break;
+			case OP_CREATE_ARRAY: break;
+			case OP_CREATE_ARRAY_BLOCK: i += sizeof(int) / sizeof(Word); break;
+			case OP_PUSH_FUNC: i += 3 + sizeof(int) / sizeof(Word); break;
+			case OP_PUSH_DICT: break;
+			case OP_CREATE_DICT_BLOCK: i+= sizeof(int) / sizeof(Word); break;
+			
+			// stores current stack size
+			case OP_PUSH_STACK: break;
+			// returns to previously stored stack size
+			case OP_POP_STACK: break;
+			
+			case OP_LENGTH: break;
+			case OP_ARRAY_PUSH: break;
+			case OP_ARRAY_POP: break;
+			case OP_ARRAY_CLEAR: break;
+			
+			// fast dictionary operations
+			case OP_DICT_SET: i += sizeof(int) / sizeof(Word); break;
+			case OP_DICT_GET: i += sizeof(int) / sizeof(Word); break;
+			case OP_DICT_PAIRS: break;
+			
+			case OP_ADD:
+			case OP_SUB:
+			case OP_MUL:
+			case OP_DIV:
+			case OP_MOD:
+			case OP_OR:
+			case OP_AND:
+			case OP_LT:
+			case OP_LTE:
+			case OP_GT:
+			case OP_GTE:
+			case OP_EQU:
+			case OP_NEQU:
+			case OP_NEG:
+			case OP_LOGICAL_NOT:
+			case OP_LOGICAL_AND:
+			case OP_LOGICAL_OR:
+			case OP_SHL:
+			case OP_SHR: break;
+			 
+			case OP_SETINDEX: break;
+			case OP_GETINDEX: break;
+			 
+			case OP_SET:
+			case OP_GET:
+			{
+				++i;
+				int* indexLocation = (int*)(&program[i]);
+				int previousIndex = *indexLocation;
+				*indexLocation = globalIndexTable[previousIndex];
+				i += sizeof(int) / sizeof(Word); break;
+			} break; 
+			
+			case OP_WRITE: break;
+			case OP_READ: break;
+			 
+			case OP_GOTO: i += sizeof(int) / sizeof(Word); break;
+			case OP_GOTOZ: i += sizeof(int) / sizeof(Word); break;
+			 
+			case OP_CALL:
+			{
+				i += 2;
+				int* indexLocation = (int*)(&program[i]);
+				int previousIndex = *indexLocation;
+				*indexLocation = functionIndexTable[previousIndex];
+			} break;
+			case OP_CALLP: i += 1; break;
+			case OP_RETURN: break;
+			case OP_RETURN_VALUE: break;
+			 
+			case OP_CALLF:
+			{
+				i += 1;
+				int* indexLocation = (int*)(&program[i]);
+				int previousIndex = *indexLocation;
+				*indexLocation = externIndexTable[previousIndex];
+			} break;
+			 
+			case OP_GETLOCAL:
+			case OP_SETLOCAL: i += sizeof(int) / sizeof(Word); break;
+			 
+			case OP_HALT: break;
+			
+			case OP_SETVMDEBUG: i += 1; break;
+		}
+	}
+	
+	if(globalIndexTable) free(globalIndexTable);
+	if(functionIndexTable) free(functionIndexTable);
+	if(externIndexTable) free(externIndexTable);
+	
+	exp->code.bytes = program;
+	exp->code.length = programLength;
+}
+
 int main(int argc, char* argv[])
 {
 	if(argc == 1)
@@ -2244,6 +2532,25 @@ int main(int argc, char* argv[])
 		if(strcmp(argv[i], "-o") == 0)
 		{
 			outPath = argv[++i];
+		}
+		else if(strcmp(argv[i], "-l") == 0)
+		{		
+			FILE* in = fopen(argv[++i], "rb");
+			if(!in)
+				ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+			
+			if(!exprHead)
+			{
+				exprHead = ParseBinaryFile(in, argv[i]);
+				exprCurrent = exprHead;
+			}
+			else
+			{
+				exprCurrent->next = ParseBinaryFile(in, argv[i]);
+				exprCurrent = exprCurrent->next;
+			}
+			
+			fclose(in);
 		}
 		else
 		{
