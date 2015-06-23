@@ -850,7 +850,7 @@ typedef struct _Expr
 		struct { struct _Expr* pairsHead; int length; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
 		struct _Expr* newExpr;
-		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int numFunctions; } code;
+		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
 	};
 } Expr;
 
@@ -1690,17 +1690,6 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		AppendCode(OP_ARRAY_CLEAR);
 		return 1;
 	}
-	else if(strcmp(name, "call") == 0)
-	{
-		if(exp->callx.numArgs < 1)
-			ErrorExitE(exp, "Intrinsic 'call' takes at least 1 argument (the function reference)\n");
-		
-		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileExpr(exp->callx.args[i]);
-		AppendCode(OP_CALLP);
-		AppendCode(exp->callx.numArgs - 1);
-		return 1;
-	}
 	else if(strcmp(name, "array") == 0)
 	{
 		if(exp->callx.numArgs > 1)
@@ -1723,6 +1712,28 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'dict' takes no arguments\n");
 		AppendCode(OP_PUSH_DICT);
 		return 1; 
+	}
+	else if(strcmp(name, "get_func_if_exists") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'get_func_if_exists' takes 1 argument\n");
+		
+		FuncDecl* decl = ReferenceFunction(exp->callx.args[0]->varx.name);
+		if(!decl)
+			AppendCode(OP_PUSH_NULL);
+		else
+		{
+			if(decl->hasEllipsis)
+				ErrorExitE(exp->callx.args[0], "Attempted to get function pointer to variadic function '%s', which is not supported yet.\nPlease use the function directly", exp->varx.name);
+			
+			AppendCode(OP_PUSH_FUNC);
+			AppendCode(decl->hasEllipsis);
+			AppendCode(decl->isExtern);
+			AppendCode(decl->numArgs);
+			AppendInt(decl->index);
+		}
+		
+		return 1;
 	}
 	else if(strcmp(name, "assert_func_exists") == 0)
 	{
@@ -2414,6 +2425,43 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 		FreeStringArray(externNames, numExterns);
 	}
 	
+	
+	int numNumberConstants;
+	fread(&numNumberConstants, sizeof(int), 1, bin);
+	
+	int* numberIndexTable = NULL;
+	
+	if(numNumberConstants > 0)
+	{
+		numberIndexTable = malloc(sizeof(int) * numNumberConstants);
+		assert(numberIndexTable);
+		
+		double* numberConstants = malloc(sizeof(double) * numNumberConstants);
+		assert(numberConstants);
+		
+		fread(numberConstants, sizeof(double), numNumberConstants, bin);
+		
+		for(int i = 0; i < numNumberConstants; ++i)
+			numberIndexTable[i] = RegisterNumber(numberConstants[i])->index;
+		
+		free(numberConstants);
+	}
+	
+	int numStringConstants;
+	int* stringIndexTable = NULL;
+	
+	char** stringConstants = NULL;
+	if(numStringConstants > 0)
+	{
+		stringIndexTable = malloc(sizeof(int) * numStringConstants);
+		assert(stringIndexTable);
+		
+		stringConstants = ReadStringArrayFromBinaryFile(bin, numStringConstants);
+		for(int i = 0; i < numStringConstants; ++i)
+			stringIndexTable[i] = RegisterString(stringConstants[i])->index;
+		FreeStringArray(stringConstants);
+	}
+	
 	for(int i = 0; i < programLength; ++i)
 	{
 		switch(program[i])
@@ -2513,9 +2561,15 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 	if(functionIndexTable) free(functionIndexTable);
 	if(externIndexTable) free(externIndexTable);
 	
+	
 	exp->code.bytes = program;
 	exp->code.length = programLength;
+	exp->line = -1;
+	exp->file = fileName;
 }
+
+const char* StandardSourceSearchPath = "C:\\Mint\\src\\";
+const char* StandardLibSearchPath = "C:\\Mint\\lib\\";
 
 int main(int argc, char* argv[])
 {
@@ -2537,7 +2591,14 @@ int main(int argc, char* argv[])
 		{		
 			FILE* in = fopen(argv[++i], "rb");
 			if(!in)
-				ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+			{
+				char buf[256];
+				strcpy(buf, StandardLibSearchPath);
+				strcat(buf, argv[i]);
+				in = fopen(buf, "rb");
+				if(!in)
+					ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+			}
 			
 			if(!exprHead)
 			{
@@ -2556,7 +2617,15 @@ int main(int argc, char* argv[])
 		{
 			FILE* in = fopen(argv[i], "r");
 			if(!in)
-				ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+			{
+				char buf[256];
+				strcpy(buf, StandardSourceSearchPath);
+				strcat(buf, argv[i]);
+				in = fopen(buf, "r");
+				
+				if(!in)
+					ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+			}
 			LineNumber = 1;
 			FileName = argv[i];
 			

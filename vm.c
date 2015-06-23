@@ -1199,7 +1199,13 @@ void ExecuteCycle(VM* vm)
 {
 	if(vm->pc == -1) return;
 	if(vm->debug)
-		printf("pc %i: ", vm->pc);
+	{
+		if(!vm->hasCodeMetadata)
+			printf("pc %i: ", vm->pc);
+		else
+			printf("(%s:%i): ", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc]);
+	}
+	
 	
 	if(vm->stackSize < vm->numGlobals)
 		printf("Global(s) were removed from the stack!\n");
