@@ -80,7 +80,7 @@ enum
 	OP_HALT,
 	
 	OP_SETVMDEBUG,
-
+	
 	NUM_OPCODES
 };
 
@@ -146,6 +146,7 @@ typedef struct _VM
 	int entryPoint;
 	
 	int numFunctions;
+	char* functionHasEllipsis;
 	int* functionPcs;
 	int* functionNumArgs;
 	char** functionNames;

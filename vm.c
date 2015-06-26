@@ -431,6 +431,23 @@ void Std_BytesLength(VM* vm)
 	PushNumber(vm, ba->length);
 }
 
+void Std_GetFuncByName(VM* vm)
+{
+	const char* name = PopString(vm);
+	
+	int index = -1;
+	for(int i = 0; i < vm->numFunctions; ++i)
+	{
+		if(strcmp(vm->functionNames[i], name) == 0)
+			index = i;
+	}
+	
+	if(index >= 0)
+		PushFunc(vm, index, vm->functionHasEllipsis[index], 0, vm->functionNumArgs[index]);
+	else
+		PushObject(vm, &NullObject);
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -447,7 +464,9 @@ void InitVM(VM* vm)
 	vm->entryPoint = 0;
 	
 	vm->numFunctions = 0;
+	vm->functionHasEllipsis = NULL;
 	vm->functionPcs = NULL;
+	vm->functionNumArgs = NULL;
 	
 	vm->lastFunctionName = NULL;
 	
@@ -497,6 +516,9 @@ void ResetVM(VM* vm)
 	
 	if(vm->program)
 		free(vm->program);
+		
+	if(vm->functionHasEllipsis)
+		free(vm->functionHasEllipsis);
 	
 	if(vm->functionPcs)
 		free(vm->functionPcs);
@@ -568,6 +590,7 @@ names of global variables as string lengths followed by characters
 
 number of functions as integer
 function entry points as integers
+whether function has ellipses as bytes (chars)
 number of arguments to each function as integers
 function names [string length followed by string as chars]
 
@@ -631,9 +654,11 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	if(numFunctions > 0)
 	{
 		vm->functionNames = emalloc(sizeof(char*) * numFunctions);
+		vm->functionHasEllipsis = emalloc(sizeof(char) * numFunctions);
 		vm->functionNumArgs = emalloc(sizeof(int) * numFunctions);
 		vm->functionPcs = emalloc(sizeof(int) * numFunctions);
 		fread(vm->functionPcs, sizeof(int), numFunctions, in);
+		fread(vm->functionHasEllipsis, sizeof(char), numFunctions, in);
 		fread(vm->functionNumArgs, sizeof(int), numFunctions, in);
 	}
 	
@@ -744,6 +769,7 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "setbyte", Std_SetByte);
 	HookExternNoWarn(vm, "setint", Std_SetInt);
 	HookExternNoWarn(vm, "lenbytes", Std_BytesLength);
+	HookExternNoWarn(vm, "getfuncbyname", Std_GetFuncByName);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
