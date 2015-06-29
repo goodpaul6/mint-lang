@@ -78,6 +78,5 @@ func _main()
 		write(imap[i])
 	end
 	
-	
 	return 0
 end

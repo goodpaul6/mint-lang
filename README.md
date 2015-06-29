@@ -64,6 +64,120 @@ func _main()
 	return 0
 end
 ```
+The language also supports operator overloading. This is done using dictionaries with functions as members.
+These functions correspond with the names of the operations.
+```
+# operator.mt -- demonstrates operator overloading
+
+extern printf
+
+# standard library extern, returns the type of the object as a string
+extern type
+
+# halts the vm (exits but frees all the allocated memory)
+extern halt
+
+func me(value)
+	return {
+		value = value,
+		ADD = my_add 		# other supported operators: SUB, MUL, DIV, MOD, OR, AND, LOGICAL_AND, LOGICAL_OR,
+							# 							 GETINDEX, SETINDEX
+	}
+end
+
+func my_add(self, other)
+	if type(other) == type(0) # if the value being added is a number
+		
+		# since the language doesn't support compound operators (with good reason)
+		# we must return a new 'me' object with the new value
+		return me(self.value + other) 
+	
+	else if type(other) == type({}) # or it is another 'me' object
+		return me(self.value + other.value)
+	else # or something else, in which case there is an error
+		printf("attempted to add %s with 'me'\n", type(value))
+		halt()
+	end
+end
+
+func _main()
+	var a = me(10)
+	var b = me(20)
+	
+	# output: 30
+	write((a + b).value)
+	
+	return 0
+end
+```
+Here is a more practical usage of operator overloading: a generic hashmap implementation
+which can use any type as a key as long as it's provided with a hash function:
+```
+# map.mt -- demonstrates a generic hashmap implementation
+
+func map(f)
+	return {
+		buckets = array(1024),
+		hash = f,
+		SETINDEX = map_set_index,
+		GETINDEX = map_get_index 
+	}
+end
+
+func map_set_index(self, index, value)
+	var hash = self.hash(index)
+	
+	var i = hash % len(self.buckets)
+	var b = {
+		next = self.buckets[i],
+		key = index,
+		value = value
+	}
+
+	self.buckets[i] = b
+end
+
+func map_get_index(self, index)
+	var hash = self.hash(index)
+	
+	var bucket = self.buckets[hash % len(self.buckets)]
+	while bucket.key != index
+		bucket = bucket.next
+		if bucket == null
+			break
+		end
+		
+		if bucket.key == index
+			return bucket.value
+		end
+	end
+	
+	if bucket.key == index
+		return bucket.value
+	end
+	
+	return null
+end
+
+func inthash(i)
+	return i
+end
+
+func _main()
+	var imap = map(inthash)
+	
+	imap[0] = 0
+	imap[1] = 10
+	imap[2] = 20
+	imap[3] = 30
+	
+	for var i = 0, i <= 3, i = i + 1
+		write(imap[i])
+	end
+	
+	return 0
+end
+```
 
 # zlib License
 Copyright (c) 2015 Apaar Madan
