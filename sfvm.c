@@ -325,6 +325,20 @@ void Ext_sfRenderStates_create(VM* vm)
 	PushNative(vm, states, free, NULL);
 }
 
+void Ext_sfRenderStates_copy(VM* vm)
+{
+	sfRenderStates* states = PopNative(vm);
+	sfRenderStates* copiedStates = emalloc(sizeof(sfRenderStates));
+	memcpy(copiedStates, states, sizeof(sfRenderStates));
+	
+	PushNative(vm, copiedStates, free, NULL);
+}
+
+void Ext_sfRenderStates_getBlendMode(VM* vm)
+{
+	sfRenderStates* states = PopNative(vm);
+}
+
 void Ext_sfRenderStates_setBlendMode(VM* vm)
 {
 	sfRenderStates* states = PopNative(vm);
@@ -635,6 +649,7 @@ void HookSFML(VM* vm)
 	HookExternNoWarn(vm, "sfShader_isAvailable", Ext_sfShader_isAvailable);
 	
 	HookExternNoWarn(vm, "sfRenderStates_create", Ext_sfRenderStates_create);
+	HookExternNoWarn(vm, "sfRenderStates_copy", Ext_sfRenderStates_copy);
 	HookExternNoWarn(vm, "sfRenderStates_setBlendMode", Ext_sfRenderStates_setBlendMode);
 	HookExternNoWarn(vm, "sfRenderStates_setTransform", Ext_sfRenderStates_setTransform);
 	HookExternNoWarn(vm, "sfRenderStates_setTexture", Ext_sfRenderStates_setTexture);

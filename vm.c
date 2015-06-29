@@ -1199,7 +1199,7 @@ void CallFunction(VM* vm, int id, Word numArgs)
 	
 	vm->pc = vm->functionPcs[id];
 	
-	while(vm->fp >= startFp && vm->pc >= 0)
+	while(vm->fp > startFp && vm->pc >= 0)
 		ExecuteCycle(vm);
 }
 
@@ -1220,6 +1220,66 @@ Object* GetGlobal(VM* vm, int id)
 	if(id < 0) return NULL;
 	return vm->stack[id];
 }
+
+/* ALL OF THIS IS TERRIBLE; ABSOLUTELY HORRIBLE */
+void CallOverloadedOperator(VM* vm, const char* name, Object* val1, Object* val2)
+{
+	if(vm->debug)
+		printf("overload %s\n", name);
+	if(val1->type != OBJ_DICT)																														
+		ErrorExit(vm, "Invalid binary operation\n");																								
+	Object* binFunc = DictGet(&val1->dict, name);
+	if(!binFunc)
+		ErrorExit(vm, "Attempted to perform binary operation with dictionary as lhs (and no operator overload) for op '%s'\n", name);
+	if(binFunc->type != OBJ_FUNC)																													
+		ErrorExit(vm, "Expected member '%s' in dictionary to be a function\n", name);									
+	if(binFunc->func.numArgs != 2) ErrorExit(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
+	vm->lastFunctionName = name;																	
+	PushObject(vm, val2);			
+	PushObject(vm, val1);
+	CallFunction(vm, binFunc->func.index, 2);
+}
+
+char CallOverloadedOperatorIf(VM* vm, const char* name, Object* val1, Object* val2)
+{
+	if(vm->debug)
+		printf("overload %s\n", name);
+	if(val1->type != OBJ_DICT)																														
+		ErrorExit(vm, "Invalid binary operation\n");																								
+	Object* binFunc = DictGet(&val1->dict, name);
+	if(!binFunc)
+		return 0;
+	if(binFunc->type != OBJ_FUNC)																													
+		ErrorExit(vm, "Expected member '%s' in dictionary to be a function\n", name);									
+	if(binFunc->func.numArgs != 2) ErrorExit(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
+	vm->lastFunctionName = name;																	
+	PushObject(vm, val2);			
+	PushObject(vm, val1);
+	CallFunction(vm, binFunc->func.index, 2);
+	return 1;
+}
+
+char CallOverloadedOperatorEx(VM* vm, const char* name, Object* val1, Object* val2, Object* val3)
+{
+	if(vm->debug)
+		printf("overload %s\n", name);
+	if(val1->type != OBJ_DICT)																														
+		ErrorExit(vm, "Invalid binary operation\n");																								
+	Object* binFunc = DictGet(&val1->dict, name);
+	if(!binFunc)
+		return 0;
+	if(binFunc->type != OBJ_FUNC)																													
+		ErrorExit(vm, "Expected member '%s' in dictionary to be a function\n", name);									
+	if(binFunc->func.numArgs != 3) ErrorExit(vm, "Expected member function '%s' in dictionary to take 3 arguments\n", name);
+	vm->lastFunctionName = name;
+	PushObject(vm, val3);
+	PushObject(vm, val2);			
+	PushObject(vm, val1);
+	CallFunction(vm, binFunc->func.index, 3);
+	return 1;
+}
+/* END OF HORRIBLENESS; FOR NOW :P
+   VALVE PLS FIX */
 
 void ExecuteCycle(VM* vm)
 {
@@ -1456,7 +1516,7 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 		
-		#define BIN_OP_TYPE(op, operator, type) case OP_##op: { if(vm->debug) printf("%s\n", #op); Object* val2 = PopObject(vm); Object* val1 = PopObject(vm); PushNumber(vm, (type)val1->number operator (type)val2->number); ++vm->pc; } break;
+		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExit(vm, "Invalid binary operation\n"); } } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
 		BIN_OP(ADD, +)
@@ -1487,12 +1547,15 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			Object* o2 = PopObject(vm);
 			Object* o1 = PopObject(vm);
+			if(vm->debug)
+				printf("equ %s %s\n", ObjectTypeNames[o1->type], ObjectTypeNames[o2->type]);
 			
-			if(o1->type != o2->type) PushNumber(vm, 0);
+			if(o1->type != o2->type && o1->type != OBJ_DICT) PushNumber(vm, 0);
 			else
 			{
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number == o2->number); }
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) {}
 				else PushNumber(vm, o1 == o2);
 			}
 		} break;
@@ -1503,11 +1566,15 @@ void ExecuteCycle(VM* vm)
 			Object* o2 = PopObject(vm);
 			Object* o1 = PopObject(vm);
 			
-			if(o1->type != o2->type) PushNumber(vm, 1);
+			if(vm->debug)
+				printf("nequ %s %s\n", ObjectTypeNames[o1->type], ObjectTypeNames[o2->type]);
+				
+			if(o1->type != o2->type && o1->type != OBJ_DICT) PushNumber(vm, 1);
 			else
 			{
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) != 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number != o2->number); }
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)PopNumber(vm); PushNumber(vm, !result); }
 				else PushNumber(vm, o1 != o2);
 			}
 		} break;
@@ -1569,10 +1636,12 @@ void ExecuteCycle(VM* vm)
 			}
 			else if(obj->type == OBJ_DICT)
 			{
-				if(indexObj->type != OBJ_STRING)
-					ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
-				
-				DictPut(&obj->dict, indexObj->string.raw, value);
+				if(!CallOverloadedOperatorEx(vm, "SETINDEX", obj, indexObj, value))
+				{	
+					if(indexObj->type != OBJ_STRING)
+						ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
+					DictPut(&obj->dict, indexObj->string.raw, value);
+				}
 			}
 			else
 				ErrorExit(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
@@ -1616,14 +1685,16 @@ void ExecuteCycle(VM* vm)
 			}
 			else if(obj->type == OBJ_DICT)
 			{
-				if(indexObj->type != OBJ_STRING)
-					ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
-				
-				Object* val = (Object*)DictGet(&obj->dict, indexObj->string.raw);
-				if(val)
-					PushObject(vm, val);
-				else
-					PushObject(vm, &NullObject);
+				if(!CallOverloadedOperatorIf(vm, "GETINDEX", obj, indexObj))
+				{
+					if(indexObj->type != OBJ_STRING)
+						ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
+					Object* val = (Object*)DictGet(&obj->dict, indexObj->string.raw);
+					if(val)
+						PushObject(vm, val);
+					else
+						PushObject(vm, &NullObject);
+				}
 			}
 			else 
 				ErrorExit(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
@@ -1848,6 +1919,27 @@ void ExecuteCycle(VM* vm)
 			char debug = vm->program[++vm->pc];
 			++vm->pc;
 			vm->debug = debug;
+		} break;
+		
+		case OP_DICT_GET_RKEY:
+		{
+			Object* obj = PopObject(vm);
+			const char* key = PopString(vm);
+			
+			Object* val = (Object*)DictGet(&obj->dict, key);
+			if(val)
+				PushObject(vm, val);
+			else
+				PushObject(vm, &NullObject);
+		} break;
+		
+		case OP_DICT_SET_RKEY:
+		{
+			Object* obj = PopObject(vm);
+			const char* key = PopString(vm);
+			Object* value = PopObject(vm);
+			
+			DictPut(&obj->dict, key, value);
 		} break;
 		
 		default:

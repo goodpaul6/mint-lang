@@ -1657,7 +1657,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	{
 		if(exp->callx.numArgs < 1)
 			ErrorExitE(exp, "Intrinsic 'write' takes at least 1 argument\n");
-		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+		for(int i = 0; i < exp->callx.numArgs; ++i)
 		{
 			CompileExpr(exp->callx.args[i]);
 			AppendCode(OP_WRITE);
@@ -1712,13 +1712,6 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		AppendCode(OP_CREATE_ARRAY);
 		return 1;
 	}
-	else if(strcmp(name, "dict") == 0)
-	{
-		if(exp->callx.numArgs != 0)
-			ErrorExitE(exp, "Intrinsic 'dict' takes no arguments\n");
-		AppendCode(OP_PUSH_DICT);
-		return 1;
-	}
 	else if(strcmp(name, "assert_func_exists") == 0)
 	{
 		if(exp->callx.numArgs != 2)
@@ -1759,6 +1752,26 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		if(exp->callx.numArgs != 0)
 			ErrorExitE(exp, "Intrinsic 'push_stack' takes no arguments\n");
 		AppendCode(OP_POP_STACK);
+		return 1;
+	}
+	else if(strcmp(name, "dict_get") == 0)
+	{
+		if(exp->callx.numArgs != 2)
+			ErrorExitE(exp, "Intrinsic 'dict_get' takes 2 arguments\n");
+		
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+			CompileExpr(exp->callx.args[i]);
+		AppendCode(OP_DICT_GET_RKEY);
+		return 1;
+	}
+	else if(strcmp(name, "dict_set") == 0)
+	{
+		if(exp->callx.numArgs != 3)
+			ErrorExitE(exp, "Intrinsic 'dict_set' takes 3 arguments\n");
+		
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+			CompileExpr(exp->callx.args[i]);
+		AppendCode(OP_DICT_SET_RKEY);
 		return 1;
 	}
 	
