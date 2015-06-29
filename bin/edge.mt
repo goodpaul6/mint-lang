@@ -44,19 +44,12 @@ func map_get_index(self, index)
 	var hash = self.hash(index)
 	
 	var bucket = self.buckets[hash % len(self.buckets)]
-	while bucket.key != index
-		bucket = bucket.next
-		if bucket == null
-			break
-		end
-		
+	while bucket
 		if bucket.key == index
 			return bucket.value
+		else
+			bucket = bucket.next
 		end
-	end
-	
-	if bucket.key == index
-		return bucket.value
 	end
 	
 	return null
@@ -69,14 +62,7 @@ end
 func _main()
 	var imap = map(inthash)
 	
-	imap[0] = 0
-	imap[1] = 10
-	imap[2] = 20
-	imap[3] = 30
-	
-	for var i = 0, i <= 3, i = i + 1
-		write(imap[i])
-	end
-	
+	write(imap[20])
+		
 	return 0
 end
