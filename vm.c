@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "hash.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -448,6 +449,21 @@ void Std_GetFuncByName(VM* vm)
 		PushObject(vm, &NullObject);
 }
 
+void Std_GetNumArgs(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_FUNC)
+		ErrorExit(vm, "extern 'getnumargs' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
+	
+	PushNumber(vm, (int)obj->func.numArgs);
+}
+
+void Std_StringHash(VM* vm)
+{
+	const char* string = PopString(vm);	
+	PushNumber(vm, SuperFastHash(string, strlen(string)));
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -770,6 +786,8 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "setint", Std_SetInt);
 	HookExternNoWarn(vm, "lenbytes", Std_BytesLength);
 	HookExternNoWarn(vm, "getfuncbyname", Std_GetFuncByName);
+	HookExternNoWarn(vm, "getnumargs", Std_GetNumArgs);
+	HookExternNoWarn(vm, "stringhash", Std_StringHash);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -1387,6 +1405,23 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 
+		case OP_EXPAND_ARRAY:
+		{
+			if(vm->debug)
+				printf("expand_array\n");
+			++vm->pc;
+			Object* obj = PopObject(vm);
+			if(obj->type != OBJ_ARRAY)
+				ErrorExit(vm, "Expected array when expanding but received %s\n", ObjectTypeNames[obj->type]);
+			int expand_amount = (int)PopNumber(vm);
+			
+			if(expand_amount < 0 || expand_amount > obj->array.length)
+				ErrorExit(vm, "Expansion length out of array bounds\n");
+			
+			for(int i = expand_amount - 1; i >= 0; --i)
+				PushObject(vm, obj->array.members[i]);
+		} break;
+
 		case OP_PUSH_STACK:
 		{
 			if(vm->debug)
@@ -1413,6 +1448,15 @@ void ExecuteCycle(VM* vm)
 				PushNumber(vm, strlen(obj->string.raw));
 			else if(obj->type == OBJ_ARRAY)
 				PushNumber(vm, obj->array.length);
+			else if(obj->type == OBJ_DICT)
+			{
+				Object* lenFunc = DictGet(&obj->dict, "LENGTH");
+				if(!lenFunc)
+					ErrorExit(vm, "Attempted to get length of dictionary without 'LENGTH' overload\n");
+				
+				PushObject(vm, obj);
+				CallFunction(vm, lenFunc->func.index, 1);
+			}
 			else
 				ErrorExit(vm, "Attempted to get length of %s\n", ObjectTypeNames[obj->type]);
 		} break;
@@ -1523,17 +1567,17 @@ void ExecuteCycle(VM* vm)
 		BIN_OP(SUB, -)
 		BIN_OP(MUL, *)
 		BIN_OP(DIV, /)
-		BIN_OP_TYPE(MOD, %, int)
-		BIN_OP_TYPE(OR, |, int)
-		BIN_OP_TYPE(AND, &, int)
+		BIN_OP_TYPE(MOD, %, long)
+		BIN_OP_TYPE(OR, |, long)
+		BIN_OP_TYPE(AND, &, long)
 		BIN_OP(LT, <)
 		BIN_OP(LTE, <=)
 		BIN_OP(GT, >)
 		BIN_OP(GTE, >=)
-		BIN_OP_TYPE(LOGICAL_AND, &&, int)
-		BIN_OP_TYPE(LOGICAL_OR, ||, int)
-		BIN_OP_TYPE(SHL, >>, int)
-		BIN_OP_TYPE(SHR, >>, int)
+		BIN_OP_TYPE(LOGICAL_AND, &&, long)
+		BIN_OP_TYPE(LOGICAL_OR, ||, long)
+		BIN_OP_TYPE(SHL, <<, long)
+		BIN_OP_TYPE(SHR, >>, long)
 		
 		/*#define CBIN_OP(op, operator) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); a->number operator b->number; } break;
 		
@@ -1789,10 +1833,37 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_CALLP:
 		{
+			int id;
 			Word hasEllipsis, isExtern, numArgs;
 			Word nargs = vm->program[++vm->pc];
+			
 			++vm->pc;
-			int id = PopFunc(vm, &hasEllipsis, &isExtern, &numArgs);
+			
+			Object* obj = PopObject(vm);
+			
+			if(obj->type == OBJ_DICT)
+			{
+				Object* fobj = DictGet(&obj->dict, "CALL");
+				if(!fobj || fobj->type != OBJ_FUNC)
+					ErrorExit(vm, "Attempted to call dictionary object without valid CALL overload\n");
+				id = fobj->func.index;
+				hasEllipsis = fobj->func.hasEllipsis;
+				isExtern = fobj->func.isExtern;
+				numArgs = fobj->func.numArgs;
+				PushObject(vm, obj);
+				nargs += 1;
+			}
+			else if(obj->type == OBJ_FUNC)
+			{
+				// TODO: this could be done better?
+				PushObject(vm, obj);
+				id = PopFunc(vm, &hasEllipsis, &isExtern, &numArgs);
+			}
+			else 
+				ErrorExit(vm, "Expected function but received %s\n", ObjectTypeNames[obj->type]);
+			
+			if(nargs == UNKNOWN_NARGS)
+				nargs = numArgs;
 			
 			if(vm->debug)
 				printf("callp %s%s\n", isExtern ? "extern " : "", isExtern ? vm->externNames[id] : vm->functionNames[id]);

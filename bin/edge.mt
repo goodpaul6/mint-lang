@@ -1,68 +1,38 @@
-# edge.mt -- testing cutting edge features of mint
+# edge.mt -- testing cutting edge features in mint-lang
 
+extern printf
+extern getnumargs
+extern assert
 extern type
 
-func my_list(...)
+func bind(f, has_return, ...)
 	return {
-		_raw = args,
-		GETINDEX = my_get_index,
-		SETINDEX = my_set_index
+		has_return = has_return
+		bound = f,
+		args = args,
+		CALL = _call_bound
 	}
 end
 
-func my_get_index(self, index)
-	return self._raw[index]
-end
-
-func my_set_index(self, index, value)
-	self._raw[index] = value
-end
-
-func map(f)
-	return {
-		buckets = array(1024),
-		hash = f,
-		SETINDEX = map_set_index,
-		GETINDEX = map_get_index 
-	}
-end
-
-func map_set_index(self, index, value)
-	var hash = self.hash(index)
-	
-	var i = hash % len(self.buckets)
-	var b = {
-		next = self.buckets[i],
-		key = index,
-		value = value
-	}
-
-	self.buckets[i] = b
-end
-
-func map_get_index(self, index)
-	var hash = self.hash(index)
-	
-	var bucket = self.buckets[hash % len(self.buckets)]
-	while bucket
-		if bucket.key == index
-			return bucket.value
-		else
-			bucket = bucket.next
-		end
+func _call_bound(b, unbound_args)
+	if b.has_return
+		return b.bound(expand(b.args, len(b.args)), expand(unbound_args, getnumargs(b.bound) - len(b.args)))
+	else
+		b.bound(expand(b.args, len(b.args)), expand(unbound_args, getnumargs(b.bound) - len(b.args)))
 	end
-	
-	return null
 end
 
-func inthash(i)
-	return i
+func a(...)
+	return args
+end
+
+func add(x, y)
+	return x + y
 end
 
 func _main()
-	var imap = map(inthash)
+	var add_to_10 = bind(add, true, 10)
+	write(add_to_10(20))
 	
-	write(imap[20])
-		
 	return 0
 end

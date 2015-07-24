@@ -1,9 +1,6 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - Should function arguments be arrays instead of values on the stack (this adds a lot of safety [and useful information] but slows down the vm)
- * - Should function declarations require a 'return' modifier if they return values (so the programmer knows that they have to return values no matter what)
- *   or you could do compile-time checks to see if a function doesn't return (this would be difficult cause of control flow, etc)
  * - BUG - vm fails to load code if there is no main function
  * - expand could leak values onto the stack if used incorrectly (but then again, that's not the job of the compiler to check, right?)
  * - MORE CONST OMG (CompileExpr doesn't [read: shouldn't] change the expressions)
@@ -15,6 +12,7 @@
  * - proper operators: need more operators
  * - include/require other scripts (copy bytecode into vm at runtime?): can only include things at compile time (with cmd line)
  */
+ 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -162,7 +160,6 @@ typedef struct _FuncDecl
 	int pc;
 	
 	char hasEllipsis;
-	char hasReturn;
 } FuncDecl;
 
 typedef struct _VarDecl
@@ -417,7 +414,6 @@ FuncDecl* RegisterExtern(const char* name)
 	decl->numLocals = 0;
 	decl->pc = -1;
 	decl->hasEllipsis = 0;
-	decl->hasReturn = -1;
 	
 	return decl;
 }
@@ -511,8 +507,6 @@ FuncDecl* DeclareFunction(const char* name)
 	decl->numArgs = 0;
 	decl->numLocals = 0;
 	decl->pc = -1;
-	
-	decl->hasReturn = 0;
 	
 	return decl;
 }
@@ -1388,8 +1382,6 @@ Expr* ParseFactor(FILE* in)
 		{
 			if(CurFunc)
 			{
-				CurFunc->hasReturn = 1;
-				
 				Expr* exp = CreateExpr(EXP_RETURN);
 				GetNextToken(in);
 				if(CurTok != ';')
@@ -1405,6 +1397,7 @@ Expr* ParseFactor(FILE* in)
 			}
 			
 			ErrorExit("WHAT ARE YOU TRYING TO RETURN FROM! YOU'RE NOT EVEN INSIDE A FUNCTION BODY!\n");
+			
 			
 			return NULL;
 		} break;

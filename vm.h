@@ -5,6 +5,8 @@
 
 #include <stdio.h>
 
+#define UNKNOWN_NARGS 0xff
+
 struct _VM;
 typedef void (*ExternFunction)(struct _VM*);
 typedef unsigned char Word;
@@ -19,6 +21,9 @@ enum
 	OP_PUSH_FUNC,
 	OP_PUSH_DICT,
 	OP_CREATE_DICT_BLOCK,
+	
+	// splat operator from python
+	OP_EXPAND_ARRAY,
 	
 	// stores current stack size
 	OP_PUSH_STACK,
