@@ -32,7 +32,7 @@ end
 
 func _main()
 	var add_to_10 = bind(add, true, 10)
-	write(add_to_10(20))
+	write(add_to_10(a(20)))
 	
 	return 0
 end
