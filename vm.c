@@ -245,8 +245,11 @@ void Std_Strcat(VM* vm)
 
 void Std_Tonumber(VM* vm)
 {
-	const char* string = PopString(vm);
-	PushNumber(vm, strtod(string, NULL));
+	Object* obj = PopObject(vm);
+	
+	if(obj->type == OBJ_STRING) PushNumber(vm, strtod(obj->string.raw, NULL));
+	else if(obj->type == OBJ_NUMBER) PushObject(vm, obj);
+	else PushNumber(vm, (intptr_t)(obj));
 }
 
 void Std_Tostring(VM* vm)
@@ -256,7 +259,7 @@ void Std_Tostring(VM* vm)
 	switch(obj->type)
 	{
 		case OBJ_NULL: sprintf(buf, "null"); break;
-		case OBJ_STRING: PushString(vm, obj->string.raw); return;
+		case OBJ_STRING: PushObject(vm, obj); return;
 		case OBJ_NUMBER: sprintf(buf, "%g", obj->number); break;
 		case OBJ_ARRAY: sprintf(buf, "array(%i)", obj->array.length); break;
 		case OBJ_FUNC: sprintf(buf, "func %s", obj->func.isExtern ? vm->externNames[obj->func.index] : vm->functionNames[obj->func.index]); break;
@@ -449,6 +452,15 @@ void Std_GetFuncByName(VM* vm)
 		PushObject(vm, &NullObject);
 }
 
+void Std_GetFuncName(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_FUNC)
+		ErrorExit(vm, "extern 'getfuncname' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
+	
+	PushString(vm, vm->functionNames[obj->func.index]);
+}
+
 void Std_GetNumArgs(VM* vm)
 {
 	Object* obj = PopObject(vm);
@@ -456,6 +468,15 @@ void Std_GetNumArgs(VM* vm)
 		ErrorExit(vm, "extern 'getnumargs' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
 	
 	PushNumber(vm, (int)obj->func.numArgs);
+}
+
+void Std_HasEllipsis(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_FUNC)
+		ErrorExit(vm, "extern 'hasellipsis' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
+		
+	PushNumber(vm, (Word)obj->func.hasEllipsis);
 }
 
 void Std_StringHash(VM* vm)
@@ -485,6 +506,9 @@ void InitVM(VM* vm)
 	vm->functionNumArgs = NULL;
 	
 	vm->lastFunctionName = NULL;
+	vm->lastFunctionIndex = -1;
+
+	vm->numExpandedArgs = 0;
 	
 	vm->numNumberConstants = 0;
 	vm->numberConstants = NULL;
@@ -786,7 +810,9 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "setint", Std_SetInt);
 	HookExternNoWarn(vm, "lenbytes", Std_BytesLength);
 	HookExternNoWarn(vm, "getfuncbyname", Std_GetFuncByName);
+	HookExternNoWarn(vm, "getfuncname", Std_GetFuncName);
 	HookExternNoWarn(vm, "getnumargs", Std_GetNumArgs);
+	HookExternNoWarn(vm, "hasellipsis", Std_HasEllipsis);
 	HookExternNoWarn(vm, "stringhash", Std_StringHash);
 }
 
@@ -1184,6 +1210,8 @@ void PushIndir(VM* vm, int nargs)
 	vm->indirStack[vm->indirStackSize++] = vm->pc;
 	
 	vm->fp = vm->stackSize - vm->numGlobals;
+
+	vm->numExpandedArgs = 0;
 }
 
 void PopIndir(VM* vm)
@@ -1304,10 +1332,10 @@ void ExecuteCycle(VM* vm)
 	if(vm->pc == -1) return;
 	if(vm->debug)
 	{
-		if(!vm->hasCodeMetadata)
+		if(vm->hasCodeMetadata)
+			printf("(%s:%i:%i): ", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc], vm->pc);
+		else 
 			printf("pc %i: ", vm->pc);
-		else
-			printf("(%s:%i): ", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc]);
 	}
 	
 	
@@ -1326,10 +1354,11 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_PUSH_NUMBER:
 		{
-			if(vm->debug)
-				printf("push_number\n");
 			++vm->pc;
 			int index = ReadInteger(vm);
+			
+			if(vm->debug)
+				printf("push_number %g\n", vm->numberConstants[index]);
 			PushNumber(vm, vm->numberConstants[index]);
 		} break;
 		
@@ -1420,6 +1449,8 @@ void ExecuteCycle(VM* vm)
 			
 			for(int i = expand_amount - 1; i >= 0; --i)
 				PushObject(vm, obj->array.members[i]);
+			
+			vm->numExpandedArgs += expand_amount;
 		} break;
 
 		case OP_PUSH_STACK:
@@ -1825,8 +1856,20 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("call %s\n", vm->functionNames[index]);
 			vm->lastFunctionName = vm->functionNames[index];
+			vm->lastFunctionIndex = index;
 			
-			PushIndir(vm, nargs);
+			if(!vm->functionHasEllipsis[index])
+			{
+				if(vm->functionNumArgs[index] != nargs + vm->numExpandedArgs)
+					ErrorExit(vm, "Invalid number of arguments (%i) to function '%s' which expects %i arguments\n", nargs + vm->numExpandedArgs, vm->functionNames[index], vm->functionNumArgs[index]);
+			}
+			else
+			{
+				if(vm->functionNumArgs[index] > nargs + vm->numExpandedArgs)
+					ErrorExit(vm, "Invalid number of arguments (%i) to function '%s' which expects at least %i arguments\n", nargs + vm->numExpandedArgs, vm->functionNames[index], vm->functionNumArgs[index]);
+			}
+			
+			PushIndir(vm, nargs + vm->numExpandedArgs);
 
 			vm->pc = vm->functionPcs[index];
 		} break;
@@ -1862,12 +1905,12 @@ void ExecuteCycle(VM* vm)
 			else 
 				ErrorExit(vm, "Expected function but received %s\n", ObjectTypeNames[obj->type]);
 			
-			if(nargs == UNKNOWN_NARGS)
-				nargs = numArgs;
-			
 			if(vm->debug)
 				printf("callp %s%s\n", isExtern ? "extern " : "", isExtern ? vm->externNames[id] : vm->functionNames[id]);
 			vm->lastFunctionName = isExtern ? vm->externNames[id] : vm->functionNames[id];
+			vm->lastFunctionIndex = id;
+			
+			nargs += vm->numExpandedArgs;
 			
 			if(isExtern)
 				vm->externs[id](vm);
@@ -1884,51 +1927,7 @@ void ExecuteCycle(VM* vm)
 						ErrorExit(vm, "Function '%s' expected at least %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
 				}
 				
-				if(!hasEllipsis) PushIndir(vm, nargs);
-				else
-				{
-					// runtime collapsing of arguments:
-					// the concrete arguments (known during compilation) are on the top of
-					// the stack. We create an array (by pushing it and then decrementing the
-					// stack pointer) and fill it up with the ellipsed arguments (behind the
-					// concrete arguments). We then place this array just before the concrete
-					// arguments in the stack so that it can be accessed as an argument "args".
-					// The indirection info is pushed onto the indirection stack (the concrete and
-					// non-concrete [aside from the one that the 'args' array replaces] are still 
-					// present on the stack, so all of the arguments are to be removed)
-					
-					/*printf("args:\n");
-					for(int i = 0; i < nargs; ++i)
-					{
-						WriteObject(vm, vm->stack[vm->stackSize - i - 1]);
-						printf("\n");
-					}
-					printf("end\n");*/
-					
-					//printf("members:\n");
-					Object* obj = PushArray(vm, nargs - numArgs);
-					vm->stackSize -= 1;
-					for(int i = 0; i < obj->array.length; ++i)
-					{
-						obj->array.members[i] = vm->stack[vm->stackSize - numArgs - 1 - i];
-						/*WriteObject(vm, obj->array.members[i]);
-						printf("\n");*/
-					}
-					//printf("end\n");
-					
-					vm->stack[vm->stackSize - numArgs - 1] = obj;
-					
-					/*printf("final args:\n");
-					for(int i = 0; i < numArgs + 1; ++i)
-					{
-						WriteObject(vm, vm->stack[vm->stackSize - i - 1]);
-						printf("\n");
-					}
-					printf("end\n");*/
-					
-					PushIndir(vm, nargs);
-				}
-				
+				PushIndir(vm, nargs);
 				vm->pc = vm->functionPcs[id];
 			}
 		} break;
@@ -1955,6 +1954,7 @@ void ExecuteCycle(VM* vm)
 			int index = ReadInteger(vm);
 			if(vm->debug)
 				printf("callf %s\n", vm->externNames[index]);
+			vm->lastFunctionIndex = index;
 			vm->externs[index](vm);
 		} break;
 
@@ -1969,10 +1969,10 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_SETLOCAL:
 		{
-			if(vm->debug)
-				printf("setlocal\n");
 			++vm->pc;
 			int index = ReadInteger(vm);
+			if(vm->debug)
+				printf("setlocal %i\n", index);
 			SetLocal(vm, index, PopObject(vm));
 		} break;
 		
@@ -2002,6 +2002,7 @@ void ExecuteCycle(VM* vm)
 				PushObject(vm, val);
 			else
 				PushObject(vm, &NullObject);
+			++vm->pc;
 		} break;
 		
 		case OP_DICT_SET_RKEY:
@@ -2011,6 +2012,24 @@ void ExecuteCycle(VM* vm)
 			Object* value = PopObject(vm);
 			
 			DictPut(&obj->dict, key, value);
+			++vm->pc;
+		} break;
+		
+		case OP_GETARGS:
+		{
+			++vm->pc;
+			int startArgIndex = -ReadInteger(vm) - 1;
+			
+			Word nargs = vm->indirStack[vm->indirStackSize - 3]; // number of arguments passed to the function
+			
+			if(nargs == 0) PushArray(vm, 0);
+			else
+			{
+				Object* obj = PushArray(vm, nargs - startArgIndex);
+				
+				for(int i = startArgIndex; i < nargs; ++i)
+					obj->array.members[i - startArgIndex] = GetLocal(vm, -i - 1);
+			}
 		} break;
 		
 		default:

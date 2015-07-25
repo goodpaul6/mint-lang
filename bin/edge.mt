@@ -1,38 +1,53 @@
 # edge.mt -- testing cutting edge features in mint-lang
 
-extern printf
-extern getnumargs
-extern assert
-extern type
-
-func bind(f, has_return, ...)
+func vec2(x, y)
 	return {
-		has_return = has_return
-		bound = f,
-		args = args,
-		CALL = _call_bound
+		x = x,
+		y = y,
+		
+		toString = vec2_toString,
+		mag = vec2_mag,
+		normalize = vec2_normalize,
+		
+		ADD = vec2_add,
+		SUB = vec2_sub,
+		MUL = vec2_mul,
+		DIV = vec2_div
 	}
 end
 
-func _call_bound(b, unbound_args)
-	if b.has_return
-		return b.bound(expand(b.args, len(b.args)), expand(unbound_args, getnumargs(b.bound) - len(b.args)))
-	else
-		b.bound(expand(b.args, len(b.args)), expand(unbound_args, getnumargs(b.bound) - len(b.args)))
-	end
+func vec2_toString(self)
+	return mprintf("(%g, %g)", self.x, self.y)
 end
 
-func a(...)
-	return args
+func vec2_add(self, other)
+	return vec2(self.x + other.x, self.y + other.y)
 end
 
-func add(x, y)
-	return x + y
+func vec2_sub(self, other)
+	return vec2(self.x - other.x, self.y - other.y)
 end
 
-func _main()
-	var add_to_10 = bind(add, true, 10)
-	write(add_to_10(a(20)))
+func vec2_mul(self, other)
+	return vec2(self.x * other.x, self.y * other.y)
+end
+
+func vec2_div(self, other)
+	return vec2(self.x / other.x, self.y / other.y)
+end
+
+func vec2_mag(self)
+	return sqrt(self.x * self.x + self.y * self.y)
+end
+
+func vec2_normalize(self)
+	var mag = self:mag()
 	
+	self.x = self.x / mag
+	self.y = self.y / mag
+end
+
+func main()
+
 	return 0
 end

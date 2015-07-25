@@ -1,10 +1,11 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
- * - Should function arguments be arrays instead of values on the stack (this adds a lot of safety [and useful information] but slows down the vm)
+ * - Safe extern calls (preserve stack size before and after, unless value is returned)
+ * - Safe argument expansion
  * - Should function declarations require a 'return' modifier if they return values (so the programmer knows that they have to return values no matter what)
  *   or you could do compile-time checks to see if a function doesn't return (this would be difficult cause of control flow, etc)
- * - BUG - vm fails to load code if there is no main function
+ * - BUG - vm fails to load code if there is no _main function
  * - expand could leak values onto the stack if used incorrectly (but then again, that's not the job of the compiler to check, right?)
  * - MORE CONST OMG (CompileExpr doesn't [read: shouldn't] change the expressions)
  * - enums
@@ -1347,11 +1348,6 @@ Expr* ParseFactor(FILE* in)
 			
 			for(int i = 0; i < numArgs; ++i)
 				RegisterArgument(args[i]);
-			if(decl->hasEllipsis)
-			{
-				RegisterArgument("args");
-				--decl->numArgs;
-			}
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
@@ -1887,6 +1883,26 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		AppendCode(OP_EXPAND_ARRAY);
 		return 1;
 	}
+	else if(strcmp(name, "getargs") == 0)
+	{
+		AppendCode(OP_GETARGS);
+		if(exp->callx.numArgs == 0)
+			AppendInt(-1);
+		else
+		{
+			if(exp->callx.numArgs != 1) ErrorExitE(exp, "Intrinsic 'getargs' takes up to 1 argument\n");
+			if(exp->callx.args[0]->type != EXP_IDENT) ErrorExitE(exp->callx.args[0], "Expected first argument to intrinsic 'getargs' to be an identifier\n");
+			
+			Expr* arg = exp->callx.args[0];
+	
+			if(!arg->varx.varDecl)
+				arg->varx.varDecl = ReferenceVariable(arg->varx.name);
+			
+			if(!arg->varx.varDecl) ErrorExitE(arg, "Undeclared identifier as argument to 'getargs'\n");
+			AppendInt(arg->varx.varDecl->index - 1);
+		}
+		return 1;
+	}
 	
 	return 0;
 }
@@ -1999,8 +2015,8 @@ void CompileExpr(Expr* exp)
 				if(!decl)
 					ErrorExitE(exp, "Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
 				
-				if(decl->hasEllipsis)
-					ErrorExitE(exp, "Attempted to get function pointer to variadic function '%s', which is not supported yet.\nPlease use the function directly", exp->varx.name);
+				/*if(decl->hasEllipsis)
+					ErrorExitE(exp, "Attempted to get function pointer to variadic function '%s', which is not supported yet.\nPlease use the function directly", exp->varx.name);*/
 				
 				AppendCode(OP_PUSH_FUNC);
 				AppendCode(decl->hasEllipsis);
@@ -2033,7 +2049,7 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_CALL:
 		{
-			char isExpanded = 0;
+			Word numExpansions = 0;
 			// TODO(optimization): do not iterate over the args more than once
 			for(int i = 0; i < exp->callx.numArgs; ++i)
 			{
@@ -2043,7 +2059,7 @@ void CompileExpr(Expr* exp)
 					if(argx->callx.func->type == EXP_IDENT)
 					{
 						if(strcmp(argx->callx.func->varx.name, "expand") == 0) 
-							isExpanded = 1;
+							++numExpansions;
 					}
 				}
 			}
@@ -2053,26 +2069,9 @@ void CompileExpr(Expr* exp)
 				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
 				if(decl)
 				{
-					if(!decl->hasEllipsis)
-					{
-						for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-							CompileExpr(exp->callx.args[i]);
-					}
-					else
-					{						
-						if(isExpanded)
-							ErrorExitE(exp, "Cannot use 'expand' in a function call to an ellipsed function\n");
+					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+						CompileExpr(exp->callx.args[i]);
 						
-						for(int i = decl->numArgs; i < exp->callx.numArgs; ++i)
-							CompileExpr(exp->callx.args[i]);
-						
-						AppendCode(OP_CREATE_ARRAY_BLOCK);
-						AppendInt(exp->callx.numArgs - decl->numArgs);
-
-						for(int i = decl->numArgs - 1; i >= 0; --i)
-							CompileExpr(exp->callx.args[i]);
-					}
-					
 					if(decl->isExtern)
 					{
 						AppendCode(OP_CALLF);
@@ -2080,26 +2079,22 @@ void CompileExpr(Expr* exp)
 					}
 					else
 					{	
-						if(!decl->hasEllipsis)
+						if(numExpansions == 0)
 						{
-							if(!isExpanded && exp->callx.numArgs != decl->numArgs)
-								ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-						}
-						else
-						{
-							if(exp->callx.numArgs < decl->numArgs)
-								ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+							if(!decl->hasEllipsis)
+							{
+								if(exp->callx.numArgs != decl->numArgs)
+									ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+							}
+							else
+							{
+								if(exp->callx.numArgs < decl->numArgs)
+									ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+							}
 						}
 						
 						AppendCode(OP_CALL);
-						if(!decl->hasEllipsis) 
-						{ 
-							if(!isExpanded)
-								AppendCode(exp->callx.numArgs);
-							else
-								AppendCode(decl->numArgs);
-						}
-						else AppendCode(decl->numArgs + 1);
+						AppendCode(exp->callx.numArgs - numExpansions);
 						AppendInt(decl->index);
 					}					
 				}
@@ -2111,10 +2106,7 @@ void CompileExpr(Expr* exp)
 					CompileExpr(exp->callx.func);
 					
 					AppendCode(OP_CALLP);
-					if(!isExpanded)
-						AppendCode(exp->callx.numArgs);
-					else
-						AppendCode(UNKNOWN_NARGS);
+					AppendCode(exp->callx.numArgs - numExpansions);
 				}
 			}
 			else if(exp->callx.func->type == EXP_COLON)
@@ -2130,10 +2122,7 @@ void CompileExpr(Expr* exp)
 				AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
 				
 				AppendCode(OP_CALLP);
-				if(!isExpanded)
-					AppendCode(exp->callx.numArgs + 1);
-				else
-					AppendCode(UNKNOWN_NARGS);
+				AppendCode(exp->callx.numArgs + 1 - numExpansions);
 			}
 			else
 			{			
@@ -2143,10 +2132,7 @@ void CompileExpr(Expr* exp)
 				CompileExpr(exp->callx.func);
 				
 				AppendCode(OP_CALLP);
-				if(!isExpanded)
-					AppendCode(exp->callx.numArgs);
-				else
-					AppendCode(UNKNOWN_NARGS);
+				AppendCode(exp->callx.numArgs - numExpansions);
 			}
 		} break;
 		

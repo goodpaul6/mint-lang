@@ -159,7 +159,7 @@ func parse_factor(s)
 		var e = parse_expr(s)
 		if cur_tok != ')'
 			printf("Expected ')' after previous '('\n")
-			exit()
+			exit(1)
 		end
 		get_next_tok(s)
 		
@@ -167,7 +167,7 @@ func parse_factor(s)
 	end
 	
 	printf("Unexpected token %g, %c\n", cur_tok, cur_tok)
-	exit()
+	exit(1)
 end
 
 func parse_post(s, pre)

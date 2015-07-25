@@ -192,7 +192,7 @@ func vm_cycle(exec_code, current_ip)
 		
 		if len(args) != len(f.arg_names)
 			write("invalid number of arguments in function call")
-			exit()
+			exit(1)
 		end
 		
 		for var i = 0, i < len(f.arg_names), i = i + 1
