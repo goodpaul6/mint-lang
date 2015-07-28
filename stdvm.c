@@ -3,9 +3,12 @@
 #include <string.h>
 
 #include "vm.h"
+#include "dyncall_signature.h"
 
 int main(int argc, char* argv[])
 {
+	DCstruct* s = dcDefineStruct("2ii");
+	
 	if(argc >= 2)
 	{
 		FILE* bin = fopen(argv[1], "rb");

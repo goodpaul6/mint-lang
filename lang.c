@@ -1,8 +1,10 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
+ * - improve cffi to allow nested struct parsing
+ * - the offset passed to getstruct/setstruct memmber should be a native object, not a number
+ * - Finish meta api
  * - Safe extern calls (preserve stack size before and after, unless value is returned)
- * - Safe argument expansion
  * - Should function declarations require a 'return' modifier if they return values (so the programmer knows that they have to return values no matter what)
  *   or you could do compile-time checks to see if a function doesn't return (this would be difficult cause of control flow, etc)
  * - BUG - vm fails to load code if there is no _main function
@@ -13,7 +15,6 @@
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
  * - extern aliasing (functionality is there but it's broken and doesn't compile)
  * - using compound binary operators causes an error
- * - proper operators: need more operators
  * - include/require other scripts (copy bytecode into vm at runtime?): can only include things at compile time (with cmd line)
  */
 #include <stdio.h>
@@ -28,7 +29,7 @@
 #define MAX_LEX_LENGTH 256
 #define MAX_ID_NAME_LENGTH 64
 #define MAX_SCOPES 32
-#define MAX_ARGS 32 
+#define MAX_ARGS 64
 
 int LineNumber = 0;
 const char* FileName = NULL;
@@ -142,7 +143,7 @@ typedef struct _ConstDecl
 	union
 	{
 		double number;
-		char string[MAX_LEX_LENGTH];
+		char* string;
 	};
 } ConstDecl;
 
@@ -260,7 +261,7 @@ void OutputCode(FILE* out)
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
 		if(!decl->isExtern)
-			fwrite(&decl->numArgs, sizeof(int), 1, out);
+			fwrite(&decl->numArgs, sizeof(Word), 1, out);
 	}
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
@@ -369,6 +370,8 @@ ConstDecl* RegisterString(const char* string)
 	}
 
 	decl->type = CONST_STR;
+	decl->string = malloc(strlen(string) + 1);
+	assert(decl->string);
 	strcpy(decl->string, string);
 	decl->index = NumStrings++;
 	
@@ -1496,6 +1499,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			while(CurTok != ')')
 			{
+				if(exp->callx.numArgs >= MAX_ARGS) ErrorExit("Exceeded maximum argument amount");
 				exp->callx.args[exp->callx.numArgs++] = ParseExpr(in);
 				if(CurTok == ',') GetNextToken(in);
 			}
@@ -1741,6 +1745,84 @@ void DebugExpr(Expr* exp)
 	return 0;
 }*/
 
+// allow code to access ast at runtime
+void ExposeExpr(Expr* exp)
+{
+	switch(exp->type)
+	{
+		case EXP_NUMBER:
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(exp->constDecl->index);
+			
+			AppendCode(OP_CALL);
+			AppendCode(1);
+			AppendInt(ReferenceFunction("_number_expr")->index);
+		} break;
+		
+		case EXP_STRING:
+		{
+			AppendCode(OP_PUSH_STRING);
+			AppendInt(exp->constDecl->index);
+			
+			AppendCode(OP_CALL);
+			AppendCode(1);
+			AppendInt(ReferenceFunction("_string_expr")->index);
+		} break;
+		
+		case EXP_IDENT:
+		{
+			AppendCode(OP_PUSH_STRING);
+			AppendInt(RegisterString(exp->varx.name)->index);
+			
+			AppendCode(OP_CALL);
+			AppendCode(1);
+			AppendInt(ReferenceFunction("_ident_expr")->index);
+		} break;
+		
+		case EXP_PAREN:
+		{
+			ExposeExpr(exp->parenExpr);
+			
+			AppendCode(OP_CALL);
+			AppendCode(1);
+			AppendInt(ReferenceFunction("_paren_expr")->index);
+		} break;
+		
+		case EXP_BIN:
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(exp->binx.op)->index);
+			
+			ExposeExpr(exp->binx.rhs);
+			ExposeExpr(exp->binx.lhs);
+			
+			AppendCode(OP_CALL);
+			AppendCode(3);
+			AppendInt(ReferenceFunction("_binary_expr")->index);
+		} break;
+		
+		case EXP_CALL:
+		{
+			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+				ExposeExpr(exp->callx.args[i]);
+			
+			ExposeExpr(exp->callx.func);
+			
+			AppendCode(OP_CALL);
+			AppendCode(exp->callx.numArgs + 1);
+			AppendInt(ReferenceFunction("_call_expr")->index);
+		} break;
+		
+		default:
+		{
+			AppendCode(OP_CALL);
+			AppendCode(0);
+			AppendInt(ReferenceFunction("_unknown_expr")->index);
+		} break;
+	}
+}
+
 void CompileExpr(Expr* exp);
 char CompileIntrinsic(Expr* exp, const char* name)
 {
@@ -1903,6 +1985,166 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		}
 		return 1;
 	}
+	else if(strcmp(name, "getfilename") == 0)
+	{
+		if(exp->callx.numArgs != 0)
+			ErrorExitE(exp, "Intrinsic 'getfilename' takes no arguments\n");
+		AppendCode(OP_PUSH_STRING);
+		AppendInt(RegisterString(exp->file)->index);
+		return 1;
+	}
+	else if(strcmp(name, "getlinenumber") == 0)
+	{
+		if(exp->callx.numArgs != 0)
+			ErrorExitE(exp, "Intrinsic 'getlinenumber' takes no arguments\n");
+		AppendCode(OP_PUSH_NUMBER);
+		AppendInt(RegisterNumber(exp->line)->index);
+		return 1;
+	}
+	else if(strcmp(name, "exp") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'getexpr' takes 1 argument\n");
+		
+		FuncDecl* meta = ReferenceFunction("__meta_mt");
+		
+		if(!meta)
+			ErrorExitE(exp, "'getexpr' requires the 'meta.mt' library");
+		
+		static char init = 0;
+		if(!init)
+		{
+			init = 1;
+			AppendCode(OP_CALL);
+			AppendCode(0);
+			AppendInt(meta->index);
+		}
+		
+		Expr* tree = exp->callx.args[0];
+		ExposeExpr(tree);
+		return 1;
+	}
+	else if(strcmp(name, "filestring") == 0)
+	{	
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'filestring' takes 1 argument\n");
+		
+		if(exp->callx.args[0]->type != EXP_STRING)
+			ErrorExitE(exp->callx.args[0], "First argument to 'filestring' must be a string\n");
+		
+		FILE* file = fopen(exp->callx.args[0]->constDecl->string, "rb");
+		if(!file)
+			ErrorExitE(exp->callx.args[0], "Failed to open file '%s' for reading\n", exp->callx.args[0]->constDecl->string);
+		
+		fseek(file, 0, SEEK_END);
+		long fsize = ftell(file);
+		fseek(file, 0, SEEK_SET);
+		
+		char* string = malloc(fsize + 1);
+		assert(string);
+		fread(string, fsize, 1, file);
+		fclose(file);
+		
+		string[fsize] = '\0';
+		
+		AppendCode(OP_PUSH_STRING);
+		AppendInt(RegisterString(string)->index);
+		
+		return 1;
+	}
+	/*else if(strcmp(name, "cstruct") == 0)
+	{
+		FuncDecl* cffi_mt = ReferenceFunction("__cffi_mt");
+		if(!cffi_mt)
+			ErrorExitE(exp, "Intrinsic 'cstruct' depends on the 'cffi.mt' library\n");
+		
+		if(exp->callx.numArgs <= 2)
+			ErrorExitE(exp, "Intrinsic 'cstruct' takes at least 3 arguments (no useful struct has 0 members)\n");
+			
+		if(exp->callx.args[0]->type != EXP_STRING || exp->callx.args[1]->type != EXP_STRING)
+			ErrorExitE(exp->callx.args[0], "Arguments to 'cstruct' must be strings\n");
+		
+		FILE* file = fopen("cstruct.c", "w");
+		if(!file)
+			ErrorExitE(exp, "Unable to open cstruct.c for writing (cstruct failed)\n");
+		fprintf(file, "#include <stdio.h>\n"
+				"#include <stddef.h>\n"
+				"%s;\n"
+				"int main(int argc, char* argv[])\n"
+				"{\n"
+				"	#define s struct %s\n"
+				"	FILE* out = fopen(\"cstruct_result\", \"wb\");\n"
+				"	if(!out) return 1;\n"
+				"	size_t struct_size = sizeof(s);\n"
+				"	fwrite(&struct_size, sizeof(size_t), 1, out);\n"
+				"	size_t member_offset = 0;\n", exp->callx.args[1]->constDecl->string, exp->callx.args[0]->constDecl->string);
+		
+		for(int i = 2; i < exp->callx.numArgs; ++i)
+		{
+			if(exp->callx.args[i]->type != EXP_STRING)
+				ErrorExitE(exp->callx.args[i], "Arguments to intrinsic 'cstruct' must be strings\n");
+			
+			fprintf(file, "	member_offset = offsetof(s, %s);\n"
+					"	fwrite(&member_offset, sizeof(size_t), 1, out);\n", exp->callx.args[i]->constDecl->string);
+		}
+		
+		fprintf(file, "	fclose(out);\n"
+				"	return 0;\n"
+				"}");
+		fclose(file);
+		
+		system("gcc cstruct.c -o cstruct");
+		system("cstruct");
+		FILE* result = fopen("cstruct_result", "rb");
+		if(!result)
+			ErrorExitE(exp, "cstruct failed\n");
+		size_t size;
+		fread(&size, sizeof(size_t), 1, result);
+		
+		int nmemb = exp->callx.numArgs - 2;
+		
+		size_t* offsets = malloc(sizeof(size_t) * nmemb);
+		assert(offsets);
+		
+		fread(offsets, sizeof(size_t), nmemb, result);
+		fclose(result);
+		
+		for(int i = nmemb - 1; i >= 0; --i)
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(offsets[i])->index);
+		}
+		
+		AppendCode(OP_PUSH_NUMBER);
+		AppendInt(RegisterNumber(size)->index);
+		
+		AppendCode(OP_CALL);
+		AppendCode(nmemb + 1);
+		AppendInt(ReferenceFunction("_struct")->index);
+
+		remove("cstruct.c");
+		remove("cstruct_result");
+		remove("cstruct.exe");
+		
+		return 1;
+	}
+	else if(strcmp(name, "renamefunc") == 0)
+	{
+		if(exp->callx.numArgs != 2)
+			ErrorExitE(exp, "Intrinsic 'renamefunc' takes 2 arguments\n");
+		
+		if(exp->callx.args[0]->type != EXP_IDENT || exp->callx.args[1]->type != EXP_IDENT)
+			ErrorExitE(exp->callx.args[0], "Both arguments to 'renamefunc' must be identifiers\n");
+		
+		FuncDecl* decl = ReferenceFunction(exp->callx.args[0]->varx.name);
+		if(!decl)
+			ErrorExitE(exp->callx.args[0], "Attempted to rename non-existent function '%s'\n", exp->callx.args[0]->varx.name);
+		
+		decl->isAliased = 1;
+		strcpy(decl->alias, exp->callx.args[1]->varx.name);
+		
+		return 1;
+	}*/
 	
 	return 0;
 }

@@ -2,6 +2,8 @@
 #define MINT_VM_H
 
 #include "dict.h"
+#include "dyncall.h"
+#include "dynload.h"
 
 #include <stdio.h>
 
@@ -141,6 +143,7 @@ typedef struct _Object
 #define MAX_STACK						4096
 #define INIT_GC_THRESH					32
 #define MAX_TRACKED_CALLSTACK_LENGTH 	8
+#define MAX_DCCALLVM_STACK_SIZE			4096
 
 typedef struct _VM
 {
@@ -158,7 +161,7 @@ typedef struct _VM
 	int numFunctions;
 	char* functionHasEllipsis;
 	int* functionPcs;
-	int* functionNumArgs;
+	Word* functionNumArgs;
 	char** functionNames;
 	
 	const char* lastFunctionName;
@@ -192,6 +195,8 @@ typedef struct _VM
 	int numExterns;
 
 	char debug;
+	
+	DCCallVM* dc;
 } VM;
 
 VM* NewVM(); 

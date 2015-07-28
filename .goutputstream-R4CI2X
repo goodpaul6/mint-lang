@@ -876,34 +876,6 @@ void Std_DcNewStruct(VM* vm)
 {
 	int fieldCount = PopNumber(vm);
 	DCstruct* s = dcNewStruct(fieldCount, DEFAULT_ALIGNMENT);
-	
-	PushNative(vm, s, Std_DcFreeStruct, NULL);
-}
-
-void Std_DcStructField(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	DCint type = PopNumber(vm);
-	DCsize arrayLength = PopNumber(vm);
-	DCint alignment = DEFAULT_ALIGNMENT;
-	
-	dcStructField(s, type, alignment, arrayLength);
-}
-
-void Std_DcSubStruct(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	DCsize fieldCount = PopNumber(vm);
-	DCsize arrayLength = PopNumber(vm);
-	DCint alignment = DEFAULT_ALIGNMENT;
-	
-	dcSubStruct(s, fieldCount, alignment, arrayLength);
-}
-
-void Std_DcStructClose(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	dcCloseStruct(s);
 }
 
 void Std_DcStructSize(VM* vm)
@@ -1299,15 +1271,9 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "dc_call_float", Std_DcCallFloat);
 	HookExternNoWarn(vm, "dc_call_double", Std_DcCallDouble);
 	HookExternNoWarn(vm, "dc_call_pointer", Std_DcCallPointer);
-	
-	// DEPRECATED: HookExternNoWarn(vm, "dc_define_struct", Std_DcDefineStruct);
-	HookExternNoWarn(vm, "dc_new_struct", Std_DcNewStruct);
-	HookExternNoWarn(vm, "dc_struct_field", Std_DcStructField);
-	HookExternNoWarn(vm, "dc_sub_struct", Std_DcSubStruct);
-	HookExternNoWarn(vm, "dc_close_struct", Std_DcStructClose);
+	HookExternNoWarn(vm, "dc_define_struct", Std_DcDefineStruct);
 	HookExternNoWarn(vm, "dc_struct_size", Std_DcStructSize);
 	HookExternNoWarn(vm, "dc_struct_offset", Std_DcStructOffset);
-	
 	HookExternNoWarn(vm, "malloc", Std_Malloc);
 	HookExternNoWarn(vm, "memcpy", Std_Memcpy);
 	HookExternNoWarn(vm, "free", Std_Free);

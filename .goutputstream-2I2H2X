@@ -1,6 +1,5 @@
 #include "vm.h"
 #include "hash.h"
-#include "dyncall_signature.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +9,6 @@
 #include <time.h>
 #include <stdarg.h>
 #include <ctype.h>
-#include <assert.h>
 
 Object NullObject;
 
@@ -138,7 +136,7 @@ void WriteObject(VM* vm, Object* top)
 	else if(top->type == OBJ_STRING)
 		printf("%s", top->string);
 	else if(top->type == OBJ_NATIVE)
-		printf("native pointer (%x)", (intptr_t)(top->native.value));
+		printf("native pointer");
 	else if(top->type == OBJ_FUNC)
 	{
 		if(top->func.isExtern)
@@ -447,9 +445,7 @@ enum
 	NBA_S16,
 	NBA_S32,
 	NBA_S64,
-	NBA_FLOAT,
-	NBA_DOUBLE,
-	NBA_POINTER
+	NBA_DOUBLE
 };
 
 void Std_NumberToBytes(VM* vm)
@@ -472,10 +468,7 @@ void Std_NumberToBytes(VM* vm)
 		case NBA_S32: length = sizeof(int); break;
 		case NBA_S64: length = sizeof(long); break;
 		
-		case NBA_FLOAT: length = sizeof(float); break;
-		case NBA_DOUBLE: length = sizeof(double); break;
-		
-		case NBA_POINTER: length = sizeof(void*); break; 
+		case NBA_DOUBLE: length = sizeof(double); break; 
 	}
 	
 	
@@ -504,10 +497,7 @@ void Std_NumberToBytes(VM* vm)
 		case NBA_S32: memcpy(ba->bytes, &s32n, sizeof(int)); break;
 		case NBA_S64: memcpy(ba->bytes, &s64n, sizeof(long)); break;
 		
-		case NBA_FLOAT: memcpy(ba->bytes, &number, sizeof(float)); break;
 		case NBA_DOUBLE: memcpy(ba->bytes, &number, sizeof(double)); break;
-		
-		case NBA_POINTER: memcpy(ba->bytes, &number, sizeof(void*)); break;
 	}
 	
 	PushNative(vm, ba, Std_FreeBytes, NULL);
@@ -620,189 +610,6 @@ void Std_DcReset(VM* vm)
 	dcReset(vm->dc);
 }
 
-void Std_Malloc(VM* vm)
-{
-	size_t size = (size_t)PopNumber(vm);
-	void* mem = ecalloc(size, 1);
-	
-	PushNative(vm, mem, NULL, NULL);
-}
-
-void Std_Memcpy(VM* vm)
-{
-	void* dest = PopNative(vm);
-	Object* srcobj = PopObject(vm);
-	size_t size = (size_t)PopNumber(vm);
-	
-	if(srcobj->type == OBJ_NATIVE) memcpy(dest, srcobj->native.value, size);
-	else if(srcobj->type == OBJ_NULL) memset(dest, 0, size);
-	else ErrorExit(vm, "Invalid memcpy source parameter (%s instead of null or native)\n", ObjectTypeNames[srcobj->type]);
-}
-
-void Std_Free(VM* vm)
-{
-	void* mem = PopNative(vm);
-	free(mem);
-}
-
-void Std_GetStructMember(VM* vm)
-{
-	char* addr = PopNative(vm);
-	size_t offset = PopNumber(vm);
-	int type = (int)PopNumber(vm);
-	
-	double number = 0;
-	
-	switch(type)
-	{
-		case NBA_U8: number = *(unsigned char*)(addr + offset); break;
-		case NBA_U16: number = *(unsigned short*)(addr + offset); break;
-		case NBA_U32: number = *(unsigned int*)(addr + offset); break;
-		case NBA_U64: number = *(unsigned long*)(addr + offset); break;
-		
-		case NBA_S8: number = *(char*)(addr + offset); break;
-		case NBA_S16: number = *(short*)(addr + offset); break;
-		case NBA_S32: number = *(int*)(addr + offset); break;
-		case NBA_S64: number = *(long*)(addr + offset); break;
-		
-		case NBA_FLOAT: number = *(float*)(addr + offset); break;
-		case NBA_DOUBLE: number = *(double*)(addr + offset); break;
-		
-		case NBA_POINTER:
-		{
-			void* ptr = *(void**)(addr + offset);
-			if(ptr)
-				PushNative(vm, ptr, NULL, NULL);
-			else
-				PushObject(vm, &NullObject);
-			return;
-		} break;
-	}
-	
-	PushNumber(vm, number);
-}
-
-void Std_SetStructMember(VM* vm)
-{
-	char* addr = PopNative(vm);
-	size_t offset = PopNumber(vm);
-	int type = PopNumber(vm);
-	Object* obj = PopObject(vm);
-	
-	if(obj->type != OBJ_NUMBER && obj->type != OBJ_NATIVE && obj->type != OBJ_NULL)
-		ErrorExit(vm, "'setstructmember' only accepts numbers, native pointers, or null as values\n");
-	
-	double number = obj->number;
-	void* pointer = obj->native.value;
-	
-	unsigned char u8n = (unsigned char)(number);
-	unsigned short u16n = (unsigned short)(number);
-	unsigned int u32n = (unsigned int)(number);
-	unsigned long u64n = (unsigned long)(number);
-	
-	char s8n = (char)(number);
-	short s16n = (short)(number);
-	int s32n = (int)(number);
-	long s64n = (long)(number);
-	
-	switch(type)
-	{
-		case NBA_U8: memcpy(addr + offset, &u8n, sizeof(unsigned char)); break;
-		case NBA_U16: memcpy(addr + offset, &u16n, sizeof(unsigned short)); break;
-		case NBA_U32: memcpy(addr + offset, &u32n, sizeof(unsigned int)); break;
-		case NBA_U64: memcpy(addr + offset, &u64n, sizeof(unsigned long)); break;
-		
-		case NBA_S8: memcpy(addr + offset, &s8n, sizeof(char)); break;
-		case NBA_S16: memcpy(addr + offset, &s16n, sizeof(short)); break;
-		case NBA_S32: memcpy(addr + offset, &s32n, sizeof(int)); break;
-		case NBA_S64: memcpy(addr + offset, &s64n, sizeof(long)); break;
-		
-		case NBA_FLOAT: memcpy(addr + offset, &number, sizeof(float)); break;
-		case NBA_DOUBLE: memcpy(addr + offset, &number, sizeof(double)); break;
-		
-		case NBA_POINTER: 
-		{
-			if(obj->type != OBJ_NULL)
-				memcpy(addr + offset, pointer, sizeof(void*)); 
-			else
-				memset(addr + offset, 0, sizeof(void*));
-		} break;
-	}
-}
-
-void Std_Sizeof(VM* vm)
-{
-	int type = PopNumber(vm);
-	
-	size_t size;
-	switch(type)
-	{
-		case NBA_U8: size = sizeof(unsigned char); break;
-		case NBA_U16: size = sizeof(unsigned short); break;
-		case NBA_U32: size = sizeof(unsigned int); break;
-		case NBA_U64: size = sizeof(unsigned long); break;
-		
-		case NBA_S8: size = sizeof(char); break;
-		case NBA_S16: size = sizeof(short); break;
-		case NBA_S32: size = sizeof(int); break;
-		case NBA_S64: size = sizeof(long); break;
-		
-		case NBA_FLOAT: size = sizeof(float); break;
-		case NBA_DOUBLE: size = sizeof(double); break;
-		
-		case NBA_POINTER: size = sizeof(void*); break;
-		default:
-			ErrorExit(vm, "Invalid type passed to sizeof");
-	}
-	
-	PushNumber(vm, size);
-}
-
-void Std_Addressof(VM* vm)
-{
-	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_NATIVE)
-		ErrorExit(vm, "'addressof' expected a native pointer but received a %s\n", ObjectTypeNames[obj->type]);
-	
-	PushNative(vm, &obj->native.value, NULL, NULL);
-}
-
-void Std_AtAddress(VM* vm)
-{
-	void* addr = PopNative(vm);
-	int type = PopNumber(vm);
-	
-	double number = 0;
-	
-	switch(type)
-	{
-		case NBA_U8: number = *(unsigned char*)(addr); break;
-		case NBA_U16: number = *(unsigned short*)(addr); break;
-		case NBA_U32: number = *(unsigned int*)(addr); break;
-		case NBA_U64: number = *(unsigned long*)(addr); break;
-		
-		case NBA_S8: number = *(char*)(addr); break;
-		case NBA_S16: number = *(short*)(addr); break;
-		case NBA_S32: number = *(int*)(addr); break;
-		case NBA_S64: number = *(long*)(addr); break;
-		
-		case NBA_FLOAT: number = *(float*)(addr); break;
-		case NBA_DOUBLE: number = *(double*)(addr); break;
-		
-		case NBA_POINTER:
-		{
-			void* ptr = *(void**)(addr);
-			if(ptr)
-				PushNative(vm, ptr, NULL, NULL);
-			else
-				PushObject(vm, &NullObject);
-			return;
-		} break;
-	}
-	
-	PushNumber(vm, number);
-}
-
 #define DcNumArgFunc(tn, t) void Std_DcArg##tn(VM* vm) { DC##t arg = (DC##t)(PopNumber(vm)); dcArg##tn(vm->dc, arg); }
 
 DcNumArgFunc(Bool, bool)
@@ -841,103 +648,6 @@ void Std_DcCallPointer(VM* vm)
 {
 	DCpointer funcptr = PopNative(vm);
 	PushNative(vm, (void*)dcCallPointer(vm->dc, funcptr), NULL, NULL);
-}
-
-// taken from dyncall_struct.h
-typedef struct DCfield_ 
-{
-	DCsize offset, size, alignment, arrayLength;
-	DCint type;
-	DCstruct* pSubStruct;
-} DCfield;
-
-struct DCstruct_ 
-{
-	DCfield *pFields;
-	DCsize size, alignment, fieldCount;
-	DCint nextField;       /* == -1 if struct is closed */
-	DCstruct *pCurrentStruct, *pLastStruct; /* == this, unless we're in a sub struct */
-};
-
-void Std_DcFreeStruct(void* ps)
-{
-	dcFreeStruct(ps);
-}
-
-void Std_DcDefineStruct(VM* vm)
-{
-	const char* sig = PopString(vm);
-	
-	DCstruct* s = dcDefineStruct(sig);
-	PushNative(vm, s, Std_DcFreeStruct, NULL);
-}
-
-void Std_DcNewStruct(VM* vm)
-{
-	int fieldCount = PopNumber(vm);
-	DCstruct* s = dcNewStruct(fieldCount, DEFAULT_ALIGNMENT);
-	
-	PushNative(vm, s, Std_DcFreeStruct, NULL);
-}
-
-void Std_DcStructField(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	DCint type = PopNumber(vm);
-	DCsize arrayLength = PopNumber(vm);
-	DCint alignment = DEFAULT_ALIGNMENT;
-	
-	dcStructField(s, type, alignment, arrayLength);
-}
-
-void Std_DcSubStruct(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	DCsize fieldCount = PopNumber(vm);
-	DCsize arrayLength = PopNumber(vm);
-	DCint alignment = DEFAULT_ALIGNMENT;
-	
-	dcSubStruct(s, fieldCount, alignment, arrayLength);
-}
-
-void Std_DcStructClose(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	dcCloseStruct(s);
-}
-
-void Std_DcStructSize(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	PushNumber(vm, dcStructSize(s));
-}
-
-void Std_DcStructOffset(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	int index = PopNumber(vm);
-	
-	size_t offset = 0;
-	
-	for(int i = 0; i < index; ++i)
-	{
-		DCfield* f = s->pFields + index;
-		offset += f->alignment;
-	}
-	
-	PushNumber(vm, offset);
-}
-
-void Std_ExternAddr(VM* vm)
-{
-	Object* ext = PopObject(vm);
-	if(ext->type != OBJ_FUNC)
-		ErrorExit(vm, "Expected func but received %s\n", ObjectTypeNames[ext->type]);
-	
-	if(!ext->func.isExtern)
-		PushObject(vm, &NullObject);
-	else
-		PushNative(vm, (void*)vm->externs[ext->func.index], NULL, NULL);
 }
 
 /* END OF STANDARD LIBRARY */
@@ -1051,6 +761,10 @@ void ResetVM(VM* vm)
 			free(vm->globalNames[i]);
 		free(vm->globalNames);
 	}
+	
+	vm->stackSize = 0;
+	vm->numGlobals = 0;
+	vm->numExterns = 0;
 
 	if(vm->externNames)
 	{
@@ -1061,8 +775,7 @@ void ResetVM(VM* vm)
 	
 	if(vm->externs)
 		free(vm->externs);
-	
-	vm->stackSize = 0;
+		
 	CollectGarbage(vm);
 	
 	Object* obj = vm->freeHead;
@@ -1299,24 +1012,6 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "dc_call_float", Std_DcCallFloat);
 	HookExternNoWarn(vm, "dc_call_double", Std_DcCallDouble);
 	HookExternNoWarn(vm, "dc_call_pointer", Std_DcCallPointer);
-	
-	// DEPRECATED: HookExternNoWarn(vm, "dc_define_struct", Std_DcDefineStruct);
-	HookExternNoWarn(vm, "dc_new_struct", Std_DcNewStruct);
-	HookExternNoWarn(vm, "dc_struct_field", Std_DcStructField);
-	HookExternNoWarn(vm, "dc_sub_struct", Std_DcSubStruct);
-	HookExternNoWarn(vm, "dc_close_struct", Std_DcStructClose);
-	HookExternNoWarn(vm, "dc_struct_size", Std_DcStructSize);
-	HookExternNoWarn(vm, "dc_struct_offset", Std_DcStructOffset);
-	
-	HookExternNoWarn(vm, "malloc", Std_Malloc);
-	HookExternNoWarn(vm, "memcpy", Std_Memcpy);
-	HookExternNoWarn(vm, "free", Std_Free);
-	HookExternNoWarn(vm, "getmem", Std_GetStructMember);
-	HookExternNoWarn(vm, "setmem", Std_SetStructMember);
-	HookExternNoWarn(vm, "sizeof", Std_Sizeof);
-	HookExternNoWarn(vm, "addressof", Std_Addressof);
-	HookExternNoWarn(vm, "ataddress", Std_AtAddress);
-	HookExternNoWarn(vm, "externaddr", Std_ExternAddr);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -2558,6 +2253,5 @@ void DeleteVM(VM* vm)
 {
 	if(vm->pc != -1) ErrorExit(vm, "Attempted to delete a running virtual machine\n");
 	ResetVM(vm);
-	dcFree(vm->dc);
 	free(vm);	
 }
