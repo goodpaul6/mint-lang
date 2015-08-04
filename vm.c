@@ -1,6 +1,5 @@
 #include "vm.h"
 #include "hash.h"
-#include "dyncall_signature.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +10,8 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <assert.h>
+#include <alloca.h>
+#include <dlfcn.h>
 
 Object NullObject;
 
@@ -97,30 +98,35 @@ void Std_Floor(VM* vm)
 {
 	double num = PopNumber(vm);
 	PushNumber(vm, floor(num));
+	ReturnTop(vm);
 }
 
 void Std_Ceil(VM* vm)
 {
 	double num = PopNumber(vm);
 	PushNumber(vm, ceil(num));
+	ReturnTop(vm);
 }
 
 void Std_Sin(VM* vm)
 {
 	double num = PopNumber(vm);
 	PushNumber(vm, sin(num));
+	ReturnTop(vm);
 }
 
 void Std_Cos(VM* vm)
 {
 	double num = PopNumber(vm);
 	PushNumber(vm, cos(num));
+	ReturnTop(vm);
 }
 
 void Std_Sqrt(VM* vm)
 {
 	double num = PopNumber(vm);
 	PushNumber(vm, sqrt(num));
+	ReturnTop(vm);
 }
 
 void Std_Atan2(VM* vm)
@@ -129,6 +135,7 @@ void Std_Atan2(VM* vm)
 	double x = PopNumber(vm);
 	
 	PushNumber(vm, atan2(y, x));
+	ReturnTop(vm);
 }
 
 void WriteObject(VM* vm, Object* top)
@@ -136,9 +143,9 @@ void WriteObject(VM* vm, Object* top)
 	if(top->type == OBJ_NUMBER)
 		printf("%g", top->number);
 	else if(top->type == OBJ_STRING)
-		printf("%s", top->string);
+		printf("%s", top->string.raw);
 	else if(top->type == OBJ_NATIVE)
-		printf("native pointer (%x)", (intptr_t)(top->native.value));
+		printf("native pointer (0x%x)", (unsigned int)(intptr_t)(top->native.value));
 	else if(top->type == OBJ_FUNC)
 	{
 		if(top->func.isExtern)
@@ -226,6 +233,8 @@ void Std_Printf(VM* vm)
 				putc(c, stdout);
 		}
 	}
+	
+	ReturnNullObject(vm);
 }
 
 void Std_Strcat(VM* vm)
@@ -243,6 +252,7 @@ void Std_Strcat(VM* vm)
 	strcpy(newString + la, b);
 	
 	PushString(vm, newString);
+	ReturnTop(vm);
 }
 
 void Std_Tonumber(VM* vm)
@@ -252,6 +262,7 @@ void Std_Tonumber(VM* vm)
 	if(obj->type == OBJ_STRING) PushNumber(vm, strtod(obj->string.raw, NULL));
 	else if(obj->type == OBJ_NUMBER) PushObject(vm, obj);
 	else PushNumber(vm, (intptr_t)(obj));
+	ReturnTop(vm);
 }
 
 void Std_Tostring(VM* vm)
@@ -266,15 +277,18 @@ void Std_Tostring(VM* vm)
 		case OBJ_ARRAY: sprintf(buf, "array(%i)", obj->array.length); break;
 		case OBJ_FUNC: sprintf(buf, "func %s", obj->func.isExtern ? vm->externNames[obj->func.index] : vm->functionNames[obj->func.index]); break;
 		case OBJ_DICT: sprintf(buf, "dict(%i)", obj->dict.numEntries); break; 
+		case OBJ_NATIVE: sprintf(buf, "native(%x)", (unsigned int)(intptr_t)(obj->native.value)); break;
 	}
 	
 	PushString(vm, buf);
+	ReturnTop(vm);
 }
 
 void Std_Type(VM* vm)
 {
 	Object* obj = PopObject(vm);
 	PushString(vm, ObjectTypeNames[obj->type]);
+	ReturnTop(vm);
 }
 
 void Std_Assert(VM* vm)
@@ -284,6 +298,8 @@ void Std_Assert(VM* vm)
 	
 	if(!result)
 		ErrorExit(vm, "Assertion failed: %s\n", message);
+	
+	ReturnNullObject(vm);
 }
 
 void Std_Erase(VM* vm)
@@ -297,6 +313,8 @@ void Std_Erase(VM* vm)
 	if(index < obj->array.length - 1 && obj->array.length > 1)
 		memmove(&obj->array.members[index], &obj->array.members[index + 1], sizeof(Object*) * (obj->array.length - index - 1));
 	--obj->array.length;
+	
+	ReturnNullObject(vm);
 }
 
 void Std_Fclose(void* fp)
@@ -317,12 +335,14 @@ void Std_Fopen(VM* vm)
 	}
 	
 	PushNative(vm, file, Std_Fclose, NULL);
+	ReturnTop(vm);
 }
 
 void Std_Getc(VM* vm)
 {
 	FILE* file = PopNative(vm);
 	PushNumber(vm, getc(file));
+	ReturnTop(vm);
 }
 
 void Std_Putc(VM* vm)
@@ -330,6 +350,7 @@ void Std_Putc(VM* vm)
 	FILE* file = PopNative(vm);
 	int c = (int)PopNumber(vm);
 	putc(c, file);
+	ReturnTop(vm);
 }
 
 void Std_Srand(VM* vm)
@@ -340,6 +361,7 @@ void Std_Srand(VM* vm)
 void Std_Rand(VM* vm)
 {
 	PushNumber(vm, (int)rand());
+	ReturnTop(vm);
 }
 
 void Std_Char(VM* vm)
@@ -347,6 +369,7 @@ void Std_Char(VM* vm)
 	static char buf[2] = {0};
 	buf[0] = (char)PopNumber(vm);
 	PushString(vm, buf);
+	ReturnTop(vm);
 }
 
 void Std_Joinchars(VM* vm)
@@ -363,22 +386,26 @@ void Std_Joinchars(VM* vm)
 		str[i] = (char)obj->array.members[i]->number;
 	str[obj->array.length] = '\0';
 	PushString(vm, str);
+	ReturnTop(vm);
 }
 
 void Std_Clock(VM* vm)
 {
 	clock_t start = clock();
 	PushNumber(vm, (double)start);
+	ReturnTop(vm);
 }
 
 void Std_Clockspersec(VM* vm)
 {
 	PushNumber(vm, (double)CLOCKS_PER_SEC);
+	ReturnTop(vm);
 }
 
 void Std_Halt(VM* vm)
 {
 	vm->pc = -1;
+	ReturnNullObject(vm);
 }
 
 typedef struct
@@ -402,6 +429,7 @@ void Std_Bytes(VM* vm)
 	ba->bytes = ecalloc(sizeof(unsigned char), length);
 	
 	PushNative(vm, ba, Std_FreeBytes, NULL);
+	ReturnTop(vm);
 }
 
 void Std_GetByte(VM* vm)
@@ -410,6 +438,7 @@ void Std_GetByte(VM* vm)
 	size_t i = (size_t)PopNumber(vm);
 	
 	PushNumber(vm, ba->bytes[i]);
+	ReturnTop(vm);
 }
 
 void Std_SetByte(VM* vm)
@@ -418,23 +447,25 @@ void Std_SetByte(VM* vm)
 	size_t i = (size_t)PopNumber(vm);
 	unsigned char value = (unsigned char)PopNumber(vm);
 	ba->bytes[i] = value;
+	ReturnTop(vm);
 }
 
 void Std_SetInt(VM* vm)
 {
 	ByteArray* ba = PopNative(vm);
-	size_t i = (size_t)PopNumber(vm);
 	int value = (int)PopNumber(vm);
 	unsigned char* vp = (unsigned char*)(&value);
 	
 	for(int i = 0; i < sizeof(int) / sizeof(unsigned char); ++i)
 		ba->bytes[i] = *vp++;
+	ReturnNullObject(vm);
 }
 
 void Std_BytesLength(VM* vm)
 {
 	ByteArray* ba = PopNative(vm);
 	PushNumber(vm, ba->length);
+	ReturnTop(vm);
 }
 
 enum
@@ -449,7 +480,8 @@ enum
 	NBA_S64,
 	NBA_FLOAT,
 	NBA_DOUBLE,
-	NBA_POINTER
+	NBA_POINTER,
+	NBA_VOID
 };
 
 void Std_NumberToBytes(VM* vm)
@@ -511,6 +543,7 @@ void Std_NumberToBytes(VM* vm)
 	}
 	
 	PushNative(vm, ba, Std_FreeBytes, NULL);
+	ReturnTop(vm);
 }
 
 void Std_BytesToNumber(VM* vm)
@@ -536,6 +569,7 @@ void Std_BytesToNumber(VM* vm)
 	}
 	
 	PushNumber(vm, number);
+	ReturnTop(vm);
 }
 
 void Std_GetFuncByName(VM* vm)
@@ -553,6 +587,7 @@ void Std_GetFuncByName(VM* vm)
 		PushFunc(vm, index, vm->functionHasEllipsis[index], 0, vm->functionNumArgs[index]);
 	else
 		PushObject(vm, &NullObject);
+	ReturnTop(vm);
 }
 
 void Std_GetFuncName(VM* vm)
@@ -562,6 +597,7 @@ void Std_GetFuncName(VM* vm)
 		ErrorExit(vm, "extern 'getfuncname' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
 	
 	PushString(vm, vm->functionNames[obj->func.index]);
+	ReturnTop(vm);
 }
 
 void Std_GetNumArgs(VM* vm)
@@ -571,6 +607,7 @@ void Std_GetNumArgs(VM* vm)
 		ErrorExit(vm, "extern 'getnumargs' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
 	
 	PushNumber(vm, (int)obj->func.numArgs);
+	ReturnTop(vm);
 }
 
 void Std_HasEllipsis(VM* vm)
@@ -580,27 +617,30 @@ void Std_HasEllipsis(VM* vm)
 		ErrorExit(vm, "extern 'hasellipsis' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
 		
 	PushNumber(vm, (Word)obj->func.hasEllipsis);
+	ReturnTop(vm);
 }
 
 void Std_StringHash(VM* vm)
 {
 	const char* string = PopString(vm);	
 	PushNumber(vm, SuperFastHash(string, strlen(string)));
+	ReturnTop(vm);
 }
 
 void Std_FreeLib(void* lib)
 {
-	dlFreeLibrary(lib);
+	dlclose(lib);
 }
 
 void Std_LoadLib(VM* vm)
 {
 	const char* libpath = PopString(vm);
-	void* lib = dlLoadLibrary(libpath);
+	void* lib = dlopen(libpath, RTLD_LAZY);
 	if(!lib)
 		ErrorExit(vm, "Failed to load library '%s'\n", libpath);
 	
 	PushNative(vm, lib, Std_FreeLib, NULL);
+	ReturnTop(vm);
 }
 
 void Std_GetProcAddress(VM* vm)
@@ -608,24 +648,21 @@ void Std_GetProcAddress(VM* vm)
 	void* lib = PopNative(vm);
 	const char* name = PopString(vm);
 	
-	void* proc = dlFindSymbol(lib, name);
+	void* proc = dlsym(lib, name);
 	if(!proc)
 		ErrorExit(vm, "Failed to get proc '%s' address from library\n", name);
 	
 	PushNative(vm, proc, NULL, NULL);
-}
-
-void Std_DcReset(VM* vm)
-{
-	dcReset(vm->dc);
+	ReturnTop(vm);
 }
 
 void Std_Malloc(VM* vm)
 {
 	size_t size = (size_t)PopNumber(vm);
-	void* mem = ecalloc(size, 1);
+	void* mem = emalloc(size);
 	
 	PushNative(vm, mem, NULL, NULL);
+	ReturnTop(vm);
 }
 
 void Std_Memcpy(VM* vm)
@@ -637,6 +674,7 @@ void Std_Memcpy(VM* vm)
 	if(srcobj->type == OBJ_NATIVE) memcpy(dest, srcobj->native.value, size);
 	else if(srcobj->type == OBJ_NULL) memset(dest, 0, size);
 	else ErrorExit(vm, "Invalid memcpy source parameter (%s instead of null or native)\n", ObjectTypeNames[srcobj->type]);
+	ReturnNullObject(vm);
 }
 
 void Std_Free(VM* vm)
@@ -675,11 +713,13 @@ void Std_GetStructMember(VM* vm)
 				PushNative(vm, ptr, NULL, NULL);
 			else
 				PushObject(vm, &NullObject);
+			ReturnTop(vm);
 			return;
 		} break;
 	}
 	
 	PushNumber(vm, number);
+	ReturnTop(vm);
 }
 
 void Std_SetStructMember(VM* vm)
@@ -705,6 +745,8 @@ void Std_SetStructMember(VM* vm)
 	int s32n = (int)(number);
 	long s64n = (long)(number);
 	
+	float fn = (float)(number);
+	
 	switch(type)
 	{
 		case NBA_U8: memcpy(addr + offset, &u8n, sizeof(unsigned char)); break;
@@ -717,7 +759,7 @@ void Std_SetStructMember(VM* vm)
 		case NBA_S32: memcpy(addr + offset, &s32n, sizeof(int)); break;
 		case NBA_S64: memcpy(addr + offset, &s64n, sizeof(long)); break;
 		
-		case NBA_FLOAT: memcpy(addr + offset, &number, sizeof(float)); break;
+		case NBA_FLOAT: memcpy(addr + offset, &fn, sizeof(float)); break;
 		case NBA_DOUBLE: memcpy(addr + offset, &number, sizeof(double)); break;
 		
 		case NBA_POINTER: 
@@ -728,6 +770,7 @@ void Std_SetStructMember(VM* vm)
 				memset(addr + offset, 0, sizeof(void*));
 		} break;
 	}
+	ReturnNullObject(vm);
 }
 
 void Std_Sizeof(VM* vm)
@@ -756,6 +799,7 @@ void Std_Sizeof(VM* vm)
 	}
 	
 	PushNumber(vm, size);
+	ReturnTop(vm);
 }
 
 void Std_Addressof(VM* vm)
@@ -765,6 +809,7 @@ void Std_Addressof(VM* vm)
 		ErrorExit(vm, "'addressof' expected a native pointer but received a %s\n", ObjectTypeNames[obj->type]);
 	
 	PushNative(vm, &obj->native.value, NULL, NULL);
+	ReturnTop(vm);
 }
 
 void Std_AtAddress(VM* vm)
@@ -796,136 +841,13 @@ void Std_AtAddress(VM* vm)
 				PushNative(vm, ptr, NULL, NULL);
 			else
 				PushObject(vm, &NullObject);
+			ReturnTop(vm);
 			return;
 		} break;
 	}
 	
 	PushNumber(vm, number);
-}
-
-#define DcNumArgFunc(tn, t) void Std_DcArg##tn(VM* vm) { DC##t arg = (DC##t)(PopNumber(vm)); dcArg##tn(vm->dc, arg); }
-
-DcNumArgFunc(Bool, bool)
-DcNumArgFunc(Char, char)
-DcNumArgFunc(Short, short)
-DcNumArgFunc(Int, int)
-DcNumArgFunc(Long, long)
-DcNumArgFunc(LongLong, longlong)
-DcNumArgFunc(Float, float)
-DcNumArgFunc(Double, double)
-
-void Std_DcArgPointer(VM* vm)
-{
-	DCpointer arg = PopNative(vm);
-	dcArgPointer(vm->dc, arg);
-}
-
-void Std_DcCallVoid(VM* vm)
-{
-	DCpointer funcptr = PopNative(vm);
-	dcCallVoid(vm->dc, funcptr);
-}
-
-#define DcNumCallFunc(type) void Std_DcCall##type(VM* vm) { DCpointer funcptr = PopNative(vm); PushNumber(vm, dcCall##type(vm->dc, funcptr)); }
-
-DcNumCallFunc(Bool)
-DcNumCallFunc(Char)
-DcNumCallFunc(Short)
-DcNumCallFunc(Int)
-DcNumCallFunc(Long)
-DcNumCallFunc(LongLong)
-DcNumCallFunc(Float)
-DcNumCallFunc(Double)
-
-void Std_DcCallPointer(VM* vm)
-{
-	DCpointer funcptr = PopNative(vm);
-	PushNative(vm, (void*)dcCallPointer(vm->dc, funcptr), NULL, NULL);
-}
-
-// taken from dyncall_struct.h
-typedef struct DCfield_ 
-{
-	DCsize offset, size, alignment, arrayLength;
-	DCint type;
-	DCstruct* pSubStruct;
-} DCfield;
-
-struct DCstruct_ 
-{
-	DCfield *pFields;
-	DCsize size, alignment, fieldCount;
-	DCint nextField;       /* == -1 if struct is closed */
-	DCstruct *pCurrentStruct, *pLastStruct; /* == this, unless we're in a sub struct */
-};
-
-void Std_DcFreeStruct(void* ps)
-{
-	dcFreeStruct(ps);
-}
-
-void Std_DcDefineStruct(VM* vm)
-{
-	const char* sig = PopString(vm);
-	
-	DCstruct* s = dcDefineStruct(sig);
-	PushNative(vm, s, Std_DcFreeStruct, NULL);
-}
-
-void Std_DcNewStruct(VM* vm)
-{
-	int fieldCount = PopNumber(vm);
-	DCstruct* s = dcNewStruct(fieldCount, DEFAULT_ALIGNMENT);
-	
-	PushNative(vm, s, Std_DcFreeStruct, NULL);
-}
-
-void Std_DcStructField(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	DCint type = PopNumber(vm);
-	DCsize arrayLength = PopNumber(vm);
-	DCint alignment = DEFAULT_ALIGNMENT;
-	
-	dcStructField(s, type, alignment, arrayLength);
-}
-
-void Std_DcSubStruct(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	DCsize fieldCount = PopNumber(vm);
-	DCsize arrayLength = PopNumber(vm);
-	DCint alignment = DEFAULT_ALIGNMENT;
-	
-	dcSubStruct(s, fieldCount, alignment, arrayLength);
-}
-
-void Std_DcStructClose(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	dcCloseStruct(s);
-}
-
-void Std_DcStructSize(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	PushNumber(vm, dcStructSize(s));
-}
-
-void Std_DcStructOffset(VM* vm)
-{
-	DCstruct* s = PopNative(vm);
-	int index = PopNumber(vm);
-	
-	size_t offset = 0;
-	
-	for(int i = 0; i < index; ++i)
-	{
-		DCfield* f = s->pFields + index;
-		offset += f->alignment;
-	}
-	
-	PushNumber(vm, offset);
+	ReturnTop(vm);
 }
 
 void Std_ExternAddr(VM* vm)
@@ -938,6 +860,273 @@ void Std_ExternAddr(VM* vm)
 		PushObject(vm, &NullObject);
 	else
 		PushNative(vm, (void*)vm->externs[ext->func.index], NULL, NULL);
+	ReturnTop(vm);
+}
+
+void Std_FfiPrimType(VM* vm)
+{
+	int itype = PopNumber(vm);
+	
+	ffi_type* type;
+	
+	switch(itype)
+	{
+		case NBA_U8: type = &ffi_type_uchar; break;
+		case NBA_U16: type = &ffi_type_ushort; break;
+		case NBA_U32: type = &ffi_type_uint; break;
+		case NBA_U64: type = &ffi_type_ulong; break;
+		case NBA_S8: type = &ffi_type_schar; break;
+		case NBA_S16: type = &ffi_type_sshort; break;
+		case NBA_S32: type = &ffi_type_sint; break;
+		case NBA_S64: type = &ffi_type_slong; break;
+		case NBA_FLOAT: type = &ffi_type_float; break;
+		case NBA_DOUBLE: type = &ffi_type_double; break;
+		case NBA_POINTER: type = &ffi_type_pointer; break;
+		case NBA_VOID: type = &ffi_type_void; break;
+		
+		default:
+			ErrorExit(vm, "Invalid c type %i\n", itype);
+	}
+	
+	PushNative(vm, type, NULL, NULL);
+	ReturnTop(vm);
+}
+
+void Std_FfiCall(VM* vm)
+{
+	// TODO: don't call this for every call to ffi_call
+	int ffi_result_id = GetGlobalId(vm, "ffi_result");
+	if(ffi_result_id < 0)
+		ErrorExit(vm, "'ffi_call' could not find global variable 'ffi_result', which is necessary for storing ffi_call results\n");
+	
+	void* funcptr = PopNative(vm);
+	ffi_type* rtype = PopNative(vm);
+	
+	Object* types = PopObject(vm);
+	if(types->type != OBJ_ARRAY)
+		ErrorExit(vm, "Expected 3rd argument to 'ffi_call' to be an array but received %s\n", ObjectTypeNames[types->type]);
+	unsigned int nargs = types->array.length;
+	if(nargs >= MAX_CIF_ARGS)
+		ErrorExit(vm, "Cannot pass more than %d arguments to foreign C function\n", MAX_CIF_ARGS);
+
+	Object* args = PopObject(vm);
+	if(args->type != OBJ_ARRAY)
+		ErrorExit(vm, "Expected 4th argument to 'ffi_call' to be an array but received %s\n", ObjectTypeNames[args->type]);
+	
+	if(args->array.length != nargs)
+		ErrorExit(vm, "Length of argument array does not match length of type array\n");
+	
+	ffi_type* argtypes[MAX_CIF_ARGS];
+	for(int i = 0; i < nargs; ++i)
+	{
+		if(types->array.members[i]->type != OBJ_NATIVE)	
+			ErrorExit(vm, "Invalid argument type in 'ffi_prep' argument type list\n");
+		
+		argtypes[i] = types->array.members[i]->native.value;
+	}
+	
+	if(ffi_prep_cif(&vm->cif, FFI_DEFAULT_ABI, nargs, rtype, argtypes) == FFI_OK)
+	{	
+		vm->cifStackSize = rtype->size;
+		vm->cifNumArgs = 0;
+		memset(vm->cifValues, 0, sizeof(vm->cifValues));
+		
+		// PREPARE THE ARGUMENTS!!!
+		for(int i = 0; i < nargs; ++i)
+		{
+			ffi_type* type = argtypes[i];
+			void* value = &vm->cifStack[vm->cifStackSize];
+			vm->cifStackSize += type->size;
+			Object* obj = args->array.members[i];
+			
+			if(type != &ffi_type_pointer)
+			{
+				if(obj->type != OBJ_NUMBER)
+					ErrorExit(vm, "ffi arg type value mismatch for argument %d (object type %s)\n", (i + 1), ObjectTypeNames[obj->type]);
+				
+				unsigned char ucn = (unsigned char)obj->number;
+				unsigned short usn = (unsigned short)obj->number;
+				unsigned int uin = (unsigned int)obj->number;
+				unsigned long uln = (unsigned long)obj->number;
+				
+				char cn = (char)obj->number;
+				short sn = (short)obj->number;
+				int in = (int)obj->number;
+				long ln = (long)obj->number;
+			
+				float fn = (float)obj->number;
+			
+				if(type == &ffi_type_uchar) memcpy(value, &ucn, type->size);
+				else if(type == &ffi_type_ushort) memcpy(value, &usn, type->size);
+				else if(type == &ffi_type_uint) memcpy(value, &uin, type->size);
+				else if(type == &ffi_type_ulong) memcpy(value, &uln, type->size);
+				else if(type == &ffi_type_schar) memcpy(value, &cn, type->size);
+				else if(type == &ffi_type_sshort) memcpy(value, &sn, type->size);
+				else if(type == &ffi_type_sint) memcpy(value, &in, type->size);
+				else if(type == &ffi_type_slong) memcpy(value, &ln, type->size);
+				else if(type == &ffi_type_float) memcpy(value, &fn, type->size);
+				else if(type == &ffi_type_double) memcpy(value, &obj->number, type->size);
+				else memset(value, 0, type->size);
+			}
+			else
+			{
+				if(obj->type != OBJ_NULL && obj->type != OBJ_NATIVE && obj->type != OBJ_STRING)
+					ErrorExit(vm, "ffi arg type value mismatch for argument %d (object type %s)\n", (i + 1), ObjectTypeNames[obj->type]);
+				
+				if(obj->type == OBJ_NATIVE)
+					memcpy(value, obj->native.value, type->size);
+				else if(obj->type == OBJ_STRING)
+					memcpy(value, &obj->string.raw, type->size);
+				else
+					memset(value, 0, type->size);
+			}
+			
+			vm->cifValues[vm->cifNumArgs++] = value;
+		}
+		
+		// call the function (actual return value is stored as the first value on the stack)
+		ffi_call(&vm->cif, funcptr, &vm->cifStack[0], vm->cifValues);
+		
+		void* p = &vm->cifStack[0];
+	
+		if(rtype != &ffi_type_pointer)
+		{
+			double number;
+			ffi_type* t = rtype;
+			
+			if(t == &ffi_type_uchar) number = *(unsigned char*)(p);
+			else if(t == &ffi_type_ushort) number = *(unsigned short*)(p);
+			else if(t == &ffi_type_uint) number = *(unsigned int*)(p);
+			else if(t == &ffi_type_ulong) number = *(unsigned long*)(p);
+			else if(t == &ffi_type_schar) number = *(char*)(p);
+			else if(t == &ffi_type_sshort) number = *(short*)(p);
+			else if(t == &ffi_type_sint) number = *(int*)(p);
+			else if(t == &ffi_type_slong) number = *(long*)(p);
+			else if(t == &ffi_type_float) number = *(float*)(p);
+			else if(t == &ffi_type_double) number = *(double*)(p);
+			else number = 0;
+			
+			PushNumber(vm, number);
+			vm->stack[ffi_result_id] = PopObject(vm);
+		}
+		else
+		{
+			if(rtype != &ffi_type_void)
+			{
+				void* at_p = *(void**)(p);
+				
+				if(at_p)
+				{
+					PushNative(vm, at_p, NULL, NULL);
+					vm->stack[ffi_result_id] = PopObject(vm);
+				}
+				else
+					vm->stack[ffi_result_id] = &NullObject;
+			}
+		}
+		
+		// SUCCESSFUL CALL
+		PushNumber(vm, 1);
+		ReturnTop(vm);
+	}
+	else // failed to prep call, return 0
+	{
+		PushNumber(vm, 0);
+		ReturnTop(vm);
+	}
+}
+
+void Std_FreeFfiStructType(void* type)
+{
+	ffi_type* structType = type;
+	free(structType->elements);
+	free(type);
+}
+
+void Std_FfiStructTypeMark(void* type)
+{
+	ffi_type* structType = type;
+	ffi_type** element = structType->elements;
+	while((*element) != NULL)
+	{
+		if((*element)->type == FFI_TYPE_STRUCT)
+			Std_FfiStructTypeMark(*element);
+		++element;
+	}
+}
+
+void Std_FfiStructType(VM* vm)
+{
+	Object* memberTypes = PopObject(vm);
+	if(memberTypes->type != OBJ_ARRAY)
+		ErrorExit(vm, "'ffi_struct_type' expected an array but received a %s\n", ObjectTypeNames[memberTypes->type]);
+	if(memberTypes->array.length == 0)
+		ErrorExit(vm, "empty member type array\n");
+
+	ffi_type* structType = emalloc(sizeof(ffi_type));
+	ffi_type** elements = emalloc(sizeof(ffi_type*) * (memberTypes->array.length + 1));
+	
+	structType->size = structType->alignment = 0;
+	structType->elements = elements;
+	structType->type = FFI_TYPE_STRUCT;
+	
+	for(int i = 0; i < memberTypes->array.length; ++i)
+	{
+		if(memberTypes->array.members[i]->type != OBJ_NATIVE)
+			ErrorExit(vm, "invalid member type\n");
+		elements[i] = memberTypes->array.members[i]->native.value;
+	}
+	elements[memberTypes->array.length] = NULL;
+	
+	ffi_type* argtypes[1] = { structType };
+	
+	if(ffi_prep_cif(&vm->cif, FFI_DEFAULT_ABI, 1, &ffi_type_void, argtypes) == FFI_OK)
+		PushNative(vm, structType, Std_FreeFfiStructType, Std_FfiStructTypeMark);
+	else
+		PushObject(vm, &NullObject);
+	ReturnTop(vm);
+}
+
+void Std_FfiTypeSize(VM* vm)
+{
+	ffi_type* type = PopNative(vm);
+	
+	// TODO: Maybe add a static_number type object which is
+	// a union of many c numerical values instead of casting everything
+	// to doubles?
+	PushNumber(vm, (double)type->size);
+	ReturnTop(vm);
+}
+
+void Std_FfiStructTypeOffsets(VM* vm)
+{
+	// TODO: create a struct which stores type metadata 
+	// behind the memory of the ffi_type so that it is 
+	// possible to track the numelements of a type (and more)
+	ffi_type* structType = PopNative(vm);
+	int numElements = (int)PopNumber(vm);
+
+	PushArray(vm, numElements);
+	Object* obj = PopObject(vm);
+
+	ffi_type** element = structType->elements;
+	
+	size_t offset = 0;
+	
+// TAKEN FROM LIBFFI SOURCE
+#define ALIGN(v, a)  (((((size_t) (v))-1) | ((a)-1))+1)
+	for(int i = 0; i < obj->array.length; ++i)
+	{
+		PushNumber(vm, offset);
+		obj->array.members[i] = PopObject(vm);
+		
+		offset = ALIGN(offset, (*element)->alignment);
+		offset += (*element)->size;
+		++element;
+	}
+#undef ALIGN
+	PushObject(vm, obj);
+	ReturnTop(vm);
 }
 
 /* END OF STANDARD LIBRARY */
@@ -992,11 +1181,9 @@ void InitVM(VM* vm)
 	vm->numExterns = 0;
 	vm->externs = NULL;
 
+	vm->inExternBody = 0;
 	vm->debug = 0;
-	
-	vm->dc = dcNewCallVM(MAX_DCCALLVM_STACK_SIZE);
-	dcMode(vm->dc, DC_CALL_C_DEFAULT);
-	
+
 	memset(vm->stack, 0, sizeof(vm->stack));
 }
 
@@ -1071,11 +1258,9 @@ void ResetVM(VM* vm)
 	while(obj)
 	{
 		next = obj->next;
-		if(obj->type != OBJ_NULL) free(obj);
+		if(obj != &NullObject) free(obj);
 		obj = next;
 	}
-	
-	dcFree(vm->dc);
 	
 	InitVM(vm);
 }
@@ -1279,34 +1464,6 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "bytes_to_number", Std_BytesToNumber);
 	HookExternNoWarn(vm, "loadlib", Std_LoadLib);
 	HookExternNoWarn(vm, "getprocaddress", Std_GetProcAddress);
-	HookExternNoWarn(vm, "dc_reset", Std_DcReset);
-	HookExternNoWarn(vm, "dc_arg_bool", Std_DcArgBool);
-	HookExternNoWarn(vm, "dc_arg_char", Std_DcArgChar);
-	HookExternNoWarn(vm, "dc_arg_short", Std_DcArgShort);
-	HookExternNoWarn(vm, "dc_arg_int", Std_DcArgInt);
-	HookExternNoWarn(vm, "dc_arg_long", Std_DcArgLong);
-	HookExternNoWarn(vm, "dc_arg_long_long", Std_DcArgLongLong);
-	HookExternNoWarn(vm, "dc_arg_float", Std_DcArgFloat);
-	HookExternNoWarn(vm, "dc_arg_double", Std_DcArgDouble);
-	HookExternNoWarn(vm, "dc_arg_pointer", Std_DcArgPointer);
-	HookExternNoWarn(vm, "dc_call_void", Std_DcCallVoid);
-	HookExternNoWarn(vm, "dc_call_bool", Std_DcCallBool);
-	HookExternNoWarn(vm, "dc_call_char", Std_DcCallChar);
-	HookExternNoWarn(vm, "dc_call_short", Std_DcCallShort);
-	HookExternNoWarn(vm, "dc_call_int", Std_DcCallInt);
-	HookExternNoWarn(vm, "dc_call_long", Std_DcCallLong);
-	HookExternNoWarn(vm, "dc_call_long_long", Std_DcCallLongLong);
-	HookExternNoWarn(vm, "dc_call_float", Std_DcCallFloat);
-	HookExternNoWarn(vm, "dc_call_double", Std_DcCallDouble);
-	HookExternNoWarn(vm, "dc_call_pointer", Std_DcCallPointer);
-	
-	// DEPRECATED: HookExternNoWarn(vm, "dc_define_struct", Std_DcDefineStruct);
-	HookExternNoWarn(vm, "dc_new_struct", Std_DcNewStruct);
-	HookExternNoWarn(vm, "dc_struct_field", Std_DcStructField);
-	HookExternNoWarn(vm, "dc_sub_struct", Std_DcSubStruct);
-	HookExternNoWarn(vm, "dc_close_struct", Std_DcStructClose);
-	HookExternNoWarn(vm, "dc_struct_size", Std_DcStructSize);
-	HookExternNoWarn(vm, "dc_struct_offset", Std_DcStructOffset);
 	
 	HookExternNoWarn(vm, "malloc", Std_Malloc);
 	HookExternNoWarn(vm, "memcpy", Std_Memcpy);
@@ -1317,6 +1474,12 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "addressof", Std_Addressof);
 	HookExternNoWarn(vm, "ataddress", Std_AtAddress);
 	HookExternNoWarn(vm, "externaddr", Std_ExternAddr);
+	
+	HookExternNoWarn(vm, "ffi_prim_type", Std_FfiPrimType);
+	HookExternNoWarn(vm, "ffi_struct_type", Std_FfiStructType);
+	HookExternNoWarn(vm, "ffi_struct_type_offsets", Std_FfiStructTypeOffsets);
+	HookExternNoWarn(vm, "ffi_type_size", Std_FfiTypeSize);
+	HookExternNoWarn(vm, "ffi_call", Std_FfiCall);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -1497,7 +1660,7 @@ void CollectGarbage(VM* vm)
 
 Object* NewObject(VM* vm, ObjectType type)
 {
-	if(vm->numObjects == vm->maxObjectsUntilGc) 
+	if(!vm->inExternBody && vm->numObjects == vm->maxObjectsUntilGc) 
 		CollectGarbage(vm);
 
 	if(vm->debug)
@@ -1663,6 +1826,17 @@ void* PopNativeOrNull(VM* vm)
 	return obj->native.value;
 }
 
+void ReturnTop(VM* vm)
+{
+	Object* top = PopObject(vm);
+	vm->retVal = top;
+}
+
+void ReturnNullObject(VM* vm)
+{
+	vm->retVal = &NullObject;
+}
+
 int ReadInteger(VM* vm)
 {
 	int value;
@@ -1758,7 +1932,7 @@ int GetGlobalId(VM* vm, const char* name)
 	for(int i = 0; i < vm->numGlobals; ++i)
 	{
 		if(strcmp(vm->globalNames[i], name) == 0)
-			return i;
+			return vm->numGlobals - i - 1;
 	}
 	
 	return -1;
@@ -1847,6 +2021,17 @@ void ExecuteCycle(VM* vm)
 	
 	switch(vm->program[vm->pc])
 	{
+		case OP_GET_RETVAL:
+		{
+			if(vm->debug)
+				printf("get_retval\n");
+			++vm->pc;
+			if(vm->retVal != NULL)
+				PushObject(vm, vm->retVal);
+			else
+				PushObject(vm, &NullObject);
+		} break;
+		
 		case OP_PUSH_NULL:
 		{
 			if(vm->debug)
@@ -1895,7 +2080,8 @@ void ExecuteCycle(VM* vm)
 			PushDict(vm);
 		} break;
 
-		case OP_CREATE_DICT_BLOCK:
+		/* REMOVED: see header
+		 * case OP_CREATE_DICT_BLOCK:
 		{
 			if(vm->debug)
 				printf("create_dict_block\n");
@@ -1910,7 +2096,7 @@ void ExecuteCycle(VM* vm)
 				vm->stackSize -= length * 2;
 				vm->stack[vm->stackSize - 1] = obj;
 			}
-		} break;
+		} break;*/
 
 		case OP_CREATE_ARRAY:
 		{
@@ -1971,7 +2157,7 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			vm->stackSize = vm->indirStack[--vm->indirStackSize];
 		} break;
-
+		
 		case OP_LENGTH:
 		{
 			if(vm->debug)
@@ -2045,6 +2231,15 @@ void ExecuteCycle(VM* vm)
 			Object* obj = PopDict(vm);
 			Object* value = PopObject(vm);
 			
+			/*Object* over = DictGet(&obj->dict, "GETINDEX");
+			if(over && over->type == OBJ_FUNC)
+			{
+				PushObject(vm, value);
+				PushString(vm, vm->stringConstants[keyIndex]);
+				PushObject(vm, obj);
+				CallFunction(vm, over->func.index, 3);
+			}
+			else*/	
 			DictPut(&obj->dict, vm->stringConstants[keyIndex], value);
 		} break;
 		
@@ -2058,6 +2253,22 @@ void ExecuteCycle(VM* vm)
 				
 			Object* obj = PopDict(vm);
 			
+			/*Object* over = DictGet(&obj->dict, "GETINDEX");
+			if(over && over->type == OBJ_FUNC)
+			{
+				PushString(vm, vm->stringConstants[keyIndex]);
+				PushObject(vm, obj);
+				CallFunction(vm, over->func.index, 2);
+			}
+			else
+			{
+				Object* value = DictGet(&obj->dict, vm->stringConstants[keyIndex]);
+				if(value)
+					PushObject(vm, value);
+				else
+					PushObject(vm, &NullObject);
+			}*/
+		
 			Object* value = DictGet(&obj->dict, vm->stringConstants[keyIndex]);
 			if(value)
 				PushObject(vm, value);
@@ -2134,6 +2345,7 @@ void ExecuteCycle(VM* vm)
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number == o2->number); }
 				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) {}
+				else if(o1->type == OBJ_NULL) PushNumber(vm, 1);
 				else PushNumber(vm, o1 == o2);
 			}
 		} break;
@@ -2289,7 +2501,7 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 			{
 				if(top->type == OBJ_NUMBER) printf("set %i to %g\n", index, top->number);
-				else if(top->type == OBJ_STRING) printf("set %i to %s\n", index, top->string);	
+				else if(top->type == OBJ_STRING) printf("set %i to %s\n", index, top->string.raw);	
 			}
 		} break;
 		
@@ -2349,6 +2561,7 @@ void ExecuteCycle(VM* vm)
 					printf("gotoz %i\n", vm->pc);
 			}
 		} break;
+		
 		
 		case OP_CALL:
 		{
@@ -2416,7 +2629,11 @@ void ExecuteCycle(VM* vm)
 			nargs += vm->numExpandedArgs;
 			
 			if(isExtern)
+			{
+				vm->inExternBody = 1;
 				vm->externs[id](vm);
+				vm->inExternBody = 0;
+			}
 			else
 			{
 				if(!hasEllipsis)
@@ -2440,6 +2657,7 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("ret\n");
 			PopIndir(vm);
+			vm->retVal = NULL;
 		} break;
 		
 		case OP_RETURN_VALUE:
@@ -2448,7 +2666,7 @@ void ExecuteCycle(VM* vm)
 				printf("retval\n");
 			Object* returnValue = PopObject(vm);
 			PopIndir(vm);
-			PushObject(vm, returnValue);
+			vm->retVal = returnValue;
 		} break;
 		
 		case OP_CALLF:
@@ -2458,7 +2676,10 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("callf %s\n", vm->externNames[index]);
 			vm->lastFunctionIndex = index;
+			
+			vm->inExternBody = 1;
 			vm->externs[index](vm);
+			vm->inExternBody = 0;
 		} break;
 
 		case OP_GETLOCAL:
@@ -2558,6 +2779,5 @@ void DeleteVM(VM* vm)
 {
 	if(vm->pc != -1) ErrorExit(vm, "Attempted to delete a running virtual machine\n");
 	ResetVM(vm);
-	dcFree(vm->dc);
 	free(vm);	
 }

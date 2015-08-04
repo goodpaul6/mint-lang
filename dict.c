@@ -40,7 +40,7 @@ unsigned long HashFunction(const char* key)
 	int c;
 	
 	while ((c = *key++))
-		hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+		hash = ((hash << 5) + hash) + c; // hash * 33 + c */
 		
 	return SuperFastHash(key, strlen(key));
 }

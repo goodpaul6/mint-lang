@@ -1,17 +1,16 @@
 # edge.mt -- testing cutting edge features in mint-lang
 
-func main()
-	init_cffi()
-	xinput_load()
-
-	var state = XINPUT_STATE()
+func _main()
+	cffi_init()
+	#~xinput_init()
 	
+	var state = xinput_state(0)
 	while read() != "stop"
-		xinput_get_state(0, state)
-		write(state["sThumbLX"])
-	end
+		state:poll()
+		write(state.sThumbLX)
+	end~#
 	
-	state:release()
-
+	write([0, sizeof(c_pointer)])
+	
 	return 0
 end

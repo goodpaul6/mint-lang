@@ -2,10 +2,9 @@
 #define MINT_VM_H
 
 #include "dict.h"
-#include "dyncall.h"
-#include "dynload.h"
 
 #include <stdio.h>
+#include <ffi.h>
 
 struct _VM;
 typedef void (*ExternFunction)(struct _VM*);
@@ -13,6 +12,8 @@ typedef unsigned char Word;
 
 enum
 {
+	OP_GET_RETVAL,
+	
 	OP_PUSH_NULL,
 	OP_PUSH_NUMBER,
 	OP_PUSH_STRING,
@@ -20,7 +21,9 @@ enum
 	OP_CREATE_ARRAY_BLOCK,
 	OP_PUSH_FUNC,
 	OP_PUSH_DICT,
-	OP_CREATE_DICT_BLOCK,
+	
+	// this was removed because dict literals are handled at compile time
+	//OP_CREATE_DICT_BLOCK,
 	
 	// splat operator from python
 	OP_EXPAND_ARRAY,
@@ -143,7 +146,8 @@ typedef struct _Object
 #define MAX_STACK						4096
 #define INIT_GC_THRESH					32
 #define MAX_TRACKED_CALLSTACK_LENGTH 	8
-#define MAX_DCCALLVM_STACK_SIZE			4096
+#define MAX_CIF_ARGS					32
+#define CIF_STACK_SIZE					4096
 
 typedef struct _VM
 {
@@ -181,6 +185,8 @@ typedef struct _VM
 	int numObjects;
 	int maxObjectsUntilGc;
 	
+	Object* retVal;
+	
 	Object* stack[MAX_STACK];
 	int stackSize;
 	
@@ -194,9 +200,17 @@ typedef struct _VM
 	ExternFunction* externs;
 	int numExterns;
 
+	ffi_cif cif;
+	char cifStack[CIF_STACK_SIZE];
+	void* cifValues[MAX_CIF_ARGS];
+	size_t cifStackSize;
+	unsigned int cifNumArgs;
+
+	// if the virtual machine is currently in use by C code then we shouldn't invoke the garbage collector
+	// until it exits
+	char inExternBody;
+
 	char debug;
-	
-	DCCallVM* dc;
 } VM;
 
 VM* NewVM(); 
@@ -234,6 +248,9 @@ Object* PopArrayObject(VM* vm);
 Object* PopDict(VM* vm);
 void* PopNative(VM* vm);
 void* PopNativeOrNull(VM* vm);
+
+void ReturnTop(VM* vm);
+void ReturnNullObject(VM* vm);
 
 void RunVM(VM* vm);
 
