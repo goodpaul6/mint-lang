@@ -1026,18 +1026,33 @@ const char* HintTypeStrings[] = {
 	"dynamic"
 };
 
-const TypeHint NumberHint = { NULL, NUMBER };
-const TypeHint StringHint = { NULL, STRING };
-const TypeHint ArrayHint = { NULL, ARRAY };
-const TypeHint DictHint = { NULL, DICT };
-const TypeHint FunctionHint = { NULL, FUNC };
-const TypeHint NativeHint = { NULL, NATIVE };
-const TypeHint VoidHint = { NULL, VOID };
-const TypeHint DynamicHint = { NULL, DYNAMIC };
+const TypeHint NumberHint = { NULL, NUMBER, NULL };
+const TypeHint NativeHint = { NULL, NATIVE, NULL };
+const TypeHint VoidHint = { NULL, VOID, NULL };
+const TypeHint DynamicHint = { NULL, DYNAMIC, &DynamicHint };
+const TypeHint FunctionHint = { NULL, FUNC, NULL };
+const TypeHint DictHint = { NULL, DICT, &DynamicHint };
+const TypeHint StringHint = { NULL, STRING, &NumberHint };
+const TypeHint ArrayHint = { NULL, ARRAY, &DynamicHint };
 
 const char* HintString(const TypeHint* type)
 {
-	if(type) return HintTypeStrings[type->hint];
+	// TODO: maybe this should take a string buffer
+	if(type) 
+	{
+		if(!type->subType)
+			return HintTypeStrings[type->hint];
+		else
+		{
+			char buf[256];
+			sprintf(buf, "%s-%s", HintTypeStrings[type->hint], HintString(type->subType)); 
+			
+			char* str = malloc(strlen(buf) + 1);
+			assert(str);
+			strcpy(str, buf);
+			return str;
+		}
+	}
 	return "unknown";
 }
 
@@ -1046,7 +1061,7 @@ char CompareTypes(const TypeHint* a, const TypeHint* b)
 	if(!a || !b) return 1;
 	
 	if(a->hint == DYNAMIC || b->hint == DYNAMIC) return 1;
-	return a->hint == b->hint;
+	return (a->hint == b->hint) && CompareTypes(a->subType, b->subType);
 }
 
 const TypeHint* GetTypeHintFromString(const char* n)
@@ -1070,6 +1085,7 @@ TypeHint* CreateTypeHint(HintType hint)
 	assert(type);
 	type->hint = hint;
 	type->next = NULL;
+	type->subType = NULL;
 
 	return type;
 }
@@ -1115,8 +1131,17 @@ TypeHint* ParseTypeHint(FILE* in)
 	*/
 	if(CurTok == TOK_IDENT)
 	{
-		TypeHint* type = CreateTypeHint(GetTypeHintFromString(Lexeme)->hint);
+		TypeHint* type = CreateTypeHint(VOID);
+		*type = *GetTypeHintFromString(Lexeme);
+		
 		GetNextToken(in);
+		if(CurTok == '-')
+		{
+			GetNextToken(in);
+			TypeHint* subType = ParseTypeHint(in);
+			type->subType = subType;
+		}
+		
 		return type;
 	}
 	else
@@ -1129,7 +1154,8 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 {
 	switch(exp->type)
 	{
-		case EXP_NULL: return &DynamicHint; break;
+		// null initialized variables should be inferred upon later access
+		case EXP_NULL: return NULL; break;
 		
 		case EXP_NUMBER: return &NumberHint; break;
 		
@@ -1147,7 +1173,17 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 				FuncDecl* decl = ReferenceFunction(exp->varx.name);
 				
 				if(decl)
-					return &FunctionHint;
+				{	
+					if(!decl->returnType)
+						return &FunctionHint;
+					else
+					{
+						TypeHint* type = CreateTypeHint(FUNC);
+						type->subType = decl->returnType;
+						
+						return type;
+					}
+				}
 				else
 					return NULL;
 			}
@@ -1161,8 +1197,17 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 				if(decl)
 					return decl->returnType;
 				else
-					return NULL;
+				{
+					VarDecl* decl = exp->callx.func->varx.varDecl ? exp->callx.func->varx.varDecl : ReferenceVariable(exp->callx.func->varx.name);
+					if(decl && decl->type)
+					{
+						if(decl->type->hint == FUNC)
+							return decl->type->subType;
+					}
+				}
 			}
+			
+			return NULL;
 		} break;
 		
 		case EXP_VAR:
@@ -1178,7 +1223,15 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 			if(exp->binx.op != '=')
 			{
 				if(CompareTypes(a, b))
-					return &DynamicHint;
+				{
+					if(a && b)
+					{
+						if(a->hint == NUMBER && b->hint == NUMBER)
+							return &NumberHint;
+						else
+							return &DynamicHint;
+					}
+				}
 				else
 					return NULL;
 			}
@@ -1198,11 +1251,45 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_ARRAY_LITERAL:
 		{
+			if(exp->arrayx.length > 0)
+			{
+				// attempt to infer the subtype of the array
+				Expr* node = exp->arrayx.head;
+				const TypeHint* inf = InferTypeFromExpr(node);
+				node = node->next;
+				
+				while(node)
+				{
+					// if the array literal contains values which evaluate to more than one type, then it is a dynamic array
+					const TypeHint* curInf = InferTypeFromExpr(node);
+					if(!CompareTypes(curInf, inf)) return &ArrayHint;	
+					node = node->next;
+				}
+				
+				TypeHint* type = CreateTypeHint(ARRAY);
+				type->subType = inf;
+				
+				return type;
+			}
+			
 			return &ArrayHint;
 		} break;
 		
 		case EXP_ARRAY_INDEX:
 		{
+			if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
+			{
+				Expr* id = exp->arrayIndex.arrExpr;
+				if(id->varx.varDecl)
+				{
+					if(id->varx.varDecl->type)
+					{
+						if(id->varx.varDecl->type->subType)
+							return id->varx.varDecl->type->subType;
+					}
+				}
+			}
+			
 			return &DynamicHint;
 		} break;
 		
@@ -1912,7 +1999,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			const TypeHint* arrType = InferTypeFromExpr(exp->arrayIndex.arrExpr);
 			
-			if(!CompareTypes(arrType, &ArrayHint) && !CompareTypes(arrType, &StringHint) && !CompareTypes(arrType, &DictHint))
+			if(arrType && !arrType->subType) //!CompareTypes(arrType, &ArrayHint) && !CompareTypes(arrType, &StringHint) && !CompareTypes(arrType, &DictHint))
 				Warn("Attempted to index a '%s' (non-indexable type)\n", HintString(arrType));
 				
 			if(CurTok != ']')
@@ -2071,19 +2158,25 @@ Expr* ParseBinRhs(FILE* in, int exprPrec, Expr* lhs)
 		
 		lhs = newLhs;
 	}
-} 
+}
 
-Expr* ParseExpr(FILE* in)
+// attempts to narrow down the types of variables by analyzing their usage in binary expression (and detects false assignments, etc)
+void NarrowTypes(Expr* exp)
 {
-	Expr* unary = ParseUnary(in);
-	Expr* exp = ParseBinRhs(in, 0, unary);
-
 	if(exp->type == EXP_BIN && exp->binx.op == '=')
 	{
 		if(exp->binx.lhs->type == EXP_VAR)
 		{
 			if(!exp->binx.lhs->varx.varDecl->type)
 				exp->binx.lhs->varx.varDecl->type = InferTypeFromExpr(exp->binx.rhs);
+			else 
+			{
+				const TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);
+				
+				//Warn("var types: %s, %s\n", HintString(exp->binx.lhs->varx.varDecl->type), HintString(inf));
+				if(!CompareTypes(inf, exp->binx.lhs->varx.varDecl->type))
+					Warn("Initializing variable of type '%s' with value of type '%s'\n", HintString(exp->binx.lhs->varx.varDecl->type), HintString(inf));
+			}
 		}
 		else if(exp->binx.lhs->type == EXP_IDENT)
 		{
@@ -2093,11 +2186,42 @@ Expr* ParseExpr(FILE* in)
 				if(!exp->binx.lhs->varx.varDecl->type)
 					exp->binx.lhs->varx.varDecl->type = inf;
 				else if(!CompareTypes(inf, exp->binx.lhs->varx.varDecl->type))
-					Warn("Assigning a '%s' to a variable of type '%s'\n", HintString(inf), HintString(exp->binx.lhs->varx.varDecl->type));
+					Warn("Assigning a '%s' to a variable which was previously assigned to value of type '%s'\n", HintString(inf), HintString(exp->binx.lhs->varx.varDecl->type));
+			}
+		}
+		else if(exp->binx.lhs->type == EXP_ARRAY_INDEX)
+		{
+			Expr* arr = exp->binx.lhs->arrayIndex.arrExpr;
+			if(arr->type == EXP_IDENT)
+			{
+				if(arr->varx.varDecl)
+				{
+					const TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);	
+						
+					if(!arr->varx.varDecl->type || !arr->varx.varDecl->type->subType)
+					{
+						HintType newHint = arr->varx.varDecl->type ? arr->varx.varDecl->type->hint : DYNAMIC;
+						
+						TypeHint* type = CreateTypeHint(newHint);
+						arr->varx.varDecl->type = type;						
+						type->subType = inf;
+					}
+					else if(arr->varx.varDecl->type->subType)
+					{
+						if(!CompareTypes(arr->varx.varDecl->type->subType, inf))
+							Warn("Assigning a value of type '%s' to an index of a type '%s'\n", HintString(arr->varx.varDecl->type));
+					}
+				}
 			}
 		}
 	}
-	
+}
+
+Expr* ParseExpr(FILE* in)
+{
+	Expr* unary = ParseUnary(in);
+	Expr* exp = ParseBinRhs(in, 0, unary);
+	NarrowTypes(exp);
 	return exp;
 }
 
@@ -2314,6 +2438,17 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'len' only takes 1 argument\n");
 		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_LENGTH);
+		return 1;
+	}
+	else if(strcmp(name, "typename") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'typename' only takes 1 argument\n");
+		
+		const TypeHint* type = InferTypeFromExpr(exp->callx.args[0]);
+		AppendCode(OP_PUSH_STRING);
+		AppendInt(RegisterString(HintString(type))->index);
+		
 		return 1;
 	}
 	else if(strcmp(name, "write") == 0)

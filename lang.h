@@ -22,6 +22,9 @@ typedef struct _TypeHint
 {
 	struct _TypeHint* next;
 	HintType hint;
+	
+	// for indexable values
+	const struct _TypeHint* subType;
 } TypeHint;
 
 typedef enum
