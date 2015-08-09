@@ -49,8 +49,6 @@ Word* Code = NULL;
 int CodeCapacity = 0;
 int CodeLength = 0;
 
-char TypeHinting = 0;
-
 struct
 {
 	int* lineNumbers;
@@ -387,6 +385,9 @@ FuncDecl* RegisterExtern(const char* name)
 	decl->hasEllipsis = 0;
 	decl->hasReturn = -1;
 	
+	decl->returnType = NULL;
+	decl->argTypes = NULL;
+	
 	return decl;
 }
 
@@ -439,6 +440,9 @@ FuncDecl* RegisterExternAs(const char* name, const char* alias)
 	decl->pc = -1;
 	decl->hasEllipsis = 0;
 	
+	decl->returnType = NULL;
+	decl->argTypes = NULL;
+	
 	return decl;
 }
 
@@ -471,8 +475,7 @@ FuncDecl* DeclareFunction(const char* name)
 	}
 	
 	decl->argTypes = NULL;
-	decl->returnType.hint = UNKNOWN;
-	decl->returnType.next = NULL;
+	decl->returnType = NULL;
 	
 	decl->isAliased = 0;
 	decl->isExtern = 0;
@@ -546,8 +549,7 @@ VarDecl* RegisterVariable(const char* name)
 	
 	decl->scope = VarStackDepth;
 	
-	decl->type.next = NULL;
-	decl->type.hint = UNKNOWN;
+	decl->type = NULL;
 	
 	return decl;
 }
@@ -1013,15 +1015,212 @@ Expr* ParseIf(FILE* in)
 	return exp;
 }
 
-HintType GetHintTypeFromString(const char* n)
+const char* HintTypeStrings[] = {
+	"number",
+	"string",
+	"array",
+	"dict",
+	"function",
+	"native",
+	"void",
+	"dynamic"
+};
+
+const TypeHint NumberHint = { NULL, NUMBER };
+const TypeHint StringHint = { NULL, STRING };
+const TypeHint ArrayHint = { NULL, ARRAY };
+const TypeHint DictHint = { NULL, DICT };
+const TypeHint FunctionHint = { NULL, FUNC };
+const TypeHint NativeHint = { NULL, NATIVE };
+const TypeHint VoidHint = { NULL, VOID };
+const TypeHint DynamicHint = { NULL, DYNAMIC };
+
+const char* HintString(const TypeHint* type)
 {
-	if(strcmp(n, "number") == 0) hint = NUMBER;
-	else if(strcmp(n, "string") == 0) hint = STRING;
-	else if(strcmp(n, "array") == 0) hint = ARRAY;
-	else if(strcmp(n, "dict") == 0) hint = DICT;
-	else if(strcmp(n, "func") == 0) hint = FUNC;
-	else if(strcmp(n, "native") == 0) hint = NATIVE;
+	if(type) return HintTypeStrings[type->hint];
+	return "unknown";
+}
+
+char CompareTypes(const TypeHint* a, const TypeHint* b)
+{
+	if(!a || !b) return 1;
+	
+	if(a->hint == DYNAMIC || b->hint == DYNAMIC) return 1;
+	return a->hint == b->hint;
+}
+
+const TypeHint* GetTypeHintFromString(const char* n)
+{
+	if(strcmp(n, "number") == 0) return &NumberHint;
+	else if(strcmp(n, "string") == 0) return &StringHint;
+	else if(strcmp(n, "array") == 0) return &ArrayHint;
+	else if(strcmp(n, "dict") == 0) return &DictHint;
+	else if(strcmp(n, "function") == 0) return &FunctionHint;
+	else if(strcmp(n, "native") == 0) return &NativeHint;
+	else if(strcmp(n, "dynamic") == 0) return &DynamicHint;
+	else if(strcmp(n, "void") == 0) return &VoidHint;
 	else ErrorExit("Invalid type hint '%s'\n", Lexeme);
+	
+	return NULL;
+}
+
+TypeHint* CreateTypeHint(HintType hint)
+{
+	TypeHint* type = malloc(sizeof(TypeHint));
+	assert(type);
+	type->hint = hint;
+	type->next = NULL;
+
+	return type;
+}
+
+TypeHint* ParseTypeHint(FILE* in)
+{
+	// multi-type hint is bad
+	/*if(CurTok == '(')
+	{
+		GetNextToken(in);
+		
+		TypeHint* types = NULL;
+		TypeHint* currentType = NULL;
+		
+		while(CurTok != ')')
+		{
+			if(CurTok != TOK_IDENT)
+				ErrorExit("Expected identifier in type declaration\n");
+			
+			TypeHint* type = CreateTypeHint(GetTypeHintFromString(Lexeme)->hint);
+			
+			if(!types)
+			{
+				types = type;
+				currentType = type;
+			}
+			else
+			{
+				currentType->next = type;
+				currentType = type;
+			}
+			
+			GetNextToken(in);
+			
+			if(CurTok == ',') GetNextToken(in);
+			else if(CurTok != ')') ErrorExit("Expected ')' or ',' in type declaration list\n");
+		}
+		
+		GetNextToken(in);
+		return types;
+	}
+	else 
+	*/
+	if(CurTok == TOK_IDENT)
+	{
+		TypeHint* type = CreateTypeHint(GetTypeHintFromString(Lexeme)->hint);
+		GetNextToken(in);
+		return type;
+	}
+	else
+		ErrorExit("Expected identifier for type declaration\n");
+	
+	return NULL;
+}
+
+const TypeHint* InferTypeFromExpr(Expr* exp)
+{
+	switch(exp->type)
+	{
+		case EXP_NULL: return &DynamicHint; break;
+		
+		case EXP_NUMBER: return &NumberHint; break;
+		
+		case EXP_STRING: return &StringHint; break;
+		
+		case EXP_IDENT: 
+		{
+			if(!exp->varx.varDecl)
+				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
+			
+			if(exp->varx.varDecl)
+				return exp->varx.varDecl->type;
+			else
+			{
+				FuncDecl* decl = ReferenceFunction(exp->varx.name);
+				
+				if(decl)
+					return &FunctionHint;
+				else
+					return NULL;
+			}
+		} break;
+		
+		case EXP_CALL:
+		{
+			if(exp->callx.func->type == EXP_IDENT)
+			{
+				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+				if(decl)
+					return decl->returnType;
+				else
+					return NULL;
+			}
+		} break;
+		
+		case EXP_VAR:
+		{
+			return exp->varx.varDecl->type;
+		} break;
+		
+		case EXP_BIN:
+		{
+			const TypeHint* a = InferTypeFromExpr(exp->binx.lhs);
+			const TypeHint* b = InferTypeFromExpr(exp->binx.rhs);
+			
+			if(exp->binx.op != '=')
+			{
+				if(CompareTypes(a, b))
+					return &DynamicHint;
+				else
+					return NULL;
+			}
+			else
+				return &VoidHint;
+		} break;
+		
+		case EXP_PAREN:
+		{
+			return InferTypeFromExpr(exp->parenExpr);
+		} break;
+		
+		case EXP_DICT_LITERAL:
+		{
+			return &DictHint;
+		} break;
+		
+		case EXP_ARRAY_LITERAL:
+		{
+			return &ArrayHint;
+		} break;
+		
+		case EXP_ARRAY_INDEX:
+		{
+			return &DynamicHint;
+		} break;
+		
+		case EXP_DOT:
+		{
+			return &DynamicHint;
+		} break;
+		
+		case EXP_LAMBDA:
+		{
+			return exp->lamx.decl->returnType;
+		} break;
+		
+		default:
+			break;
+	}
+	
+	return NULL;
 }
 
 Expr* ParseFactor(FILE* in)
@@ -1233,12 +1432,7 @@ Expr* ParseFactor(FILE* in)
 			if(CurTok == ':')
 			{
 				GetNextToken(in);
-				
-				if(CurTok != TOK_IDENT)
-					ErrorExit("Expected identifier after ':'\n");
-				
-				exp->varx.varDecl->type.hint = GetHintTypeFromString(Lexeme);
-				GetNextToken(in);
+				exp->varx.varDecl->type = ParseTypeHint(in);
 			}
 			return exp;
 		} break;
@@ -1380,12 +1574,7 @@ Expr* ParseFactor(FILE* in)
 				if(CurTok == ':')
 				{
 					GetNextToken(in);
-					if(CurTok != TOK_IDENT)
-						ErrorExit("Expected identifier after ':'\n");
-					
-					TypeHint* type = malloc(sizeof(TypeHint));
-					assert(type);
-					type->hint = GetHintTypeFromString(Lexeme);
+					TypeHint* type = ParseTypeHint(in);
 						
 					if(!argTypes)
 					{
@@ -1398,7 +1587,7 @@ Expr* ParseFactor(FILE* in)
 						argTypesCurrent = type;
 					}
 					
-					argDecl->type.hint = type->hint;
+					argDecl->type = type;
 				}
 			
 				if(CurTok == ',') GetNextToken(in);
@@ -1411,11 +1600,7 @@ Expr* ParseFactor(FILE* in)
 			if(CurTok == ':')
 			{
 				GetNextToken(in);
-				if(CurTok != TOK_IDENT)
-					ErrorExit("Expected identifier after ':'\n");
-				
-				decl->returnType.hint = GetHintTypeFromString(Lexeme);
-				GetNextToken(in);
+				decl->returnType = ParseTypeHint(in);
 			}
 			
 			Expr* exprHead = NULL;
@@ -1440,9 +1625,8 @@ Expr* ParseFactor(FILE* in)
 			
 			if(decl->hasReturn == -1)
 			{	
-				if(decl->returnType.hint != VOID)
-					decl->hasReturn = 0;
-				else
+				decl->hasReturn = 0;
+				if(!CompareTypes(decl->returnType, &VoidHint))
 					Warn("Reached end of non-void hinted function '%s' without a value returned\n", decl->name);
 			}
 			exp->funcx.decl = decl;
@@ -1464,18 +1648,26 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 				if(CurTok != ';')
 				{
-					if(CurFunc->returnType.hint == VOID)
-						Warn("Attempting to return a value in a function which was hinted to return nothing\n");
+					if(CurFunc->returnType && CurFunc->returnType->hint == VOID)
+						Warn("Attempting to return a value in a function which was hinted to return %s\n", HintString(CurFunc->returnType));
 						
 					if(CurFunc->hasReturn == -1)
 						CurFunc->hasReturn = 1;
 					else if(!CurFunc->hasReturn)
 						ErrorExit("Attempted to return value from function when previous return statement in the same function returned no value\n");
 					exp->retExpr = ParseExpr(in);
+					
+					const TypeHint* inferredType = InferTypeFromExpr(exp->retExpr);
+					if(!CompareTypes(inferredType, CurFunc->returnType))
+						Warn("Return value type '%s' does not match with function return value type '%s'\n", HintString(inferredType), HintString(CurFunc->returnType));
+				
+					if(!CurFunc->returnType)
+						CurFunc->returnType = InferTypeFromExpr(exp->retExpr);
+					
 					return exp;
 				}
-				
-				if(CurFunc->returnType.hint != VOID)
+								
+				if(!CompareTypes(CurFunc->returnType, &VoidHint))
 					Warn("Attempting to return without a value in a function which was hinted to return a value\n");
 				
 				if(CurFunc->hasReturn == -1)
@@ -1502,8 +1694,40 @@ Expr* ParseFactor(FILE* in)
 			if(CurTok != TOK_IDENT) ErrorExit("Expected identifier after 'extern'\n");
 			char name[MAX_ID_NAME_LENGTH];
 			strcpy(name, Lexeme);
-			
+		
+			TypeHint* argTypes = NULL;
+
 			GetNextToken(in);
+			if(CurTok == '(')
+			{
+				GetNextToken(in);
+				
+				TypeHint* argTypesCurrent = NULL;
+				
+				while(CurTok != ')')
+				{
+					if(CurTok != TOK_IDENT)
+						ErrorExit("Expected identifier in extern type list\n");
+					
+					TypeHint* type = ParseTypeHint(in);
+					
+					if(!argTypes)
+					{
+						argTypes = type;
+						argTypesCurrent = type;
+					}
+					else
+					{
+						argTypesCurrent->next = type;
+						argTypesCurrent = type;
+					}
+					
+					if(CurTok == ',') GetNextToken(in);
+					else if(CurTok != ')') ErrorExit("Expected ')' or ',' in extern argument type list\n");
+				}
+				GetNextToken(in);
+			}
+			
 			if(CurTok == TOK_AS)
 			{
 				// TODO: GET ALIASING WORKING WHY ISN'T IT WORKING
@@ -1519,7 +1743,19 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 			}
 			else
+			{	
 				exp->extDecl = RegisterExtern(name);
+				if(CurTok == ':')
+				{
+					GetNextToken(in);
+					if(CurTok != TOK_IDENT)
+						ErrorExit("Expected identifier after ':'\n");
+					
+					exp->extDecl->returnType = ParseTypeHint(in);
+				}
+				
+				exp->extDecl->argTypes = argTypes;
+			}
 			
 			return exp;
 		} break;
@@ -1573,7 +1809,7 @@ Expr* ParseFactor(FILE* in)
 				}
 				
 				if(CurTok != TOK_IDENT)
-					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else (%c, %i)\n", name, CurTok, CurTok);
+					ErrorExit("Expected identifier/ellipsis in argument list for lambda but received something else (%c, %i)\n", CurTok, CurTok);
 				
 				VarDecl* argDecl = RegisterArgument(Lexeme);
 				
@@ -1582,12 +1818,8 @@ Expr* ParseFactor(FILE* in)
 				if(CurTok == ':')
 				{
 					GetNextToken(in);
-					if(CurTok != TOK_IDENT)
-						ErrorExit("Expected identifier after ':'\n");
 					
-					TypeHint* type = malloc(sizeof(TypeHint));
-					assert(type);
-					type->hint = GetHintTypeFromString(Lexeme);
+					TypeHint* type = ParseTypeHint(in);
 						
 					if(!argTypes)
 					{
@@ -1600,11 +1832,11 @@ Expr* ParseFactor(FILE* in)
 						argTypesCurrent = type;
 					}
 					
-					argDecl->type.hint = type->hint;
+					argDecl->type = type;
 				}
 			
 				if(CurTok == ',') GetNextToken(in);
-				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
+				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in lambda argument list\n");
 			}
 			decl->argTypes = argTypes;
 			
@@ -1613,11 +1845,7 @@ Expr* ParseFactor(FILE* in)
 			if(CurTok == ':')
 			{
 				GetNextToken(in);
-				if(CurTok != TOK_IDENT)
-					ErrorExit("Expected identifier after ':'\n");
-				
-				decl->returnType.hint = GetHintTypeFromString(Lexeme);
-				GetNextToken(in);
+				decl->returnType = ParseTypeHint(in);
 			}
 			
 			Expr* exprHead = NULL;
@@ -1642,7 +1870,11 @@ Expr* ParseFactor(FILE* in)
 			CurFunc = prevDecl;
 			
 			if(decl->hasReturn == -1)
+			{	
 				decl->hasReturn = 0;
+				if(!CompareTypes(decl->returnType, &VoidHint))
+					Warn("Reached end of non-void hinted lambda without a value returned\n");
+			}
 			
 			exp->lamx.decl = decl;
 			exp->lamx.bodyHead = exprHead;
@@ -1677,6 +1909,12 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			Expr* exp = CreateExpr(EXP_ARRAY_INDEX);
 			exp->arrayIndex.arrExpr = pre;
 			exp->arrayIndex.indexExpr = ParseExpr(in);
+			
+			const TypeHint* arrType = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			
+			if(!CompareTypes(arrType, &ArrayHint) && !CompareTypes(arrType, &StringHint) && !CompareTypes(arrType, &DictHint))
+				Warn("Attempted to index a '%s' (non-indexable type)\n", HintString(arrType));
+				
 			if(CurTok != ']')
 				ErrorExit("Expected ']' after previous '['\n");
 			GetNextToken(in);
@@ -1694,6 +1932,11 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			Expr* exp = CreateExpr(EXP_DOT);
 			strcpy(exp->dotx.name, Lexeme);
 			exp->dotx.dict = pre;
+			
+			const TypeHint* dictType = InferTypeFromExpr(exp->dotx.dict);
+			
+			if(!CompareTypes(dictType, &DictHint))
+				Warn("Value being indexed using dot ('.') operator does not denote a dictionary (instead, it evaluates to a '%s')\n", HintString(dictType));
 			
 			GetNextToken(in);
 			if(!IsPostOperator()) return exp;
@@ -1716,6 +1959,11 @@ Expr* ParsePost(FILE* in, Expr* pre)
 				if(CurTok == ',') GetNextToken(in);
 			}
 			
+			const TypeHint* funcType = InferTypeFromExpr(exp->callx.func);
+			
+			if(!CompareTypes(funcType, &FunctionHint) && !CompareTypes(funcType, &DictHint))
+				Warn("Value being called does not denote a callable value (instead, it evaluates to a '%s')\n", HintString(funcType));
+				
 			GetNextToken(in);
 			
 			if(!IsPostOperator()) return exp;
@@ -1732,6 +1980,11 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			Expr* exp = CreateExpr(EXP_COLON);
 			strcpy(exp->colonx.name, Lexeme);
 			exp->colonx.dict = pre;
+			
+			const TypeHint* dictType = InferTypeFromExpr(exp->dotx.dict);
+			
+			if(!CompareTypes(dictType, &DictHint))
+				Warn("Value being index using colon (':') operator does not denote a dictionary (instead, it evaluates to a '%s')\n", HintString(dictType));
 			
 			GetNextToken(in);
 			if(!IsPostOperator()) return exp;
@@ -1757,6 +2010,11 @@ Expr* ParseUnary(FILE* in)
 			exp->unaryx.op = op;
 			exp->unaryx.expr = ParseExpr(in);
 			
+			const TypeHint* expType = InferTypeFromExpr(exp->unaryx.expr);
+			
+			if(!CompareTypes(expType, &NumberHint))
+				Warn("Applying unary operator to non-numerical value of type '%s'\n", HintString(expType));
+				
 			return exp;
 		} break;
 		
@@ -1818,7 +2076,29 @@ Expr* ParseBinRhs(FILE* in, int exprPrec, Expr* lhs)
 Expr* ParseExpr(FILE* in)
 {
 	Expr* unary = ParseUnary(in);
-	return ParseBinRhs(in, 0, unary);
+	Expr* exp = ParseBinRhs(in, 0, unary);
+
+	if(exp->type == EXP_BIN && exp->binx.op == '=')
+	{
+		if(exp->binx.lhs->type == EXP_VAR)
+		{
+			if(!exp->binx.lhs->varx.varDecl->type)
+				exp->binx.lhs->varx.varDecl->type = InferTypeFromExpr(exp->binx.rhs);
+		}
+		else if(exp->binx.lhs->type == EXP_IDENT)
+		{
+			if(exp->binx.lhs->varx.varDecl)
+			{
+				const TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);
+				if(!exp->binx.lhs->varx.varDecl->type)
+					exp->binx.lhs->varx.varDecl->type = inf;
+				else if(!CompareTypes(inf, exp->binx.lhs->varx.varDecl->type))
+					Warn("Assigning a '%s' to a variable of type '%s'\n", HintString(inf), HintString(exp->binx.lhs->varx.varDecl->type));
+			}
+		}
+	}
+	
+	return exp;
 }
 
 void DebugExprList(Expr* head);
@@ -2387,33 +2667,6 @@ void ResolveSymbols(Expr* exp)
 	}*/
 }
 
-HintType InferTypeFromExpr(Expr* exp)
-{
-	switch(exp->type)
-	{
-		case EXP_NUMBER: return NUMBER;
-		case EXP_STRING: return STRING;
-		case EXP_IDENT: 
-		{
-			if(!exp->varx.varDecl)
-				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
-			
-			if(exp->varx.varDecl)
-				return exp->varx.varDecl->type.hint;
-			else
-			{
-				FuncDecl* decl = ReferenceFunction(exp->varx.name);
-				
-				if(decl)
-					return decl->returnType.hint;
-				else
-					return UNKNOWN;
-			}
-		} break;
-		case EXP_
-	}
-}
-
 void ResolveListSymbols(Expr* head)
 {
 	Expr* node = head;
@@ -2474,6 +2727,18 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
 		if(decl)
 		{
+			const TypeHint* node = decl->argTypes;
+			
+			for(int i = 0; node && i < exp->callx.numArgs; ++i)
+			{
+				const TypeHint* inf = InferTypeFromExpr(exp->callx.args[i]);
+				
+				if(!CompareTypes(inf, node))
+					WarnE(exp->callx.args[i], "Argument %i's type '%s' does not match the expected type '%s'\n", i + 1, HintString(inf), HintString(node));
+			
+				node = node->next;
+			}
+			
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
 				
@@ -3050,7 +3315,7 @@ void CompileExpr(Expr* exp)
 				CompileValueExpr(exp->binx.rhs);
 								
 				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
-				{
+				{	
 					if(!exp->binx.lhs->varx.varDecl)
 					{
 						exp->binx.lhs->varx.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
@@ -3632,8 +3897,6 @@ int main(int argc, char* argv[])
 			// alright, deprecating binary file linking for now
 			printf("cannot link binary files...\n");
 		}
-		else if(strcmp(argv[i], "-ty") == 0)
-			TypeHinting = 1;
 		else
 		{
 			FILE* in = fopen(argv[i], "r");

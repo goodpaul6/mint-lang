@@ -22,7 +22,7 @@ static char* ObjectTypeNames[] =
 	"string",
 	"array",
 	"native",
-	"func",
+	"function",
 	"dict"
 };
 

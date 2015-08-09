@@ -15,7 +15,7 @@ typedef enum
 	FUNC,
 	NATIVE,
 	VOID,
-	UNKNOWN
+	DYNAMIC
 } HintType;
 
 typedef struct _TypeHint
@@ -54,7 +54,7 @@ typedef struct _VarDecl
 	char name[MAX_ID_NAME_LENGTH];
 	int index;
 	
-	TypeHint type;
+	const TypeHint* type;
 } VarDecl;
 
 typedef struct _Upvalue
@@ -78,8 +78,8 @@ typedef struct _FuncDecl
 	Word numArgs;
 	int pc;
 	
-	TypeHint* argTypes;
-	TypeHint returnType;
+	const TypeHint* argTypes;
+	const TypeHint* returnType;
 	
 	char hasEllipsis;
 	
