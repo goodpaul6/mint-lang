@@ -33,13 +33,7 @@
 #include <assert.h>
 #include <stdarg.h>
 
-#include "vm.h"
-
-#define MAX_LEX_LENGTH 256
-#define MAX_ID_NAME_LENGTH 64
-#define MAX_SCOPES 32
-#define MAX_ARGS 64
-
+#include "lang.h"
 int LineNumber = 0;
 const char* FileName = NULL;
 
@@ -54,6 +48,8 @@ int EntryPoint = 0;
 Word* Code = NULL;
 int CodeCapacity = 0;
 int CodeLength = 0;
+
+char TypeHinting = 0;
 
 struct
 {
@@ -73,6 +69,16 @@ void ErrorExit(const char* format, ...)
 	va_end(args);
 	
 	exit(1);
+}
+
+void Warn(const char* format, ...)
+{
+	fprintf(stderr, "Warning (%s:%i): ", FileName, LineNumber);
+	
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
 }
 
 void _AppendCode(Word code, int line, int fileNameIndex)
@@ -137,55 +143,6 @@ void EmplaceInt(int loc, int value)
 		Code[loc + i] = *code++;
 }
 
-typedef enum
-{
-	CONST_NUM,
-	CONST_STR,
-} ConstType;
-
-typedef struct _ConstDecl
-{
-	struct _ConstDecl* next;
-	ConstType type;
-	int index;
-	
-	union
-	{
-		double number;
-		char* string;
-	};
-} ConstDecl;
-
-struct _Expr;
-typedef struct _FuncDecl
-{	
-	struct _FuncDecl* next;
-	
-	char inlined;
-	char isAliased;
-	char isExtern;
-	
-	char alias[MAX_ID_NAME_LENGTH];
-	char name[MAX_ID_NAME_LENGTH];
-	int index;
-	int numLocals;
-	Word numArgs;
-	int pc;
-	
-	char hasEllipsis;
-	char hasReturn;
-} FuncDecl;
-
-typedef struct _VarDecl
-{
-	struct _VarDecl* next;
-	
-	char isGlobal;
-	char name[MAX_ID_NAME_LENGTH];
-	int index;
-	
-	int type;
-} VarDecl;
 
 ConstDecl* Constants = NULL;
 ConstDecl* ConstantsCurrent = NULL;
@@ -197,8 +154,6 @@ FuncDecl* FunctionsCurrent = NULL;
 
 VarDecl* VarStack[MAX_SCOPES];
 int VarStackDepth = 0;
-
-VarDecl* InlineResultVar = NULL;
 
 /* BINARY FORMAT:
 entry point as integer
@@ -515,6 +470,10 @@ FuncDecl* DeclareFunction(const char* name)
 		FunctionsCurrent = decl;
 	}
 	
+	decl->argTypes = NULL;
+	decl->returnType.hint = UNKNOWN;
+	decl->returnType.next = NULL;
+	
 	decl->isAliased = 0;
 	decl->isExtern = 0;
 	decl->hasEllipsis = 0;
@@ -525,7 +484,13 @@ FuncDecl* DeclareFunction(const char* name)
 	decl->numLocals = 0;
 	decl->pc = -1;
 	
-	decl->hasReturn = 0;
+	decl->hasReturn = -1;
+
+	decl->isLambda = 0;
+	decl->prevDecl = NULL;
+	decl->upvalues = NULL;
+	decl->envDecl = NULL;
+	decl->scope = VarStackDepth;
 	
 	return decl;
 }
@@ -569,7 +534,7 @@ VarDecl* RegisterVariable(const char* name)
 	VarStack[VarStackDepth] = decl;
 	
 	decl->isGlobal = 0;
-	
+		
 	strcpy(decl->name, name);
 	if(!CurFunc)
 	{	
@@ -579,12 +544,15 @@ VarDecl* RegisterVariable(const char* name)
 	else
 		decl->index = CurFunc->numLocals++;
 	
-	decl->type = -1;
+	decl->scope = VarStackDepth;
+	
+	decl->type.next = NULL;
+	decl->type.hint = UNKNOWN;
 	
 	return decl;
 }
 
-void RegisterArgument(const char* name)
+VarDecl* RegisterArgument(const char* name)
 {
 	if(!CurFunc)
 		ErrorExit("(INTERNAL) Must be inside function when registering arguments\n");
@@ -592,6 +560,8 @@ void RegisterArgument(const char* name)
 	VarDecl* decl = RegisterVariable(name);
 	--CurFunc->numLocals;
 	decl->index = -(++CurFunc->numArgs);
+	
+	return decl;
 }
 
 VarDecl* ReferenceVariable(const char* name)
@@ -608,48 +578,36 @@ VarDecl* ReferenceVariable(const char* name)
 	return NULL;
 }
 
-enum
-{
-	TOK_IDENT = -1,
-	TOK_NUMBER = -2,
-	TOK_EOF = -3,
-	TOK_VAR = -4,
-	TOK_WHILE = -5,
-	TOK_END = -6,
-	TOK_FUNC = -7,
-	TOK_IF = -8,
-	TOK_RETURN = -9,
-	TOK_EXTERN = -10,
-	TOK_STRING = -11,
-	TOK_EQUALS = -12,
-	TOK_LTE = -13,
-	TOK_GTE = -14,
-	TOK_NOTEQUAL = -15,
-	TOK_HEXNUM = -16,
-	TOK_FOR = -17,
-	TOK_ELSE = -18,
-	TOK_ELIF = -19,
-	TOK_AND = -20,
-	TOK_OR = -21,
-	TOK_LSHIFT = -22,
-	TOK_RSHIFT = -23,
-	TOK_NULL = -24,
-	TOK_INLINE = -25,
-	TOK_LAMBDA = -26,
-	TOK_CADD = -27,
-	TOK_CSUB = -28,
-	TOK_CMUL = -29,
-	TOK_CDIV = -30,
-	TOK_CONTINUE = -31,
-	TOK_BREAK = -32,
-	TOK_ELLIPSIS = -33,
-	TOK_NEW = -34,
-	TOK_AS = -35
-};
-
-char Lexeme[MAX_LEX_LENGTH];
+size_t LexemeCapacity = 0;
+size_t LexemeLength = 0;
+char* Lexeme = NULL;
 int CurTok = 0;
 char ResetLex = 0;
+
+void AppendLexChar(int c)
+{
+	if(!LexemeCapacity)
+	{
+		LexemeCapacity = 8;
+		Lexeme = malloc(LexemeCapacity);
+		assert(Lexeme);
+	}
+	
+	if(LexemeLength + 1 >= LexemeCapacity)
+	{
+		LexemeCapacity *= 2;
+		char* newLex = realloc(Lexeme, LexemeCapacity);
+		assert(newLex);
+		Lexeme = newLex;
+	}
+	
+	Lexeme[LexemeLength++] = c;
+}
+
+void ClearLexeme()
+{
+	LexemeLength = 0;
+}
 
 int GetToken(FILE* in)
 {
@@ -659,6 +617,7 @@ int GetToken(FILE* in)
 	{
 		last = ' ';
 		ResetLex = 0;
+		ClearLexeme();
 	}
 	
 	while(isspace(last))
@@ -669,13 +628,13 @@ int GetToken(FILE* in)
 	
 	if(isalpha(last) || last == '_')
 	{
-		int i = 0;
+		ClearLexeme();
 		while(isalnum(last) || last == '_')
 		{
-			Lexeme[i++] = last;
+			AppendLexChar(last);
 			last = getc(in);
 		}
-		Lexeme[i] = '\0';
+		AppendLexChar('\0');
 		
 		if(strcmp(Lexeme, "var") == 0) return TOK_VAR;
 		if(strcmp(Lexeme, "while") == 0) return TOK_WHILE;
@@ -684,6 +643,8 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "if") == 0) return TOK_IF;
 		if(strcmp(Lexeme, "return") == 0) return TOK_RETURN;
 		if(strcmp(Lexeme, "extern") == 0) return TOK_EXTERN;
+		
+		// NOTE: these assume that the lexeme capacity is greater than or equal to 2
 		if(strcmp(Lexeme, "true") == 0)
 		{
 			Lexeme[0] = '1';
@@ -696,6 +657,7 @@ int GetToken(FILE* in)
 			Lexeme[1] = '\0';
 			return TOK_NUMBER;
 		}
+		
 		if(strcmp(Lexeme, "for") == 0) return TOK_FOR;
 		if(strcmp(Lexeme, "else") == 0) return TOK_ELSE;
 		if(strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
@@ -712,13 +674,13 @@ int GetToken(FILE* in)
 		
 	if(isdigit(last))
 	{	
-		int i = 0;
+		ClearLexeme();
 		while(isdigit(last) || last == '.')
 		{
-			Lexeme[i++] = last;
+			AppendLexChar(last);
 			last = getc(in);
 		}
-		Lexeme[i] = '\0';
+		AppendLexChar('\0');
 		
 		return TOK_NUMBER;
 	}
@@ -726,20 +688,20 @@ int GetToken(FILE* in)
 	if(last == '$')
 	{
 		last = getc(in);
-		int i = 0;
+		ClearLexeme();
 		while(isxdigit(last))
 		{
-			Lexeme[i++] = last;
+			AppendLexChar(last);
 			last = getc(in);
 		}
-		Lexeme[i] = '\0';
+		AppendLexChar('\0');
 		
 		return TOK_HEXNUM;
 	}
 	
 	if(last == '"')
 	{
-		int i = 0;
+		ClearLexeme();
 		last = getc(in);
 	
 		while(last != '"')
@@ -758,10 +720,10 @@ int GetToken(FILE* in)
 				}
 			}
 			
-			Lexeme[i++] = last;
+			AppendLexChar(last);
 			last = getc(in);
 		}
-		Lexeme[i] = '\0';
+		AppendLexChar('\0');
 		last = getc(in);
 		
 		return TOK_STRING;
@@ -770,7 +732,7 @@ int GetToken(FILE* in)
 	if(last == '\'')
 	{
 		last = getc(in);
-
+		ClearLexeme();
 		if(last == '\\')
 		{
 			last = getc(in);
@@ -784,7 +746,16 @@ int GetToken(FILE* in)
 				case '\\': last = '\\'; break;
 			}
 		}
-
+		
+		// assure minimum capacity to store integer
+		if(LexemeCapacity < 32)
+		{
+			LexemeCapacity = 32;
+			char* newLex = realloc(Lexeme, LexemeCapacity);
+			assert(newLex);
+			Lexeme = newLex;
+		}
+		
 		sprintf(Lexeme, "%i", last);
 		last = getc(in);
 			
@@ -803,7 +774,6 @@ int GetToken(FILE* in)
 			while(last != EOF)
 			{
 				last = getc(in);
-				if(last == '\n' || last == '\r') ++LineNumber;
 				if(last == '~')
 				{
 					last = getc(in);
@@ -816,7 +786,6 @@ int GetToken(FILE* in)
 		{
 			while(last != '\n' && last != '\r' && last != EOF)
 				last = getc(in);
-			++LineNumber;
 		}
 		if(last == EOF) return TOK_EOF;
 		else return GetToken(in);
@@ -900,66 +869,6 @@ int GetToken(FILE* in)
 	return lastChar;
 }
 
-typedef enum
-{
-	EXP_NUMBER,
-	EXP_STRING,
-	EXP_IDENT,
-	EXP_CALL,
-	EXP_VAR,
-	EXP_BIN,
-	EXP_PAREN,
-	EXP_WHILE,
-	EXP_FUNC,
-	EXP_IF,
-	EXP_RETURN,
-	EXP_EXTERN,
-	EXP_ARRAY_LITERAL,
-	EXP_ARRAY_INDEX,
-	EXP_UNARY,
-	EXP_FOR,
-	EXP_DOT,
-	EXP_DICT_LITERAL,
-	EXP_NULL,
-	EXP_CONTINUE,
-	EXP_BREAK,
-	EXP_COLON,
-	EXP_NEW,
-	EXP_LINKED_BINARY_CODE
-} ExprType;
-
-typedef struct _Expr
-{
-	struct _Expr* next;
-	ExprType type;
-	const char* file;
-	int line;
-	FuncDecl* curFunc;
-	
-	union
-	{
-		ConstDecl* constDecl; // NOTE: for both EXP_NUMBER and EXP_STRING
-		struct { VarDecl* varDecl; char name[MAX_ID_NAME_LENGTH]; } varx; // NOTE: for both EXP_IDENT and EXP_VAR
-		struct { struct _Expr* args[MAX_ARGS]; int numArgs; struct _Expr* func; } callx;
-		struct { struct _Expr *lhs, *rhs; int op; } binx;
-		struct _Expr* parenExpr;
-		struct { struct _Expr *cond, *bodyHead; } whilex;
-		struct { FuncDecl* decl; struct _Expr* bodyHead; } funcx;
-		FuncDecl* extDecl;
-		struct { struct _Expr *cond, *bodyHead, *alt; } ifx;
-		struct _Expr* retExpr;
-		struct { struct _Expr* head; int length; } arrayx;
-		struct { struct _Expr* arrExpr; struct _Expr* indexExpr; } arrayIndex;
-		struct { int op; struct _Expr* expr; } unaryx;
-		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
-		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
-		struct { struct _Expr* pairsHead; int length; } dictx;
-		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
-		struct _Expr* newExpr;
-		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
-	};
-} Expr;
-
 void ErrorExitE(Expr* exp, const char* format, ...)
 {
 	fprintf(stderr, "Error (%s:%i): ", exp->file, exp->line);
@@ -972,11 +881,49 @@ void ErrorExitE(Expr* exp, const char* format, ...)
 	exit(1);
 }
 
+void WarnE(Expr* exp, const char* format, ...)
+{
+	fprintf(stderr, "Warning (%s:%i): ", exp->file, exp->line);
+	
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+}
+
 int GetNextToken(FILE* in)
 {
 	CurTok = GetToken(in);
 	return CurTok;
 }
+
+const char* ExprNames[] = {
+	"EXP_NUMBER",
+	"EXP_STRING",
+	"EXP_IDENT",
+	"EXP_CALL",
+	"EXP_VAR",
+	"EXP_BIN",
+	"EXP_PAREN",
+	"EXP_WHILE",
+	"EXP_FUNC",
+	"EXP_IF",
+	"EXP_RETURN",
+	"EXP_EXTERN",
+	"EXP_ARRAY_LITERAL",
+	"EXP_ARRAY_INDEX",
+	"EXP_UNARY",
+	"EXP_FOR",
+	"EXP_DOT",
+	"EXP_DICT_LITERAL",
+	"EXP_NULL",
+	"EXP_CONTINUE",
+	"EXP_BREAK",
+	"EXP_COLON",
+	"EXP_NEW",
+	"EXP_LAMBDA",
+	"EXP_LINKED_BINARY_CODE"
+};
 
 Expr* CreateExpr(ExprType type)
 {
@@ -1064,6 +1011,17 @@ Expr* ParseIf(FILE* in)
 	}
 	
 	return exp;
+}
+
+HintType GetHintTypeFromString(const char* n)
+{
+	if(strcmp(n, "number") == 0) hint = NUMBER;
+	else if(strcmp(n, "string") == 0) hint = STRING;
+	else if(strcmp(n, "array") == 0) hint = ARRAY;
+	else if(strcmp(n, "dict") == 0) hint = DICT;
+	else if(strcmp(n, "func") == 0) hint = FUNC;
+	else if(strcmp(n, "native") == 0) hint = NATIVE;
+	else ErrorExit("Invalid type hint '%s'\n", Lexeme);
 }
 
 Expr* ParseFactor(FILE* in)
@@ -1188,6 +1146,13 @@ Expr* ParseFactor(FILE* in)
 			exp->dictx.pairsHead = exprHead;
 			exp->dictx.length = len;
 			
+			static int nameIndex = 0;
+			static char nameBuf[MAX_ID_NAME_LENGTH];
+			
+			sprintf(nameBuf, "__dl%i__", nameIndex++);
+			
+			exp->dictx.decl = RegisterVariable(nameBuf);
+			
 			return exp;
 		} break;
 		
@@ -1200,6 +1165,52 @@ Expr* ParseFactor(FILE* in)
 			
 			GetNextToken(in);
 			
+			if(CurFunc)
+			{
+				VarDecl* decl = ReferenceVariable(name);
+				if(CurFunc->isLambda)
+				{
+					if(decl && !decl->isGlobal && decl->scope <= CurFunc->scope)
+					{
+						FuncDecl* funcDecl = CurFunc;
+						
+						Expr* dict = CreateExpr(EXP_IDENT);
+						dict->varx.varDecl = funcDecl->envDecl;
+						strcpy(dict->varx.name, funcDecl->envDecl->name);
+						
+						// the lambda which should have this variable as an upvalue
+						FuncDecl* highestDecl = funcDecl;
+						
+						Expr* upvalueAcc = CreateExpr(EXP_DOT);
+						
+						funcDecl = funcDecl->prevDecl;
+						
+						while(funcDecl && funcDecl->isLambda && decl->scope <= funcDecl->scope)
+						{	
+							Expr* acc = CreateExpr(EXP_DOT);
+							acc->dotx.dict = dict;
+							strcpy(acc->dotx.name, funcDecl->envDecl->name);
+							dict = acc;
+							
+							highestDecl = funcDecl;
+							
+							funcDecl = funcDecl->prevDecl;
+						}
+						
+						Upvalue* upvalue = malloc(sizeof(Upvalue));
+						upvalue->decl = decl;
+						upvalue->next = highestDecl->upvalues;
+						highestDecl->upvalues = upvalue;
+						
+						upvalueAcc->dotx.dict = dict;
+						strcpy(upvalueAcc->dotx.name, decl->name);
+					
+						return upvalueAcc;
+					}
+				}
+				else if(decl && !decl->isGlobal && decl->scope <= CurFunc->scope)
+					ErrorExit("Attempted to access upvalue '%s' from non-capturing function '%s'\n", name, CurFunc->name);
+			}
 			exp->varx.varDecl = ReferenceVariable(name);
 			strcpy(exp->varx.name, name);
 			return exp;		
@@ -1213,12 +1224,22 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok != TOK_IDENT)
 				ErrorExit("Expected ident after 'var' but received something else\n");
-						
+			
 			exp->varx.varDecl = RegisterVariable(Lexeme);
 			strcpy(exp->varx.name, Lexeme);
 			
 			GetNextToken(in);
 			
+			if(CurTok == ':')
+			{
+				GetNextToken(in);
+				
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier after ':'\n");
+				
+				exp->varx.varDecl->type.hint = GetHintTypeFromString(Lexeme);
+				GetNextToken(in);
+			}
 			return exp;
 		} break;
 		
@@ -1330,10 +1351,13 @@ Expr* ParseFactor(FILE* in)
 				ErrorExit("Expected '(' after 'func' %s\n", name);
 			GetNextToken(in);
 			
+			FuncDecl* prevDecl = CurFunc;
 			FuncDecl* decl = EnterFunction(name);
 			
-			char args[MAX_ARGS][MAX_ID_NAME_LENGTH];
-			int numArgs = 0;
+			PushScope();
+			
+			TypeHint* argTypes = NULL;
+			TypeHint* argTypesCurrent = NULL;
 			
 			while(CurTok != ')')
 			{	
@@ -1349,18 +1373,50 @@ Expr* ParseFactor(FILE* in)
 				if(CurTok != TOK_IDENT)
 					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else (%c, %i)\n", name, CurTok, CurTok);
 				
-				strcpy(args[numArgs++], Lexeme);
+				VarDecl* argDecl = RegisterArgument(Lexeme);
+				
 				GetNextToken(in);
+				
+				if(CurTok == ':')
+				{
+					GetNextToken(in);
+					if(CurTok != TOK_IDENT)
+						ErrorExit("Expected identifier after ':'\n");
+					
+					TypeHint* type = malloc(sizeof(TypeHint));
+					assert(type);
+					type->hint = GetHintTypeFromString(Lexeme);
+						
+					if(!argTypes)
+					{
+						argTypes = type;
+						argTypesCurrent = type;
+					}
+					else
+					{
+						argTypesCurrent->next = type;
+						argTypesCurrent = type;
+					}
+					
+					argDecl->type.hint = type->hint;
+				}
 			
 				if(CurTok == ',') GetNextToken(in);
 				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
 			}
+			decl->argTypes = argTypes;
+			
 			GetNextToken(in);
 			
-			PushScope();
-			
-			for(int i = 0; i < numArgs; ++i)
-				RegisterArgument(args[i]);
+			if(CurTok == ':')
+			{
+				GetNextToken(in);
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier after ':'\n");
+				
+				decl->returnType.hint = GetHintTypeFromString(Lexeme);
+				GetNextToken(in);
+			}
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
@@ -1379,9 +1435,16 @@ Expr* ParseFactor(FILE* in)
 				}
 			}
 			GetNextToken(in);
-			ExitFunction();
 			PopScope();
+			CurFunc = prevDecl;
 			
+			if(decl->hasReturn == -1)
+			{	
+				if(decl->returnType.hint != VOID)
+					decl->hasReturn = 0;
+				else
+					Warn("Reached end of non-void hinted function '%s' without a value returned\n", decl->name);
+			}
 			exp->funcx.decl = decl;
 			exp->funcx.bodyHead = exprHead;
 			
@@ -1396,16 +1459,29 @@ Expr* ParseFactor(FILE* in)
 		case TOK_RETURN:
 		{
 			if(CurFunc)
-			{
-				CurFunc->hasReturn = 1;
-				
+			{				
 				Expr* exp = CreateExpr(EXP_RETURN);
 				GetNextToken(in);
 				if(CurTok != ';')
 				{
+					if(CurFunc->returnType.hint == VOID)
+						Warn("Attempting to return a value in a function which was hinted to return nothing\n");
+						
+					if(CurFunc->hasReturn == -1)
+						CurFunc->hasReturn = 1;
+					else if(!CurFunc->hasReturn)
+						ErrorExit("Attempted to return value from function when previous return statement in the same function returned no value\n");
 					exp->retExpr = ParseExpr(in);
 					return exp;
 				}
+				
+				if(CurFunc->returnType.hint != VOID)
+					Warn("Attempting to return without a value in a function which was hinted to return a value\n");
+				
+				if(CurFunc->hasReturn == -1)
+					CurFunc->hasReturn = 0;
+				else if(CurFunc->hasReturn)
+					ErrorExit("Attempted to return with no value when previous return statement in the same function returned a value\n");
 				
 				GetNextToken(in);
 			
@@ -1424,7 +1500,7 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			if(CurTok != TOK_IDENT) ErrorExit("Expected identifier after 'extern'\n");
-			char name[MAX_LEX_LENGTH];
+			char name[MAX_ID_NAME_LENGTH];
 			strcpy(name, Lexeme);
 			
 			GetNextToken(in);
@@ -1444,6 +1520,132 @@ Expr* ParseFactor(FILE* in)
 			}
 			else
 				exp->extDecl = RegisterExtern(name);
+			
+			return exp;
+		} break;
+		
+		case TOK_LAMBDA:
+		{
+			Expr* exp = CreateExpr(EXP_LAMBDA);
+			
+			if(VarStackDepth <= 0 || !CurFunc)
+				ErrorExit("Lambdas cannot be declared at global scope (use a func and get a pointer to it instead)\n");
+			
+			GetNextToken(in);
+			
+			if(CurTok != '(')
+				ErrorExit("Expected '(' after lambda\n");
+				
+			GetNextToken(in);
+			
+			static int lambdaIndex = 0;
+			static char buf[MAX_ID_NAME_LENGTH];
+			
+			sprintf(buf, "__ld%i__", lambdaIndex++);
+			exp->lamx.dictDecl = RegisterVariable(buf);
+			
+			// NOTE: this must be done after the internal dist reg to make sure that we declare the lambda's internal
+			// dict in the upvalue scope (i.e in the function where it's declared, not in the lambda function decl itself)
+			sprintf(buf, "__l%i__", lambdaIndex);
+			FuncDecl* prevDecl = CurFunc;
+			FuncDecl* decl = EnterFunction(buf);
+			
+			decl->isLambda = 1;
+			
+			decl->prevDecl = prevDecl;
+			
+			PushScope();
+			
+			decl->envDecl = RegisterArgument("env");
+			
+			TypeHint* argTypes = NULL;
+			TypeHint* argTypesCurrent = NULL;
+			
+			while(CurTok != ')')
+			{	
+				if(CurTok == TOK_ELLIPSIS)
+				{
+					decl->hasEllipsis = 1;
+					GetNextToken(in);
+					if(CurTok != ')')
+						ErrorExit("Attempted to place ellipsis in the middle of an argument list\n");
+					break;
+				}
+				
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else (%c, %i)\n", name, CurTok, CurTok);
+				
+				VarDecl* argDecl = RegisterArgument(Lexeme);
+				
+				GetNextToken(in);
+				
+				if(CurTok == ':')
+				{
+					GetNextToken(in);
+					if(CurTok != TOK_IDENT)
+						ErrorExit("Expected identifier after ':'\n");
+					
+					TypeHint* type = malloc(sizeof(TypeHint));
+					assert(type);
+					type->hint = GetHintTypeFromString(Lexeme);
+						
+					if(!argTypes)
+					{
+						argTypes = type;
+						argTypesCurrent = type;
+					}
+					else
+					{
+						argTypesCurrent->next = type;
+						argTypesCurrent = type;
+					}
+					
+					argDecl->type.hint = type->hint;
+				}
+			
+				if(CurTok == ',') GetNextToken(in);
+				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
+			}
+			decl->argTypes = argTypes;
+			
+			GetNextToken(in);
+			
+			if(CurTok == ':')
+			{
+				GetNextToken(in);
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier after ':'\n");
+				
+				decl->returnType.hint = GetHintTypeFromString(Lexeme);
+				GetNextToken(in);
+			}
+			
+			Expr* exprHead = NULL;
+			Expr* exprCurrent = NULL;
+			
+			while(CurTok != TOK_END)
+			{
+				if(!exprHead)
+				{
+					exprHead = ParseExpr(in);
+					exprCurrent = exprHead;
+				}
+				else
+				{
+					exprCurrent->next = ParseExpr(in);
+					exprCurrent = exprCurrent->next;
+				}
+			}
+			GetNextToken(in);
+			
+			PopScope();
+			CurFunc = prevDecl;
+			
+			if(decl->hasReturn == -1)
+				decl->hasReturn = 0;
+			
+			exp->lamx.decl = decl;
+			exp->lamx.bodyHead = exprHead;
 			
 			return exp;
 		} break;
@@ -1743,21 +1945,6 @@ void DebugExpr(Expr* exp)
 	}
 }
 
-/*char IsIntrinsic(const char* name)
-{
-	if(strcmp(name, "len") == 0) return 1;
-	if(strcmp(name, "write") == 0) return 1;
-	if(strcmp(name, "read") == 0) return 1;
-	if(strcmp(name, "push") == 0) return 1;
-	if(strcmp(name, "pop") == 0) return 1;
-	if(strcmp(name, "clear") == 0) return 1;
-	if(strcmp(name, "call") == 0) return 1;
-	if(strcmp(name, "array") == 0) return 1;
-	if(strcmp(name, "dict") == 0) return 1;
-	
-	return 0;
-}*/
-
 // allow code to access ast at runtime
 void ExposeExpr(Expr* exp)
 {
@@ -1837,15 +2024,7 @@ void ExposeExpr(Expr* exp)
 }
 
 void CompileExpr(Expr* exp);
-
-void GetCallExprValue(Expr* exp);
-void CompileExprExpectValue(Expr* exp)
-{
-	if(exp->type != EXP_CALL)
-		CompileExpr(exp);
-	else
-		GetCallExprValue(exp);
-}
+void CompileValueExpr(Expr* exp);
 
 char CompileIntrinsic(Expr* exp, const char* name)
 {
@@ -1853,7 +2032,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExitE(exp, "Intrinsic 'len' only takes 1 argument\n");
-		CompileExprExpectValue(exp->callx.args[0]);
+		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_LENGTH);
 		return 1;
 	}
@@ -1863,7 +2042,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'write' takes at least 1 argument\n");
 		for(int i = 0; i < exp->callx.numArgs; ++i)
 		{
-			CompileExprExpectValue(exp->callx.args[i]);
+			CompileValueExpr(exp->callx.args[i]);
 			AppendCode(OP_WRITE);
 		}
 		return 1;
@@ -1879,8 +2058,8 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	{
 		if(exp->callx.numArgs != 2)
 			ErrorExitE(exp, "Intrinsic 'push' only takes 2 arguments\n");
-		CompileExprExpectValue(exp->callx.args[1]);
-		CompileExprExpectValue(exp->callx.args[0]);
+		CompileValueExpr(exp->callx.args[1]);
+		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_PUSH);
 		return 1;
 	}
@@ -1888,7 +2067,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExitE(exp, "Intrinsic 'push' only takes 1 argument\n");
-		CompileExprExpectValue(exp->callx.args[0]);
+		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_POP);
 		return 1;
 	}
@@ -1896,7 +2075,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	{
 		if(exp->callx.numArgs != 1)
 			ErrorExitE(exp, "Intrinsic 'clear' only takes 1 argument\n");
-		CompileExprExpectValue(exp->callx.args[0]);
+		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_CLEAR);
 		return 1;
 	}
@@ -1906,7 +2085,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'array' takes no more than 1 argument\n");
 			
 		if(exp->callx.numArgs == 1)
-			CompileExprExpectValue(exp->callx.args[0]);
+			CompileValueExpr(exp->callx.args[0]);
 		else
 		{
 			AppendCode(OP_PUSH_NUMBER);
@@ -1964,7 +2143,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'dict_get' takes 2 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileExprExpectValue(exp->callx.args[i]);
+			CompileValueExpr(exp->callx.args[i]);
 		AppendCode(OP_DICT_GET_RKEY);
 		return 1;
 	}
@@ -1974,7 +2153,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'dict_set' takes 3 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileExprExpectValue(exp->callx.args[i]);
+			CompileValueExpr(exp->callx.args[i]);
 		AppendCode(OP_DICT_SET_RKEY);
 		return 1;
 	}
@@ -1984,7 +2163,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'expand' takes 2 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileExprExpectValue(exp->callx.args[i]);
+			CompileValueExpr(exp->callx.args[i]);
 		AppendCode(OP_EXPAND_ARRAY);
 		return 1;
 	}
@@ -2075,7 +2254,30 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		
 		return 1;
 	}
-	/*else if(strcmp(name, "cstruct") == 0)
+	/*else if(strcmp(name, "loader_code") == 0)
+	{
+		if(exp->callx.numArgs != 3)
+			ErrorExitE(exp, "Intrinsic 'loader_code' expects 1 argument\n");
+		
+		if(exp->callx.args[0]->type != EXP_STRING || exp->callx.args[1]->type != EXP_STRING || exp->callx.args[2]->type != EXP_STRING)
+			ErrorExitE(exp->callx.args[0], "Intrinsic 'loader_code' expects its arguments to be strings\n");
+			
+		const char* compiler = exp->callx.args[1]->constDecl->string;
+		const char* args = exp->callx.args[2]->constDecl->string;
+			
+		FILE* file = fopen("mint_loader.c", "w");
+		if(!file)
+			ErrorExitE(exp, "Failed to open loader file for writing\n");
+		
+		fprintf(file, "%s\n", exp->callx.args[0]->constDecl->string);
+		fclose(file);
+		
+		static char cmdbuf[1024];
+		sprintf(cmdbuf, "%s mint_loader.c %s\n", compiler, args);
+		
+		return 1;
+	}
+	else if(strcmp(name, "cstruct") == 0)
 	{
 		FuncDecl* cffi_mt = ReferenceFunction("__cffi_mt");
 		if(!cffi_mt)
@@ -2185,6 +2387,33 @@ void ResolveSymbols(Expr* exp)
 	}*/
 }
 
+HintType InferTypeFromExpr(Expr* exp)
+{
+	switch(exp->type)
+	{
+		case EXP_NUMBER: return NUMBER;
+		case EXP_STRING: return STRING;
+		case EXP_IDENT: 
+		{
+			if(!exp->varx.varDecl)
+				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
+			
+			if(exp->varx.varDecl)
+				return exp->varx.varDecl->type.hint;
+			else
+			{
+				FuncDecl* decl = ReferenceFunction(exp->varx.name);
+				
+				if(decl)
+					return decl->returnType.hint;
+				else
+					return UNKNOWN;
+			}
+		} break;
+		case EXP_
+	}
+}
+
 void ResolveListSymbols(Expr* head)
 {
 	Expr* node = head;
@@ -2194,19 +2423,6 @@ void ResolveListSymbols(Expr* head)
 		node = node->next;
 	}
 }
-
-typedef enum 
-{
-	PATCH_BREAK,
-	PATCH_CONTINUE
-} PatchType;
-
-typedef struct _Patch
-{
-	struct _Patch* next;
-	PatchType type;
-	int loc;
-} Patch;
 
 Patch* Patches = NULL;
 
@@ -2233,32 +2449,297 @@ void ClearPatches()
 	Patches = NULL;
 }
 
-void GetCallExprValue(Expr* exp)
+void CompileValueExpr(Expr* exp);
+void CompileCallExpr(Expr* exp, char expectReturn)
 {
 	assert(exp->type == EXP_CALL);
 	
-	if(exp->callx.func->type == EXP_IDENT)
+	Word numExpansions = 0;
+	// TODO(optimization): do not iterate over the args more than once
+	for(int i = 0; i < exp->callx.numArgs; ++i)
 	{
-		if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
+		if(exp->callx.args[i]->type == EXP_CALL)
 		{
-			CompileExpr(exp);
-			AppendCode(OP_GET_RETVAL);
+			Expr* argx = exp->callx.args[i];
+			if(argx->callx.func->type == EXP_IDENT)
+			{
+				if(strcmp(argx->callx.func->varx.name, "expand") == 0) 
+					++numExpansions;
+			}
 		}
 	}
+	
+	if(exp->callx.func->type == EXP_IDENT)
+	{
+		FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+		if(decl)
+		{
+			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+				CompileValueExpr(exp->callx.args[i]);
+				
+			if(decl->isExtern)
+			{
+				AppendCode(OP_CALLF);
+				AppendInt(decl->index);
+			}
+			else
+			{
+				if(expectReturn)
+				{
+					if(decl->hasReturn == 0) 
+						ErrorExitE(exp, "Expected a function which had a return value in this context (function '%s' does not return a value)\n", decl->name);
+				}
+					
+				if(numExpansions == 0)
+				{
+					if(!decl->hasEllipsis)
+					{
+						if(exp->callx.numArgs != decl->numArgs)
+							ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+					}
+					else
+					{
+						if(exp->callx.numArgs < decl->numArgs)
+							ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+					}
+				}
+				
+				AppendCode(OP_CALL);
+				AppendCode(exp->callx.numArgs - numExpansions);
+				AppendInt(decl->index);						
+			}
+			
+			if(expectReturn)
+				AppendCode(OP_GET_RETVAL);
+		}
+		else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
+		{
+			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+				CompileValueExpr(exp->callx.args[i]);
+				
+			CompileValueExpr(exp->callx.func);
+			
+			AppendCode(OP_CALLP);
+			AppendCode(exp->callx.numArgs - numExpansions);
+			
+			if(expectReturn)
+				AppendCode(OP_GET_RETVAL);
+		}
+	}
+	else if(exp->callx.func->type == EXP_COLON)
+	{
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+			CompileValueExpr(exp->callx.args[i]);
+		// first argument to function is dictionary
+		CompileValueExpr(exp->callx.func->colonx.dict);
+		
+		// retrieve function from dictionary
+		CompileValueExpr(exp->callx.func->colonx.dict);
+		AppendCode(OP_DICT_GET);
+		AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
+		
+		AppendCode(OP_CALLP);
+		AppendCode(exp->callx.numArgs + 1 - numExpansions);
+		
+		if(expectReturn)
+			AppendCode(OP_GET_RETVAL);
+	}
 	else
-	{	
-		CompileExpr(exp);
-		AppendCode(OP_GET_RETVAL);
+	{			
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+			CompileValueExpr(exp->callx.args[i]);
+			
+		CompileValueExpr(exp->callx.func);
+		
+		AppendCode(OP_CALLP);
+		AppendCode(exp->callx.numArgs - numExpansions);
+		
+		if(expectReturn)
+			AppendCode(OP_GET_RETVAL);
 	}
 }
 
-void CompileExprList(Expr* head);
-void CompileExpr(Expr* exp)
+/*void ResolveLambdaReferences(Expr** pExp, Upvalue** upvalues, VarDecl* envDecl)
 {
-	// printf("compiling expression (%s:%i)\n", exp->file, exp->line);
-	 
-	ResolveSymbols(exp);
+	Expr* exp = *pExp;
 	
+	switch(exp->type)
+	{	
+		case EXP_UNARY:
+		{
+			ResolveLambdaReferences(&exp->unaryx.expr, upvalues, envDecl);
+		} break;
+		
+		case EXP_ARRAY_LITERAL:
+		{
+			Expr** node = &exp->arrayx.head;
+			while(*node)
+			{
+				ResolveLambdaReferences(node, upvalues, envDecl);
+				node = &(*node)->next;
+			}
+		} break;
+		
+		case EXP_IDENT:
+		{	
+			if(!exp->varx.varDecl)
+				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
+
+			if(exp->varx.varDecl)
+			{
+				if(!exp->varx.varDecl->isGlobal && exp->varx.varDecl->scope < envDecl->scope)
+				{
+					Upvalue* val = malloc(sizeof(Upvalue));
+					assert(val);
+					
+					val->exp = CreateExpr(EXP_IDENT);
+					val->exp->varx.varDecl = exp->varx.varDecl;
+					strcpy(val->exp->varx.name, exp->varx.name);
+					
+					val->next = *upvalues;
+					*upvalues = val;				
+					
+					Expr* envVar = CreateExpr(EXP_IDENT);
+					envVar->varx.varDecl = envDecl;
+					
+					Expr* rep = CreateExpr(EXP_DOT);
+					rep->dotx.dict = envVar;
+					strcpy(rep->dotx.name, exp->varx.name);
+					
+					*pExp = rep;
+				}
+			}
+		} break;
+		
+		case EXP_ARRAY_INDEX:
+		{
+			ResolveLambdaReferences(&exp->arrayIndex.arrExpr, upvalues, envDecl);
+			ResolveLambdaReferences(&exp->arrayIndex.indexExpr, upvalues, envDecl);
+		} break;
+		
+		case EXP_BIN:
+		{
+			ResolveLambdaReferences(&exp->binx.lhs, upvalues, envDecl);
+			ResolveLambdaReferences(&exp->binx.rhs, upvalues, envDecl);
+		} break;
+		
+		case EXP_CALL:
+		{
+			for(int i = 0; i < exp->callx.numArgs; ++i)
+				ResolveLambdaReferences(&exp->callx.args[i], upvalues, envDecl);
+		} break;
+		
+		case EXP_PAREN:
+		{
+			ResolveLambdaReferences(&exp->parenExpr, upvalues, envDecl);
+		} break;
+		
+		case EXP_DOT:
+		{
+			ResolveLambdaReferences(&exp->dotx.dict, upvalues, envDecl);
+		} break;
+		
+		case EXP_DICT_LITERAL:
+		{
+			Expr** pNode = &exp->dictx.pairsHead;
+			
+			// NOTE: double checking for correct dict literal statements (once here and once in CompileValueExpr)
+			while(*pNode)
+			{
+				Expr* node = *pNode;
+				
+				if(node->type != EXP_BIN) ErrorExitE(exp, "Non-binary expression in dictionary literal (Expected something = something_else)\n");
+				if(node->binx.op != '=') ErrorExitE(exp, "Invalid dictionary literal binary operator '%c'\n", node->binx.op);
+				if(node->binx.lhs->type != EXP_IDENT) ErrorExitE(exp, "Invalid lhs in dictionary literal (Expected identifier)\n");
+				
+				if(strcmp(node->binx.lhs->varx.name, "pairs") == 0) ErrorExitE(exp, "Attempted to assign value to reserved key 'pairs' in dictionary literal\n");
+				
+				ResolveLambdaReferences(pNode, upvalues, envDecl);
+				
+				pNode = &node->next;
+			}
+		} break;
+		
+		case EXP_LAMBDA:
+		{
+			// Nested lambda references are resolved when being compiled
+		} break;
+		
+		case EXP_WHILE:
+		{
+			ResolveLambdaReferences(&exp->whilex.cond, upvalues, envDecl);
+			
+			Expr** node = &exp->whilex.bodyHead;
+			
+			while(*node)
+			{
+				ResolveLambdaReferences(node, upvalues, envDecl);
+				node = &(*node)->next;
+			}
+		} break;
+		
+		case EXP_FOR:
+		{
+			ResolveLambdaReferences(&exp->forx.init, upvalues, envDecl);
+			
+			ResolveLambdaReferences(&exp->forx.cond, upvalues, envDecl);
+			
+			Expr** node = &exp->forx.bodyHead;
+			
+			while(*node)
+			{
+				ResolveLambdaReferences(node, upvalues, envDecl);
+				node = &(*node)->next;
+			}
+			
+			ResolveLambdaReferences(&exp->forx.iter, upvalues, envDecl);
+		} break;
+		
+		case EXP_IF:
+		{
+			ResolveLambdaReferences(&exp->ifx.cond, upvalues, envDecl);
+			
+			Expr** node = &exp->ifx.bodyHead;
+			
+			while(*node)
+			{
+				ResolveLambdaReferences(node, upvalues, envDecl);
+				node = &(*node)->next;
+			}
+			
+			if(exp->ifx.alt)
+			{
+				if(exp->ifx.alt->type != EXP_IF)
+				{
+					node = &exp->ifx.alt;
+					
+					while(*node)
+					{
+						ResolveLambdaReferences(node, upvalues, envDecl);
+						node = &(*node)->next;
+					}
+				}
+				else
+					ResolveLambdaReferences(&exp->ifx.alt, upvalues, envDecl);
+			}
+		} break;
+		
+		case EXP_RETURN:
+		{
+			if(exp->retExpr)
+				ResolveLambdaReferences(&exp->retExpr, upvalues, envDecl);
+		} break;
+		
+		default:
+			// no upvalue references involved in this expression type
+			break;
+	}
+}*/
+
+void CompileExprList(Expr* head);
+// Expression should have a resulting value (pushed onto the stack)
+void CompileValueExpr(Expr* exp)
+{
 	switch(exp->type)
 	{
 		case EXP_NUMBER: case EXP_STRING:
@@ -2276,8 +2757,8 @@ void CompileExpr(Expr* exp)
 		{
 			switch(exp->unaryx.op)
 			{
-				case '-': CompileExprExpectValue(exp->unaryx.expr); AppendCode(OP_NEG); break;
-				case '!': CompileExprExpectValue(exp->unaryx.expr); AppendCode(OP_LOGICAL_NOT); break;
+				case '-': CompileValueExpr(exp->unaryx.expr); AppendCode(OP_NEG); break;
+				case '!': CompileValueExpr(exp->unaryx.expr); AppendCode(OP_LOGICAL_NOT); break;
 			}
 		} break;
 		
@@ -2286,7 +2767,7 @@ void CompileExpr(Expr* exp)
 			Expr* node = exp->arrayx.head;
 			while(node)
 			{
-				CompileExprExpectValue(node);
+				CompileValueExpr(node);
 				node = node->next;
 			}
 			
@@ -2331,156 +2812,20 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
-			CompileExprExpectValue(exp->arrayIndex.indexExpr);
-			CompileExprExpectValue(exp->arrayIndex.arrExpr);
+			CompileValueExpr(exp->arrayIndex.indexExpr);
+			CompileValueExpr(exp->arrayIndex.arrExpr);
 			
 			AppendCode(OP_GETINDEX);
-		} break;
-		
-		case EXP_CALL:
-		{	
-			Word numExpansions = 0;
-			// TODO(optimization): do not iterate over the args more than once
-			for(int i = 0; i < exp->callx.numArgs; ++i)
-			{
-				if(exp->callx.args[i]->type == EXP_CALL)
-				{
-					Expr* argx = exp->callx.args[i];
-					if(argx->callx.func->type == EXP_IDENT)
-					{
-						if(strcmp(argx->callx.func->varx.name, "expand") == 0) 
-							++numExpansions;
-					}
-				}
-			}
-			
-			if(exp->callx.func->type == EXP_IDENT)
-			{
-				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
-				if(decl)
-				{
-					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-						CompileExprExpectValue(exp->callx.args[i]);
-						
-					if(decl->isExtern)
-					{
-						AppendCode(OP_CALLF);
-						AppendInt(decl->index);
-					}
-					else
-					{	
-						if(numExpansions == 0)
-						{
-							if(!decl->hasEllipsis)
-							{
-								if(exp->callx.numArgs != decl->numArgs)
-									ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-							}
-							else
-							{
-								if(exp->callx.numArgs < decl->numArgs)
-									ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-							}
-						}
-						
-						AppendCode(OP_CALL);
-						AppendCode(exp->callx.numArgs - numExpansions);
-						AppendInt(decl->index);
-					}					
-				}
-				else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
-				{
-					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-						CompileExprExpectValue(exp->callx.args[i]);
-						
-					CompileExprExpectValue(exp->callx.func);
-					
-					AppendCode(OP_CALLP);
-					AppendCode(exp->callx.numArgs - numExpansions);
-				}
-			}
-			else if(exp->callx.func->type == EXP_COLON)
-			{
-				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-					CompileExprExpectValue(exp->callx.args[i]);
-				// first argument to function is dictionary
-				CompileExprExpectValue(exp->callx.func->colonx.dict);
-				
-				// retrieve function from dictionary
-				CompileExprExpectValue(exp->callx.func->colonx.dict);
-				AppendCode(OP_DICT_GET);
-				AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
-				
-				AppendCode(OP_CALLP);
-				AppendCode(exp->callx.numArgs + 1 - numExpansions);
-			}
-			else
-			{			
-				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-					CompileExprExpectValue(exp->callx.args[i]);
-					
-				CompileExprExpectValue(exp->callx.func);
-				
-				AppendCode(OP_CALLP);
-				AppendCode(exp->callx.numArgs - numExpansions);
-			}
 		} break;
 		
 		case EXP_BIN:
 		{	
 			if(exp->binx.op == '=')
-			{	
-				CompileExprExpectValue(exp->binx.rhs);
-								
-				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
-				{
-					if(!exp->binx.lhs->varx.varDecl)
-					{
-						exp->binx.lhs->varx.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
-						if(!exp->binx.lhs->varx.varDecl)
-							ErrorExitE(exp, "Attempted to assign to non-existent variable '%s'\n", exp->binx.lhs->varx.name);
-					}
-					
-					if(exp->binx.lhs->varx.varDecl->isGlobal)
-					{
-						if(EntryPoint != 0 && exp->binx.lhs->type == EXP_VAR) printf("Warning: assignment operations to global variables will not execute unless they are inside the entry point\n");
-						AppendCode(OP_SET);
-					}
-					else AppendCode(OP_SETLOCAL);
-				
-					AppendInt(exp->binx.lhs->varx.varDecl->index);
-				}
-				else if(exp->binx.lhs->type == EXP_ARRAY_INDEX)
-				{
-					CompileExprExpectValue(exp->binx.lhs->arrayIndex.indexExpr);
-					CompileExprExpectValue(exp->binx.lhs->arrayIndex.arrExpr);
-					
-					AppendCode(OP_SETINDEX);
-				}
-				else if(exp->binx.lhs->type == EXP_DOT)
-				{
-					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
-						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
-					
-					CompileExprExpectValue(exp->binx.lhs->dotx.dict);
-					AppendCode(OP_DICT_SET);
-					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
-				}
-				else
-					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %i\n", exp->binx.lhs->type);
-			}
+				ErrorExitE(exp, "Assignment expressions cannot be used as values\n");
 			else
 			{
-				if(exp->binx.lhs->type != EXP_CALL && exp->binx.rhs->type != EXP_CALL)
-				{
-					CompileExpr(exp->binx.lhs);
-					CompileExpr(exp->binx.rhs);
-				}
-				else 
-				{
-					CompileExprExpectValue(exp->binx.lhs);
-					CompileExprExpectValue(exp->binx.rhs);
-				}
+				CompileValueExpr(exp->binx.lhs);
+				CompileValueExpr(exp->binx.rhs);
 				
 				switch(exp->binx.op)
 				{
@@ -2512,15 +2857,248 @@ void CompileExpr(Expr* exp)
 			}
 		} break;
 		
+		case EXP_CALL:
+		{
+			CompileCallExpr(exp, 1);
+		} break;
+		
 		case EXP_PAREN:
 		{
-			CompileExprExpectValue(exp->binx.lhs);
+			CompileValueExpr(exp->parenExpr);
+		} break;
+		
+		case EXP_DOT:
+		{
+			if(strcmp(exp->dotx.name, "pairs") == 0)
+			{
+				CompileValueExpr(exp->dotx.dict);
+				AppendCode(OP_DICT_PAIRS);
+			}
+			else
+			{
+				CompileValueExpr(exp->dotx.dict);
+				AppendCode(OP_DICT_GET);
+				AppendInt(RegisterString(exp->dotx.name)->index);
+			}
+		} break;
+		
+		case EXP_DICT_LITERAL:
+		{
+			Expr* node = exp->dictx.pairsHead;
+			
+			VarDecl* decl = exp->dictx.decl;
+			
+			AppendCode(OP_PUSH_DICT);
+			AppendCode(OP_SETLOCAL);
+			AppendInt(decl->index);
+			
+			while(node)
+			{
+				if(node->type != EXP_BIN) ErrorExitE(exp, "Non-binary expression in dictionary literal (Expected something = something_else)\n");
+				if(node->binx.op != '=') ErrorExitE(exp, "Invalid dictionary literal binary operator '%c'\n", node->binx.op);
+				if(node->binx.lhs->type != EXP_IDENT) ErrorExitE(exp, "Invalid lhs in dictionary literal (Expected identifier)\n");
+				
+				if(strcmp(node->binx.lhs->varx.name, "pairs") == 0) ErrorExitE(exp, "Attempted to assign value to reserved key 'pairs' in dictionary literal\n");
+				
+				/*CompileExpr(node->binx.rhs);
+				AppendCode(OP_PUSH_STRING);
+				AppendInt(RegisterString(node->binx.lhs->varx.name)->index);*/
+				
+				CompileValueExpr(node->binx.rhs);
+				
+				AppendCode(OP_GETLOCAL);
+				AppendInt(decl->index);
+				
+				AppendCode(OP_DICT_SET);
+				AppendInt(RegisterString(node->binx.lhs->varx.name)->index);
+				
+				node = node->next;
+			}
+			AppendCode(OP_GETLOCAL);
+			AppendInt(decl->index);
+			
+			/*AppendCode(OP_CREATE_DICT_BLOCK);
+			AppendInt(exp->dictx.length);*/
+		} break;
+		
+		case EXP_LAMBDA:
+		{
+			/*Upvalue* upvalue = NULL;
+			
+			Expr** rnode = &exp->lamx.bodyHead;
+			while(*rnode)
+			{
+				ResolveLambdaReferences(rnode, &upvalue, exp->lamx.decl->envDecl);
+				rnode = &(*rnode)->next;
+			}*/
+			
+			AppendCode(OP_GOTO);
+			int emplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+			
+			exp->lamx.decl->pc = CodeLength;
+			
+			for(int i = 0; i < exp->lamx.decl->numLocals; ++i)
+				AppendCode(OP_PUSH_NULL);
+			
+			CompileExprList(exp->lamx.bodyHead);
+			AppendCode(OP_RETURN);
+			
+			EmplaceInt(emplaceLoc, CodeLength);
+			
+			VarDecl* decl = exp->lamx.dictDecl;
+		
+			AppendCode(OP_PUSH_DICT);
+			AppendCode(OP_SETLOCAL);
+			AppendInt(decl->index);
+			
+			// each nested lambda stores the previous env so that values above the uppermost lambda are accessible
+			if(exp->lamx.decl->prevDecl->isLambda)
+			{
+				Expr* prevEnv = CreateExpr(EXP_IDENT);
+				prevEnv->varx.varDecl = exp->lamx.decl->prevDecl->envDecl;
+				strcpy(prevEnv->varx.name, exp->lamx.decl->prevDecl->envDecl->name);
+				CompileValueExpr(prevEnv);
+				
+				AppendCode(OP_GETLOCAL);
+				AppendInt(decl->index);
+				
+				AppendCode(OP_DICT_SET);
+				AppendInt(RegisterString(exp->lamx.decl->prevDecl->envDecl->name)->index);
+			}
+			
+			Upvalue* upvalue = exp->lamx.decl->upvalues;
+			
+			while(upvalue)
+			{	
+				Expr* uexp = CreateExpr(EXP_IDENT);
+				uexp->varx.varDecl = upvalue->decl;
+				strcpy(uexp->varx.name, upvalue->decl->name);
+				
+				CompileValueExpr(uexp);
+				
+				AppendCode(OP_GETLOCAL);
+				AppendInt(decl->index);
+				
+				AppendCode(OP_DICT_SET);
+				AppendInt(RegisterString(upvalue->decl->name)->index);
+				
+				upvalue = upvalue->next;
+			}
+			
+			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
+			AppendCode(OP_PUSH_FUNC);
+			AppendCode(exp->lamx.decl->hasEllipsis);
+			AppendCode(exp->lamx.decl->isExtern);
+			AppendCode(exp->lamx.decl->numArgs);
+			AppendInt(exp->lamx.decl->index);
+			
+			AppendCode(OP_GETLOCAL);
+			AppendInt(decl->index);
+			
+			AppendCode(OP_DICT_SET);
+			AppendInt(RegisterString("CALL")->index);
+			
+			AppendCode(OP_GETLOCAL);
+			AppendInt(decl->index);
+		} break;
+		
+		// when used as a value, it becomes a function pointer
+		case EXP_FUNC:
+		{
+			AppendCode(OP_GOTO);
+			int emplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+			
+			exp->funcx.decl->pc = CodeLength;
+			
+			if(strcmp(exp->funcx.decl->name, "_main") == 0) EntryPoint = CodeLength;
+			for(int i = 0; i < exp->funcx.decl->numLocals; ++i)
+				AppendCode(OP_PUSH_NULL);
+			
+			CompileExprList(exp->funcx.bodyHead);
+			AppendCode(OP_RETURN);
+			
+			EmplaceInt(emplaceLoc, CodeLength);
+			
+			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
+			AppendCode(OP_PUSH_FUNC);
+			AppendCode(exp->funcx.decl->hasEllipsis);
+			AppendCode(exp->funcx.decl->isExtern);
+			AppendCode(exp->funcx.decl->numArgs);
+			AppendInt(exp->funcx.decl->index);
+		} break;
+		
+		default:
+			ErrorExitE(exp, "Expected value expression in place of %s\n", ExprNames[exp->type]);
+	}
+}
+
+void CompileExprList(Expr* head);
+void CompileExpr(Expr* exp)
+{
+	// printf("compiling expression (%s:%i)\n", exp->file, exp->line);
+	
+	switch(exp->type)
+	{	
+		case EXP_EXTERN: case EXP_VAR: break;
+		
+		case EXP_BIN:
+		{	
+			if(exp->binx.op == '=')
+			{	
+				CompileValueExpr(exp->binx.rhs);
+								
+				if(exp->binx.lhs->type == EXP_VAR || exp->binx.lhs->type == EXP_IDENT)
+				{
+					if(!exp->binx.lhs->varx.varDecl)
+					{
+						exp->binx.lhs->varx.varDecl = ReferenceVariable(exp->binx.lhs->varx.name);
+						if(!exp->binx.lhs->varx.varDecl)
+							ErrorExitE(exp, "Attempted to assign to non-existent variable '%s'\n", exp->binx.lhs->varx.name);
+					}
+					
+					if(exp->binx.lhs->varx.varDecl->isGlobal)
+					{
+						if(EntryPoint != 0 && exp->binx.lhs->type == EXP_VAR) printf("Warning: assignment operations to global variables will not execute unless they are inside the entry point\n");
+						AppendCode(OP_SET);
+					}
+					else AppendCode(OP_SETLOCAL);
+				
+					AppendInt(exp->binx.lhs->varx.varDecl->index);
+				}
+				else if(exp->binx.lhs->type == EXP_ARRAY_INDEX)
+				{
+					CompileValueExpr(exp->binx.lhs->arrayIndex.indexExpr);
+					CompileValueExpr(exp->binx.lhs->arrayIndex.arrExpr);
+					
+					AppendCode(OP_SETINDEX);
+				}
+				else if(exp->binx.lhs->type == EXP_DOT)
+				{
+					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
+						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
+					
+					CompileValueExpr(exp->binx.lhs->dotx.dict);
+					AppendCode(OP_DICT_SET);
+					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
+				}
+				else
+					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %i\n", exp->binx.lhs->type);
+			}
+			else
+				ErrorExitE(exp, "Invalid top level binary expression\n");
+		} break;
+		
+		case EXP_CALL:
+		{	
+			CompileCallExpr(exp, 0);
 		} break;
 		
 		case EXP_WHILE:
 		{
 			int loopPc = CodeLength;
-			CompileExprExpectValue(exp->whilex.cond);
+			CompileValueExpr(exp->whilex.cond);
 			AppendCode(OP_GOTOZ);
 			// emplace integer of exit location here
 			int emplaceLoc = CodeLength;
@@ -2546,7 +3124,7 @@ void CompileExpr(Expr* exp)
 			CompileExpr(exp->forx.init);
 			int loopPc = CodeLength;
 			
-			CompileExprExpectValue(exp->forx.cond);
+			CompileValueExpr(exp->forx.cond);
 			AppendCode(OP_GOTOZ);
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
@@ -2573,7 +3151,7 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_IF:
 		{
-			CompileExprExpectValue(exp->ifx.cond);
+			CompileValueExpr(exp->ifx.cond);
 			AppendCode(OP_GOTOZ);
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
@@ -2616,77 +3194,16 @@ void CompileExpr(Expr* exp)
 		{
 			if(exp->retExpr)
 			{
-				CompileExprExpectValue(exp->retExpr);
+				CompileValueExpr(exp->retExpr);
 				AppendCode(OP_RETURN_VALUE);
 			}
 			else
 				AppendCode(OP_RETURN);
 		} break;
 		
-		case EXP_DOT:
-		{
-			if(strcmp(exp->dotx.name, "pairs") == 0)
-			{
-				CompileExprExpectValue(exp->dotx.dict);
-				AppendCode(OP_DICT_PAIRS);
-			}
-			else
-			{
-				CompileExprExpectValue(exp->dotx.dict);
-				AppendCode(OP_DICT_GET);
-				AppendInt(RegisterString(exp->dotx.name)->index);
-			}
-		} break;
-		
 		case EXP_COLON:
 		{
-			ErrorExitE(exp, "Attempted to use ':' to index non-function value inside dictionary; use '.' instead (or call the function you're indexing)\n");
-		} break;
-		
-		case EXP_DICT_LITERAL:
-		{
-			Expr* node = exp->dictx.pairsHead;
-			
-			static int nameIndex = 0;
-			static char nameBuf[MAX_ID_NAME_LENGTH];
-			
-			sprintf(nameBuf, "__dict_literal_%i__", nameIndex++);
-			VarDecl* decl = RegisterVariable(nameBuf);
-			
-			AppendCode(OP_PUSH_DICT);
-			AppendCode(OP_SETLOCAL);
-			AppendInt(decl->index);
-			
-			AppendCode(OP_GETLOCAL);
-			AppendInt(decl->index);
-			
-			while(node)
-			{
-				if(node->type != EXP_BIN) ErrorExitE(exp, "Non-binary expression in dictionary literal (Expected something = something_else)\n");
-				if(node->binx.op != '=') ErrorExitE(exp, "Invalid dictionary literal binary operator '%c'\n", node->binx.op);
-				if(node->binx.lhs->type != EXP_IDENT) ErrorExitE(exp, "Invalid lhs in dictionary literal (Expected identifier)\n");
-				
-				if(strcmp(node->binx.lhs->varx.name, "pairs") == 0) ErrorExitE(exp, "Attempted to assign value to reserved key 'pairs' in dictionary literal\n");
-				
-				/*CompileExpr(node->binx.rhs);
-				AppendCode(OP_PUSH_STRING);
-				AppendInt(RegisterString(node->binx.lhs->varx.name)->index);*/
-				
-				CompileExprExpectValue(node->binx.rhs);
-				
-				AppendCode(OP_GETLOCAL);
-				AppendInt(decl->index);
-				
-				AppendCode(OP_DICT_SET);
-				AppendInt(RegisterString(node->binx.lhs->varx.name)->index);
-				
-				node = node->next;
-			}
-			AppendCode(OP_GETLOCAL);
-			AppendInt(decl->index);
-			
-			/*AppendCode(OP_CREATE_DICT_BLOCK);
-			AppendInt(exp->dictx.length);*/
+			ErrorExitE(exp, "Attempted to use ':' to index value inside dictionary; use '.' instead (or call the function you're indexing)\n");
 		} break;
 		
 		case EXP_CONTINUE:
@@ -2719,9 +3236,7 @@ void CompileExpr(Expr* exp)
 		} break;
 		
 		default:
-		{
-			// NO CODE GENERATION NECESSARY
-		} break;
+			ErrorExitE(exp, "Invalid top level expression (expected non-value expression in place of %s)\n", ExprNames[exp->type]);
 	}
 }
 
@@ -2962,6 +3477,8 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 				i += sizeof(int) / sizeof(Word) - 1;
 			} break;
 			
+			case OP_EXPAND_ARRAY: break;
+			
 			case OP_PUSH_DICT: break;
 			//REMOVED: case OP_CREATE_DICT_BLOCK: i += sizeof(int) / sizeof(Word); break;
 			
@@ -3047,6 +3564,9 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 			case OP_HALT: break;
 			
 			case OP_SETVMDEBUG: i += 1; break;
+			
+			case OP_DICT_GET_RKEY: case OP_DICT_SET_RKEY: break;
+			case OP_GETARGS: i += sizeof(int) / sizeof(Word); break;
 		}
 	}
 	
@@ -3112,6 +3632,8 @@ int main(int argc, char* argv[])
 			// alright, deprecating binary file linking for now
 			printf("cannot link binary files...\n");
 		}
+		else if(strcmp(argv[i], "-ty") == 0)
+			TypeHinting = 1;
 		else
 		{
 			FILE* in = fopen(argv[i], "r");
@@ -3127,7 +3649,6 @@ int main(int argc, char* argv[])
 			}
 			LineNumber = 1;
 			FileName = argv[i];
-			InlineResultVar = RegisterVariable("__inline_result__");
 			
 			GetNextToken(in);
 			

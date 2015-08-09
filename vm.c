@@ -360,7 +360,7 @@ void Std_Srand(VM* vm)
 
 void Std_Rand(VM* vm)
 {
-	PushNumber(vm, (int)rand());
+	PushNumber(vm, (int)(rand() % RAND_MAX));
 	ReturnTop(vm);
 }
 
@@ -635,7 +635,7 @@ void Std_FreeLib(void* lib)
 void Std_LoadLib(VM* vm)
 {
 	const char* libpath = PopString(vm);
-	void* lib = dlopen(libpath, RTLD_LAZY);
+	void* lib = dlopen(libpath, RTLD_NOW);
 	if(!lib)
 		ErrorExit(vm, "Failed to load library '%s'\n", libpath);
 	
@@ -974,7 +974,7 @@ void Std_FfiCall(VM* vm)
 					ErrorExit(vm, "ffi arg type value mismatch for argument %d (object type %s)\n", (i + 1), ObjectTypeNames[obj->type]);
 				
 				if(obj->type == OBJ_NATIVE)
-					memcpy(value, obj->native.value, type->size);
+					memcpy(value, &obj->native.value, type->size);
 				else if(obj->type == OBJ_STRING)
 					memcpy(value, &obj->string.raw, type->size);
 				else
@@ -1127,6 +1127,95 @@ void Std_FfiStructTypeOffsets(VM* vm)
 #undef ALIGN
 	PushObject(vm, obj);
 	ReturnTop(vm);
+}
+
+void Std_ArrayCopy(VM* vm)
+{
+	Object* obj1 = PopArrayObject(vm);
+	Object* obj2 = PopArrayObject(vm);
+	int start1 = (int)PopNumber(vm);
+	int start2 = (int)PopNumber(vm);
+	size_t len = (size_t)PopNumber(vm);
+	
+	memcpy(&obj1->array.members[start1], &obj2->array.members[start2], len * sizeof(Object*)); 
+}
+
+void CallFunction(VM* vm, int id, Word numArgs);
+int Std_ArraySortCmp(VM* vm, Object* a, Object* b, int cmpIdx, Object* arg)
+{	
+	PushObject(vm, b);
+	PushObject(vm, a);
+	if(arg)
+	{	
+		PushObject(vm, arg);
+		CallFunction(vm, cmpIdx, 3);
+	}
+	else
+		CallFunction(vm, cmpIdx, 2);
+	int result = (int)vm->retVal->number;
+	return result;
+}
+
+void Std_ArraySortQsort(VM* vm, Object** mem, int len, Object* comp)
+{
+	int idx = -1;
+	Object* arg = NULL;
+	
+	if(comp->type == OBJ_FUNC)
+		idx = comp->func.index;
+	else if(comp->type == OBJ_DICT)
+	{
+		Object* fobj = DictGet(&comp->dict, "CALL");
+		idx = fobj->func.index;
+		arg = comp;
+	}
+	else
+		ErrorExit(vm, "Expected either CALL overloaded dict or function in comparator argument to arraysort\n");
+
+	if(len > 1)
+	{
+		Object* pivot = mem[(len / 2) - 1];
+		int left = 0;
+		int right = len - 1;
+		
+		while(left <= right)
+		{
+			while(Std_ArraySortCmp(vm, mem[left], pivot, idx, arg) < 0)
+				left += 1;
+			while(Std_ArraySortCmp(vm, mem[right], pivot, idx, arg) > 0)
+				right -= 1;
+				
+			if(left <= right)
+			{
+				Object* tmp = mem[left];
+				mem[left] = mem[right];
+				mem[right] = tmp;
+				
+				left += 1;
+				right -= 1;
+			}
+		}
+		
+		Std_ArraySortQsort(vm, mem, right + 1, comp);
+		Std_ArraySortQsort(vm, &mem[left], len - left, comp);
+	}
+}
+
+void Std_ArraySort(VM* vm)
+{
+	Object* obj = PopArrayObject(vm);
+	Object* comp = PopObject(vm);
+	
+	Std_ArraySortQsort(vm, obj->array.members, obj->array.length, comp);
+}
+
+void Std_ArrayFill(VM* vm)
+{
+	Object* obj = PopArrayObject(vm);
+	Object* filler = PopObject(vm);
+	
+	for(int i = 0; i < obj->array.length; ++i)
+		obj->array.members[i] = filler;
 }
 
 /* END OF STANDARD LIBRARY */
@@ -1480,6 +1569,10 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "ffi_struct_type_offsets", Std_FfiStructTypeOffsets);
 	HookExternNoWarn(vm, "ffi_type_size", Std_FfiTypeSize);
 	HookExternNoWarn(vm, "ffi_call", Std_FfiCall);
+	
+	HookExternNoWarn(vm, "arraycopy", Std_ArrayCopy);
+	HookExternNoWarn(vm, "arraysort", Std_ArraySort);
+	HookExternNoWarn(vm, "arrayfill", Std_ArrayFill);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -1611,7 +1704,39 @@ void FreeObject(VM* vm, Object* obj)
 		obj->array.length = 0;
 	}
 	if(obj->type == OBJ_DICT)
+	{
+		/*Object* onGc = DictGet(&obj->dict, "DISPOSED");
+		if(onGc)
+		{
+			if(onGc->type == OBJ_FUNC)
+			{
+				if(onGc->func.isExtern)
+					ErrorExit(vm, "Dict has invalid DISPOSED callback (it is an extern)\n");
+				else
+				{
+					PushObject(vm, obj);
+					CallFunction(vm, onGc->func.index, 1);
+				}
+			}
+			else if(onGc->type == OBJ_DICT)
+			{
+				Object* cb = DictGet(&onGc->dict, "CALL");
+				if(cb->type != OBJ_FUNC)
+					ErrorExit(vm, "Dict has invalid CALL overload (%s instead of a func)\n", ObjectTypeNames[cb->type]);
+				
+				if(cb->func.isExtern)
+					ErrorExit(vm, "Dict has invalid DISPOSED callback (it calls an extern)\n");
+				else
+				{
+					PushObject(vm, onGc);
+					PushObject(vm, obj);
+					CallFunction(vm, cb->func.index, 2);
+				}
+			}
+		}*/
+		
 		FreeDict(&obj->dict);
+	}
 }
 
 void Sweep(VM* vm)
@@ -1660,7 +1785,7 @@ void CollectGarbage(VM* vm)
 
 Object* NewObject(VM* vm, ObjectType type)
 {
-	if(!vm->inExternBody && vm->numObjects == vm->maxObjectsUntilGc) 
+	if(!vm->inExternBody && vm->numObjects >= vm->maxObjectsUntilGc) 
 		CollectGarbage(vm);
 
 	if(vm->debug)
@@ -1961,6 +2086,7 @@ void CallOverloadedOperator(VM* vm, const char* name, Object* val1, Object* val2
 	PushObject(vm, val2);			
 	PushObject(vm, val1);
 	CallFunction(vm, binFunc->func.index, 2);
+	PushObject(vm, vm->retVal);
 }
 
 char CallOverloadedOperatorIf(VM* vm, const char* name, Object* val1, Object* val2)
@@ -2114,12 +2240,13 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			int length = ReadInteger(vm);
 			Object* obj = PushArray(vm, length);
+			
 			if(length > 0)
 			{
 				for(int i = 0; i < length; ++i)
 					obj->array.members[length - i - 1] = vm->stack[vm->stackSize - 2 - i];
-				vm->stackSize -= length;
-				vm->stack[vm->stackSize - 1] = obj;
+				vm->stackSize -= length + 1;
+				vm->stack[vm->stackSize++] = obj;
 			}
 		} break;
 
@@ -2231,7 +2358,7 @@ void ExecuteCycle(VM* vm)
 			Object* obj = PopDict(vm);
 			Object* value = PopObject(vm);
 			
-			/*Object* over = DictGet(&obj->dict, "GETINDEX");
+			Object* over = DictGet(&obj->dict, "GETINDEX");
 			if(over && over->type == OBJ_FUNC)
 			{
 				PushObject(vm, value);
@@ -2239,8 +2366,8 @@ void ExecuteCycle(VM* vm)
 				PushObject(vm, obj);
 				CallFunction(vm, over->func.index, 3);
 			}
-			else*/	
-			DictPut(&obj->dict, vm->stringConstants[keyIndex], value);
+			else
+				DictPut(&obj->dict, vm->stringConstants[keyIndex], value);
 		} break;
 		
 		case OP_DICT_GET:
@@ -2253,7 +2380,7 @@ void ExecuteCycle(VM* vm)
 				
 			Object* obj = PopDict(vm);
 			
-			/*Object* over = DictGet(&obj->dict, "GETINDEX");
+			Object* over = DictGet(&obj->dict, "GETINDEX");
 			if(over && over->type == OBJ_FUNC)
 			{
 				PushString(vm, vm->stringConstants[keyIndex]);
@@ -2267,13 +2394,7 @@ void ExecuteCycle(VM* vm)
 					PushObject(vm, value);
 				else
 					PushObject(vm, &NullObject);
-			}*/
-		
-			Object* value = DictGet(&obj->dict, vm->stringConstants[keyIndex]);
-			if(value)
-				PushObject(vm, value);
-			else
-				PushObject(vm, &NullObject);
+			}
 		} break;
 
 		case OP_DICT_PAIRS:
@@ -2305,7 +2426,7 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 		
-		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExit(vm, "Invalid binary operation\n"); } } break;
+		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExit(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
 		BIN_OP(ADD, +)
@@ -2344,7 +2465,7 @@ void ExecuteCycle(VM* vm)
 			{
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number == o2->number); }
-				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) {}
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { PushObject(vm, vm->retVal); }
 				else if(o1->type == OBJ_NULL) PushNumber(vm, 1);
 				else PushNumber(vm, o1 == o2);
 			}
@@ -2364,7 +2485,7 @@ void ExecuteCycle(VM* vm)
 			{
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) != 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number != o2->number); }
-				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)PopNumber(vm); PushNumber(vm, !result); }
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)vm->retVal->number; PushNumber(vm, !result); }
 				else PushNumber(vm, o1 != o2);
 			}
 		} break;
@@ -2485,6 +2606,8 @@ void ExecuteCycle(VM* vm)
 					else
 						PushObject(vm, &NullObject);
 				}
+				else
+					PushObject(vm, vm->retVal);
 			}
 			else 
 				ErrorExit(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
@@ -2602,6 +2725,8 @@ void ExecuteCycle(VM* vm)
 			
 			if(obj->type == OBJ_DICT)
 			{
+				// NOTE: CALL operators must be function pointers since they take the dict as
+				// their first argument
 				Object* fobj = DictGet(&obj->dict, "CALL");
 				if(!fobj || fobj->type != OBJ_FUNC)
 					ErrorExit(vm, "Attempted to call dictionary object without valid CALL overload\n");
