@@ -24,7 +24,7 @@ typedef struct _TypeHint
 	HintType hint;
 	
 	// for indexable values
-	const struct _TypeHint* subType;
+	struct _TypeHint* subType;
 } TypeHint;
 
 typedef enum
@@ -57,7 +57,7 @@ typedef struct _VarDecl
 	char name[MAX_ID_NAME_LENGTH];
 	int index;
 	
-	const TypeHint* type;
+	TypeHint* type;
 } VarDecl;
 
 typedef struct _Upvalue
@@ -81,8 +81,8 @@ typedef struct _FuncDecl
 	Word numArgs;
 	int pc;
 	
-	const TypeHint* argTypes;
-	const TypeHint* returnType;
+	TypeHint* argTypes;
+	TypeHint* returnType;
 	
 	char hasEllipsis;
 	
@@ -137,7 +137,8 @@ enum
 	TOK_BREAK = -32,
 	TOK_ELLIPSIS = -33,
 	TOK_NEW = -34,
-	TOK_AS = -35
+	TOK_AS = -35,
+	TOK_FORWARD = -36
 };
 
 typedef enum
@@ -166,7 +167,8 @@ typedef enum
 	EXP_COLON,
 	EXP_NEW,
 	EXP_LAMBDA,
-	EXP_LINKED_BINARY_CODE
+	EXP_FORWARD,
+	//EXP_LINKED_BINARY_CODE
 } ExprType;
 
 typedef struct _Expr

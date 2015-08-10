@@ -1,6 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO:
+ * - DO TYPE INFERENCES AT COMPILE TIME NOT PARSE TIME cause all symbols should be defined 
  * - FIX compiler structure, have a function to compile expressions which should have resulting values
  * 	 and a function to compile expressions which shouldn't
  * - (Possibly fixed, haven't tested new compile time dict creation) WEIRD BUG: Dict literals occasionally cause ffi_calls after their creation to fail? (Depends on # of elements in dict, idk, maybe dict creation pollutes the stack)
@@ -340,58 +341,7 @@ ConstDecl* RegisterString(const char* string)
 	return decl;
 }
 
-FuncDecl* RegisterExtern(const char* name)
-{
-	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
-	{
-		if(!decl->isAliased)
-		{
-			if(strcmp(decl->name, name) == 0)
-				return decl;
-		}
-		else
-		{
-			if(strcmp(decl->alias, name) == 0)
-				return decl;
-		}
-	}
-	
-	FuncDecl* decl = malloc(sizeof(FuncDecl));
-	assert(decl);
-	
-	decl->next = NULL;
-	
-	if(!Functions)
-	{
-		Functions = decl;
-		FunctionsCurrent = Functions;
-	}
-	else
-	{
-		FunctionsCurrent->next = decl;
-		FunctionsCurrent = decl;
-	}
-	
-	decl->inlined = 0;
-	decl->isAliased = 0;
-	decl->isExtern = 1;
-	
-	strcpy(decl->name, name);
-	
-	decl->index = NumExterns++;
-	decl->numArgs = 0;
-	decl->numLocals = 0;
-	decl->pc = -1;
-	decl->hasEllipsis = 0;
-	decl->hasReturn = -1;
-	
-	decl->returnType = NULL;
-	decl->argTypes = NULL;
-	
-	return decl;
-}
-
-FuncDecl* RegisterExternAs(const char* name, const char* alias)
+/*FuncDecl* RegisterExternAs(const char* name, const char* alias)
 {
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
@@ -440,11 +390,13 @@ FuncDecl* RegisterExternAs(const char* name, const char* alias)
 	decl->pc = -1;
 	decl->hasEllipsis = 0;
 	
+	decl->isLambda = 0;
 	decl->returnType = NULL;
 	decl->argTypes = NULL;
+	decl->prevDecl = NULL;
 	
 	return decl;
-}
+}*/
 
 void PushScope()
 {
@@ -456,7 +408,7 @@ void PopScope()
 	--VarStackDepth;
 }
 
-FuncDecl* DeclareFunction(const char* name)
+FuncDecl* DeclareFunction(const char* name, int index)
 {
 	FuncDecl* decl = malloc(sizeof(FuncDecl));
 	assert(decl);
@@ -482,7 +434,7 @@ FuncDecl* DeclareFunction(const char* name)
 	decl->hasEllipsis = 0;
 	
 	strcpy(decl->name, name);
-	decl->index = NumFunctions++;
+	decl->index = index;
 	decl->numArgs = 0;
 	decl->numLocals = 0;
 	decl->pc = -1;
@@ -498,9 +450,16 @@ FuncDecl* DeclareFunction(const char* name)
 	return decl;
 }
 
+FuncDecl* DeclareExtern(const char* name)
+{
+	FuncDecl* decl = DeclareFunction(name, NumExterns++);
+	decl->isExtern = 1;
+	return decl;
+}
+
 FuncDecl* EnterFunction(const char* name)
 {
-	CurFunc = DeclareFunction(name);	
+	CurFunc = DeclareFunction(name, NumFunctions++);
 	return CurFunc;
 }
 
@@ -670,7 +629,8 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
 		if(strcmp(Lexeme, "new") == 0) return TOK_NEW;
 		if(strcmp(Lexeme, "as") == 0) return TOK_AS;
-		
+		if(strcmp(Lexeme, "forward") == 0) return TOK_FORWARD;
+
 		return TOK_IDENT;
 	}
 		
@@ -924,7 +884,7 @@ const char* ExprNames[] = {
 	"EXP_COLON",
 	"EXP_NEW",
 	"EXP_LAMBDA",
-	"EXP_LINKED_BINARY_CODE"
+	"EXP_FORWARD"
 };
 
 Expr* CreateExpr(ExprType type)
@@ -1026,31 +986,77 @@ const char* HintTypeStrings[] = {
 	"dynamic"
 };
 
-const TypeHint NumberHint = { NULL, NUMBER, NULL };
-const TypeHint NativeHint = { NULL, NATIVE, NULL };
-const TypeHint VoidHint = { NULL, VOID, NULL };
-const TypeHint DynamicHint = { NULL, DYNAMIC, &DynamicHint };
-const TypeHint FunctionHint = { NULL, FUNC, NULL };
-const TypeHint DictHint = { NULL, DICT, &DynamicHint };
-const TypeHint StringHint = { NULL, STRING, &NumberHint };
-const TypeHint ArrayHint = { NULL, ARRAY, &DynamicHint };
+TypeHint* CreateTypeHint(HintType hint)
+{
+	TypeHint* type = malloc(sizeof(TypeHint));
+	assert(type);
+	type->hint = hint;
+	type->next = NULL;
+	type->subType = NULL;
+
+	return type;
+}
+
+TypeHint* GetBroadTypeHint(HintType type)
+{
+	switch(type)
+	{
+		case NUMBER: return CreateTypeHint(NUMBER);
+		
+		case STRING: 
+		{
+			TypeHint* type = CreateTypeHint(STRING);
+			type->subType = GetBroadTypeHint(NUMBER);
+			return type;
+		} break;
+		
+		case VOID: return CreateTypeHint(VOID);
+		
+		case DYNAMIC: return CreateTypeHint(DYNAMIC);
+		
+		case FUNC: return CreateTypeHint(FUNC);
+		
+		case DICT:
+		{
+			TypeHint* type = CreateTypeHint(DICT);
+			type->subType = GetBroadTypeHint(DYNAMIC);
+			return type;
+		} break;
+		
+		case ARRAY: return CreateTypeHint(ARRAY);
+		
+		case NATIVE: return CreateTypeHint(NATIVE);
+	
+		default:
+			ErrorExit("(INTERNAL) Invalid argument to GetBroadTypeHint\n");
+			break;
+	}
+	
+	return NULL;
+}
 
 const char* HintString(const TypeHint* type)
 {
 	// TODO: maybe this should take a string buffer
 	if(type) 
 	{
-		if(!type->subType)
-			return HintTypeStrings[type->hint];
+		// NOTE: this would recurse until the char buffer overflows if the dynamic type was handled normally
+		if(type->hint == DYNAMIC)
+			return HintTypeStrings[DYNAMIC];
 		else
 		{
-			char buf[256];
-			sprintf(buf, "%s-%s", HintTypeStrings[type->hint], HintString(type->subType)); 
-			
-			char* str = malloc(strlen(buf) + 1);
-			assert(str);
-			strcpy(str, buf);
-			return str;
+			if(!type->subType)
+				return HintTypeStrings[type->hint];
+			else
+			{
+				char buf[256];
+				sprintf(buf, "%s-%s", HintTypeStrings[type->hint], HintString(type->subType)); 
+				
+				char* str = malloc(strlen(buf) + 1);
+				assert(str);
+				strcpy(str, buf);
+				return str;
+			}
 		}
 	}
 	return "unknown";
@@ -1064,30 +1070,19 @@ char CompareTypes(const TypeHint* a, const TypeHint* b)
 	return (a->hint == b->hint) && CompareTypes(a->subType, b->subType);
 }
 
-const TypeHint* GetTypeHintFromString(const char* n)
+TypeHint* GetTypeHintFromString(const char* n)
 {
-	if(strcmp(n, "number") == 0) return &NumberHint;
-	else if(strcmp(n, "string") == 0) return &StringHint;
-	else if(strcmp(n, "array") == 0) return &ArrayHint;
-	else if(strcmp(n, "dict") == 0) return &DictHint;
-	else if(strcmp(n, "function") == 0) return &FunctionHint;
-	else if(strcmp(n, "native") == 0) return &NativeHint;
-	else if(strcmp(n, "dynamic") == 0) return &DynamicHint;
-	else if(strcmp(n, "void") == 0) return &VoidHint;
+	if(strcmp(n, "number") == 0) return GetBroadTypeHint(NUMBER);
+	else if(strcmp(n, "string") == 0) return GetBroadTypeHint(STRING);
+	else if(strcmp(n, "array") == 0) return GetBroadTypeHint(ARRAY);
+	else if(strcmp(n, "dict") == 0) return GetBroadTypeHint(DICT);
+	else if(strcmp(n, "function") == 0) return GetBroadTypeHint(FUNC);
+	else if(strcmp(n, "native") == 0) return GetBroadTypeHint(NATIVE);
+	else if(strcmp(n, "dynamic") == 0) return GetBroadTypeHint(DYNAMIC);
+	else if(strcmp(n, "void") == 0) return GetBroadTypeHint(VOID);
 	else ErrorExit("Invalid type hint '%s'\n", Lexeme);
 	
 	return NULL;
-}
-
-TypeHint* CreateTypeHint(HintType hint)
-{
-	TypeHint* type = malloc(sizeof(TypeHint));
-	assert(type);
-	type->hint = hint;
-	type->next = NULL;
-	type->subType = NULL;
-
-	return type;
 }
 
 TypeHint* ParseTypeHint(FILE* in)
@@ -1131,10 +1126,9 @@ TypeHint* ParseTypeHint(FILE* in)
 	*/
 	if(CurTok == TOK_IDENT)
 	{
-		TypeHint* type = CreateTypeHint(VOID);
-		*type = *GetTypeHintFromString(Lexeme);
-		
+		TypeHint* type = GetTypeHintFromString(Lexeme);
 		GetNextToken(in);
+		
 		if(CurTok == '-')
 		{
 			GetNextToken(in);
@@ -1150,16 +1144,16 @@ TypeHint* ParseTypeHint(FILE* in)
 	return NULL;
 }
 
-const TypeHint* InferTypeFromExpr(Expr* exp)
+TypeHint* InferTypeFromExpr(Expr* exp)
 {
 	switch(exp->type)
 	{
 		// null initialized variables should be inferred upon later access
 		case EXP_NULL: return NULL; break;
 		
-		case EXP_NUMBER: return &NumberHint; break;
+		case EXP_NUMBER: return GetBroadTypeHint(NUMBER); break;
 		
-		case EXP_STRING: return &StringHint; break;
+		case EXP_STRING: return GetBroadTypeHint(STRING); break;
 		
 		case EXP_IDENT: 
 		{
@@ -1175,7 +1169,7 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 				if(decl)
 				{	
 					if(!decl->returnType)
-						return &FunctionHint;
+						return GetBroadTypeHint(FUNC);
 					else
 					{
 						TypeHint* type = CreateTypeHint(FUNC);
@@ -1227,16 +1221,18 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 					if(a && b)
 					{
 						if(a->hint == NUMBER && b->hint == NUMBER)
-							return &NumberHint;
+							return GetBroadTypeHint(NUMBER);
 						else
-							return &DynamicHint;
+							return NULL;
 					}
 				}
+				else if(a && a->hint == DICT) // possibly overloaded operation
+					return GetBroadTypeHint(DYNAMIC);
 				else
 					return NULL;
 			}
 			else
-				return &VoidHint;
+				return GetBroadTypeHint(VOID);
 		} break;
 		
 		case EXP_PAREN:
@@ -1246,7 +1242,7 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_DICT_LITERAL:
 		{
-			return &DictHint;
+			return GetBroadTypeHint(DICT);
 		} break;
 		
 		case EXP_ARRAY_LITERAL:
@@ -1255,14 +1251,19 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 			{
 				// attempt to infer the subtype of the array
 				Expr* node = exp->arrayx.head;
-				const TypeHint* inf = InferTypeFromExpr(node);
+				TypeHint* inf = InferTypeFromExpr(node);
 				node = node->next;
 				
 				while(node)
 				{
 					// if the array literal contains values which evaluate to more than one type, then it is a dynamic array
 					const TypeHint* curInf = InferTypeFromExpr(node);
-					if(!CompareTypes(curInf, inf)) return &ArrayHint;	
+					if(!CompareTypes(curInf, inf)) 
+					{
+						TypeHint* type = CreateTypeHint(ARRAY);
+						type->subType = GetBroadTypeHint(DYNAMIC);
+						return type;
+					}
 					node = node->next;
 				}
 				
@@ -1272,7 +1273,7 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 				return type;
 			}
 			
-			return &ArrayHint;
+			return GetBroadTypeHint(ARRAY);
 		} break;
 		
 		case EXP_ARRAY_INDEX:
@@ -1290,17 +1291,20 @@ const TypeHint* InferTypeFromExpr(Expr* exp)
 				}
 			}
 			
-			return &DynamicHint;
+			return GetBroadTypeHint(DYNAMIC);
 		} break;
 		
 		case EXP_DOT:
 		{
-			return &DynamicHint;
+			return GetBroadTypeHint(DYNAMIC);
 		} break;
 		
 		case EXP_LAMBDA:
 		{
-			return exp->lamx.decl->returnType;
+			TypeHint* hint = CreateTypeHint(FUNC);
+			hint->subType = exp->lamx.decl->returnType;
+			
+			return hint;
 		} break;
 		
 		default:
@@ -1357,6 +1361,85 @@ Expr* ParseFactor(FILE* in)
 			Expr* exp = CreateExpr(EXP_NEW);
 			exp->newExpr = ParseExpr(in);
 			return exp;
+		} break;
+		
+		case TOK_FORWARD:
+		{
+			GetNextToken(in);
+			
+			if(CurTok != TOK_IDENT)
+				ErrorExit("Expected identifier after 'forward'\n");
+				
+			char name[MAX_ID_NAME_LENGTH];
+			strcpy(name, Lexeme);
+			
+			GetNextToken(in);
+			
+			// function forward declaration
+			if(CurTok == '(')
+			{
+				GetNextToken(in);
+				
+				FuncDecl* decl = ReferenceFunction(name);
+				if(decl)
+				{
+					decl = malloc(sizeof(FuncDecl)); // allocate a dummy decl so that it doesn't affect the initial declaration
+					assert(decl);
+				}
+				else
+					decl = DeclareFunction(name, NumFunctions++);
+				
+				TypeHint* argTypes = NULL;
+				TypeHint* currentType = NULL;
+				
+				while(CurTok != ')')
+				{
+					TypeHint* type = ParseTypeHint(in);
+					
+					if(!argTypes)
+					{
+						argTypes = type;
+						currentType = type;
+					}
+					else
+					{
+						currentType->next = type;
+						currentType = type;
+					}
+					
+					if(CurTok == ',') GetNextToken(in);
+					else if(CurTok != ')') ErrorExit("Expected '(' or ',' in forward type declaration list\n");
+				}
+				decl->argTypes = argTypes;
+				GetNextToken(in);
+				
+				if(CurTok == ':')
+				{
+					GetNextToken(in);
+					TypeHint* type = ParseTypeHint(in);
+					decl->returnType = type;
+				}
+			}
+			else if(CurTok == ':')
+			{
+				GetNextToken(in);
+				
+				VarDecl* decl = ReferenceVariable(name);
+				if(decl)
+				{
+					decl = malloc(sizeof(VarDecl)); // allocate a dummy decl so that it doesn't affect the initial declaration
+					assert(decl);
+				}
+				else
+					decl = RegisterVariable(name);
+				
+				TypeHint* type = ParseTypeHint(in);
+				decl->type = type;
+			}
+			else
+				ErrorExit("Expected ':' or '(' after 'forward %s'\n", name);
+		
+			return CreateExpr(EXP_FORWARD);
 		} break;
 		
 		case TOK_CONTINUE:
@@ -1633,7 +1716,15 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			FuncDecl* prevDecl = CurFunc;
-			FuncDecl* decl = EnterFunction(name);
+			FuncDecl* decl = ReferenceFunction(name);
+			if(decl)
+			{
+				if(decl->isExtern)
+					ErrorExit("Function '%s' has the same name as an extern\n", name);
+				CurFunc = decl;
+			}
+			else
+				decl = EnterFunction(name);
 			
 			PushScope();
 			
@@ -1680,7 +1771,8 @@ Expr* ParseFactor(FILE* in)
 				if(CurTok == ',') GetNextToken(in);
 				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
 			}
-			decl->argTypes = argTypes;
+			if(argTypes && !decl->argTypes)
+				decl->argTypes = argTypes;
 			
 			GetNextToken(in);
 			
@@ -1713,8 +1805,10 @@ Expr* ParseFactor(FILE* in)
 			if(decl->hasReturn == -1)
 			{	
 				decl->hasReturn = 0;
-				if(!CompareTypes(decl->returnType, &VoidHint))
+				if(!CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
 					Warn("Reached end of non-void hinted function '%s' without a value returned\n", decl->name);
+				else
+					decl->returnType = GetBroadTypeHint(VOID);
 			}
 			exp->funcx.decl = decl;
 			exp->funcx.bodyHead = exprHead;
@@ -1754,7 +1848,7 @@ Expr* ParseFactor(FILE* in)
 					return exp;
 				}
 								
-				if(!CompareTypes(CurFunc->returnType, &VoidHint))
+				if(!CompareTypes(CurFunc->returnType, GetBroadTypeHint(VOID)))
 					Warn("Attempting to return without a value in a function which was hinted to return a value\n");
 				
 				if(CurFunc->hasReturn == -1)
@@ -1820,18 +1914,23 @@ Expr* ParseFactor(FILE* in)
 				// TODO: GET ALIASING WORKING WHY ISN'T IT WORKING
 				ErrorExit("aliasing not supported\n");
 				
-				GetNextToken(in);
+				/*GetNextToken(in);
 				
 				if(CurTok != TOK_IDENT) ErrorExit("Expected identifier after 'as'\n");
 				exp->extDecl = RegisterExternAs(name, Lexeme);
 				
 				printf("registering extern %s as %s\n", name, Lexeme);
 				
-				GetNextToken(in);
+				GetNextToken(in);*/
 			}
 			else
 			{	
-				exp->extDecl = RegisterExtern(name);
+				exp->extDecl = ReferenceFunction(name);
+				if(!exp->extDecl)
+					exp->extDecl = DeclareExtern(name);
+				else if(!exp->extDecl->isExtern)
+					ErrorExit("Attempted to declare extern with same name as previously defined function '%s'\n", name);
+				
 				if(CurTok == ':')
 				{
 					GetNextToken(in);
@@ -1959,8 +2058,10 @@ Expr* ParseFactor(FILE* in)
 			if(decl->hasReturn == -1)
 			{	
 				decl->hasReturn = 0;
-				if(!CompareTypes(decl->returnType, &VoidHint))
+				if(!CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
 					Warn("Reached end of non-void hinted lambda without a value returned\n");
+				else
+					decl->returnType = GetBroadTypeHint(VOID);
 			}
 			
 			exp->lamx.decl = decl;
@@ -1999,7 +2100,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			const TypeHint* arrType = InferTypeFromExpr(exp->arrayIndex.arrExpr);
 			
-			if(arrType && !arrType->subType) //!CompareTypes(arrType, &ArrayHint) && !CompareTypes(arrType, &StringHint) && !CompareTypes(arrType, &DictHint))
+			if(!CompareTypes(arrType, GetBroadTypeHint(ARRAY)) && !CompareTypes(arrType, GetBroadTypeHint(STRING)) && !CompareTypes(arrType, GetBroadTypeHint(DICT)))
 				Warn("Attempted to index a '%s' (non-indexable type)\n", HintString(arrType));
 				
 			if(CurTok != ']')
@@ -2022,7 +2123,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			const TypeHint* dictType = InferTypeFromExpr(exp->dotx.dict);
 			
-			if(!CompareTypes(dictType, &DictHint))
+			if(!CompareTypes(dictType, GetBroadTypeHint(DICT)))
 				Warn("Value being indexed using dot ('.') operator does not denote a dictionary (instead, it evaluates to a '%s')\n", HintString(dictType));
 			
 			GetNextToken(in);
@@ -2048,7 +2149,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			const TypeHint* funcType = InferTypeFromExpr(exp->callx.func);
 			
-			if(!CompareTypes(funcType, &FunctionHint) && !CompareTypes(funcType, &DictHint))
+			if(!CompareTypes(funcType, GetBroadTypeHint(FUNC)) && !CompareTypes(funcType, GetBroadTypeHint(DICT)))
 				Warn("Value being called does not denote a callable value (instead, it evaluates to a '%s')\n", HintString(funcType));
 				
 			GetNextToken(in);
@@ -2070,7 +2171,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			const TypeHint* dictType = InferTypeFromExpr(exp->dotx.dict);
 			
-			if(!CompareTypes(dictType, &DictHint))
+			if(!CompareTypes(dictType, GetBroadTypeHint(DICT)))
 				Warn("Value being index using colon (':') operator does not denote a dictionary (instead, it evaluates to a '%s')\n", HintString(dictType));
 			
 			GetNextToken(in);
@@ -2099,7 +2200,7 @@ Expr* ParseUnary(FILE* in)
 			
 			const TypeHint* expType = InferTypeFromExpr(exp->unaryx.expr);
 			
-			if(!CompareTypes(expType, &NumberHint))
+			if(!CompareTypes(expType, GetBroadTypeHint(NUMBER)))
 				Warn("Applying unary operator to non-numerical value of type '%s'\n", HintString(expType));
 				
 			return exp;
@@ -2171,7 +2272,7 @@ void NarrowTypes(Expr* exp)
 				exp->binx.lhs->varx.varDecl->type = InferTypeFromExpr(exp->binx.rhs);
 			else 
 			{
-				const TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);
+				TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);
 				
 				//Warn("var types: %s, %s\n", HintString(exp->binx.lhs->varx.varDecl->type), HintString(inf));
 				if(!CompareTypes(inf, exp->binx.lhs->varx.varDecl->type))
@@ -2182,7 +2283,7 @@ void NarrowTypes(Expr* exp)
 		{
 			if(exp->binx.lhs->varx.varDecl)
 			{
-				const TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);
+				TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);
 				if(!exp->binx.lhs->varx.varDecl->type)
 					exp->binx.lhs->varx.varDecl->type = inf;
 				else if(!CompareTypes(inf, exp->binx.lhs->varx.varDecl->type))
@@ -2194,24 +2295,26 @@ void NarrowTypes(Expr* exp)
 			Expr* arr = exp->binx.lhs->arrayIndex.arrExpr;
 			if(arr->type == EXP_IDENT)
 			{
+				TypeHint* type = InferTypeFromExpr(exp->binx.rhs);
+				
 				if(arr->varx.varDecl)
 				{
-					const TypeHint* inf = InferTypeFromExpr(exp->binx.rhs);	
-						
-					if(!arr->varx.varDecl->type || !arr->varx.varDecl->type->subType)
+					if(arr->varx.varDecl->type)
 					{
-						HintType newHint = arr->varx.varDecl->type ? arr->varx.varDecl->type->hint : DYNAMIC;
-						
-						TypeHint* type = CreateTypeHint(newHint);
-						arr->varx.varDecl->type = type;						
-						type->subType = inf;
+						if(!arr->varx.varDecl->type->subType)
+							arr->varx.varDecl->type->subType = type;
+						else
+						{
+							if(!CompareTypes(arr->varx.varDecl->type->subType, type))
+								Warn("Assigning a '%s' to an index of type '%s'\n", HintString(type), HintString(arr->varx.varDecl->type->subType));
+						}
 					}
-					else if(arr->varx.varDecl->type->subType)
+					else
 					{
-						if(!CompareTypes(arr->varx.varDecl->type->subType, inf))
-							Warn("Assigning a value of type '%s' to an index of a type '%s'\n", HintString(arr->varx.varDecl->type));
+						arr->varx.varDecl->type = CreateTypeHint(ARRAY);
+						arr->varx.varDecl->type->subType = type;
 					}
-				}
+				} 
 			}
 		}
 	}
@@ -3620,7 +3723,9 @@ void CompileExpr(Expr* exp)
 			AllocatePatch(sizeof(int) / sizeof(Word));
 		} break;
 		
-		case EXP_LINKED_BINARY_CODE:
+		case EXP_FORWARD: break; // compile time thing, should be allowed at top level
+		
+		/*case EXP_LINKED_BINARY_CODE:
 		{
 			for(int i = 0; i < exp->code.numFunctions; ++i)
 			{
@@ -3633,7 +3738,7 @@ void CompileExpr(Expr* exp)
 				AppendCode(exp->code.bytes[i]);
 				
 			free(exp->code.toBeRetargeted);
-		} break;
+		} break;*/
 		
 		default:
 			ErrorExitE(exp, "Invalid top level expression (expected non-value expression in place of %s)\n", ExprNames[exp->type]);
@@ -3718,7 +3823,7 @@ void RetargetIndex(int* indexLocation, int* indexTable, int length)
 }
 
 
-Expr* ParseBinaryFile(FILE* bin, const char* fileName)
+/*Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 {
 	Expr* exp = CreateExpr(EXP_LINKED_BINARY_CODE);
 	
@@ -3781,7 +3886,7 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 		exp->code.toBeRetargeted = malloc(sizeof(FuncDecl*) * numFunctions);
 		for(int i = 0; i < numFunctions; ++i)
 		{
-			FuncDecl* decl = DeclareFunction(functionNames[i]);
+			FuncDecl* decl = DeclareFunction(functionNames[i], NumFunctions++);
 			decl->pc = functionPcs[i];
 			decl->numArgs = functionNumArgs[i];
 			decl->hasEllipsis = functionHasEllipsis[i];
@@ -3805,7 +3910,7 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 		
 		char** externNames = ReadStringArrayFromBinaryFile(bin, numExterns);
 		for(int i = 0; i < numExterns; ++i)
-			externIndexTable[i] = RegisterExtern(externNames[i])->index;
+			externIndexTable[i] = DeclareExtern(externNames[i])->index;
 		FreeStringArray(externNames, numExterns);
 	}
 	
@@ -3982,7 +4087,7 @@ Expr* ParseBinaryFile(FILE* bin, const char* fileName)
 	exp->file = fileName;
 	
 	return exp;
-}
+}*/
 
 const char* StandardSourceSearchPath = "C:\\Mint\\src\\";
 const char* StandardLibSearchPath = "C:\\Mint\\lib\\";
