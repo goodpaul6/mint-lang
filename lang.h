@@ -1,10 +1,35 @@
 // lang.h -- a language which compiles to mint vm bytecode
+#ifndef MINT_LANG_H
+#define MINT_LANG_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <assert.h>
+#include <stdarg.h>
+
 
 #include "vm.h"
 
 #define MAX_ID_NAME_LENGTH 64
 #define MAX_SCOPES 32
 #define MAX_ARGS 64
+
+void ErrorExit(const char* format, ...);
+void Warn(const char* format, ...);
+
+void _AppendCode(Word code, int line, int fileNameIndex);
+void _AppendInt(int value, int line, int fileNameIndex);
+void _AllocatePatch(int length, int line, int file);
+
+void EmplaceInt(int loc, int value);
+
+#define AppendCode(code) _AppendCode((code), exp->line, RegisterString(exp->file)->index)
+#define AppendInt(value) _AppendInt((value), exp->line, RegisterString(exp->file)->index)
+#define AllocatePatch(length) _AllocatePatch((length), exp->line, RegisterString(exp->file)->index)
+
+void OutputCode(FILE* out);
 
 typedef enum
 {
@@ -15,13 +40,16 @@ typedef enum
 	FUNC,
 	NATIVE,
 	VOID,
-	DYNAMIC
-} HintType;
+	DYNAMIC,
+	NUM_HINTS
+} Hint;
+
+extern const char* HintStrings[NUM_HINTS];
 
 typedef struct _TypeHint
 {
 	struct _TypeHint* next;
-	HintType hint;
+	Hint hint;
 	
 	// for indexable values
 	struct _TypeHint* subType;
@@ -101,6 +129,25 @@ typedef struct _FuncDecl
 	char scope;
 } FuncDecl;
 
+ConstDecl* RegisterNumber(double number);
+ConstDecl* RegisterString(const char* string);
+
+void PushScope();
+void PopScope();
+
+FuncDecl* DeclareFunction(const char* name, int index);
+FuncDecl* DeclareExtern(const char* name);
+
+FuncDecl* EnterFunction(const char* name);
+void ExitFunction();
+
+FuncDecl* ReferenceFunction(const char* name);
+
+VarDecl* RegisterVariable(const char* name);
+VarDecl* RegisterArgument(const char* name);
+
+VarDecl* ReferenceVariable(const char* name);
+
 enum
 {
 	TOK_IDENT = -1,
@@ -141,6 +188,14 @@ enum
 	TOK_FORWARD = -36
 };
 
+extern size_t LexemeCapacity;
+extern size_t LexemeLength;
+extern char* Lexeme;
+extern int CurTok;
+extern char ResetLex;
+
+int GetToken(FILE* in);
+
 typedef enum
 {
 	EXP_NUMBER,
@@ -169,6 +224,7 @@ typedef enum
 	EXP_LAMBDA,
 	EXP_FORWARD,
 	//EXP_LINKED_BINARY_CODE
+	NUM_EXPR_TYPES
 } ExprType;
 
 typedef struct _Expr
@@ -190,7 +246,7 @@ typedef struct _Expr
 		struct { FuncDecl* decl; struct _Expr* bodyHead; } funcx;
 		FuncDecl* extDecl;
 		struct { struct _Expr *cond, *bodyHead, *alt; } ifx;
-		struct _Expr* retExpr;
+		struct { struct _Expr* exp; FuncDecl* decl; } retx;
 		struct { struct _Expr* head; int length; } arrayx;
 		struct { struct _Expr* arrExpr; struct _Expr* indexExpr; } arrayIndex;
 		struct { int op; struct _Expr* expr; } unaryx;
@@ -203,6 +259,22 @@ typedef struct _Expr
 		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
 	};
 } Expr;
+
+void ErrorExitE(Expr* exp, const char* format, ...);
+void WarnE(Expr* exp, const char* format, ...);
+
+Expr* CreateExpr(ExprType type);
+int GetNextToken(FILE* in);
+Expr* ParseExpr(FILE* in);
+
+extern const char* ExprNames[NUM_EXPR_TYPES];
+
+char CompareTypes(const TypeHint* a, const TypeHint* b);
+TypeHint* GetBroadTypeHint(Hint type);
+TypeHint* ParseTypeHint(FILE* in);
+void ResolveTypesExprList(Expr* head);
+TypeHint* InferTypeFromExpr(Expr* exp);
+const char* HintString(const TypeHint* type);
 
 typedef enum 
 {
@@ -217,3 +289,32 @@ typedef struct _Patch
 	int loc;
 } Patch;
 
+void CompileExprList(Expr* head);
+
+extern int LineNumber;
+extern const char* FileName;
+
+extern int NumNumbers;
+extern int NumStrings;
+
+extern int NumGlobals;
+extern int NumFunctions;
+extern int NumExterns;
+extern int EntryPoint;
+
+extern Word* Code;
+extern int CodeCapacity;
+extern int CodeLength;
+
+extern ConstDecl* Constants;
+extern ConstDecl* ConstantsCurrent;
+ 
+extern FuncDecl* CurFunc;
+
+extern FuncDecl* Functions;
+extern FuncDecl* FunctionsCurrent;
+
+extern VarDecl* VarStack[MAX_SCOPES];
+extern int VarStackDepth;
+
+#endif
