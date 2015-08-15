@@ -93,6 +93,8 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
 		if(strcmp(Lexeme, "as") == 0) return TOK_AS;
 		if(strcmp(Lexeme, "forward") == 0) return TOK_FORWARD;
+		if(strcmp(Lexeme, "do") == 0) return TOK_DO;
+		if(strcmp(Lexeme, "then") == 0) return TOK_THEN;
 
 		return TOK_IDENT;
 	}

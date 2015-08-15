@@ -56,7 +56,11 @@ Expr* ParseIf(FILE* in)
 	Expr* exp = CreateExpr(EXP_IF);
 	
 	Expr* cond = ParseExpr(in);
-				
+	
+	if(CurTok != TOK_THEN)
+		ErrorExit("Expected 'then' after if condition\n");
+	GetNextToken(in);
+	
 	PushScope();
 	
 	Expr* exprHead = NULL;
@@ -475,6 +479,10 @@ Expr* ParseFactor(FILE* in)
 				
 			exp->forx.iter = ParseExpr(in);
 			
+			if(CurTok != TOK_DO)
+				ErrorExit("Expected 'do' after for iterator expression\n");
+			GetNextToken(in);
+
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			

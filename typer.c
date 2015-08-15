@@ -346,6 +346,10 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 			
 			return hint;
 		} break;
+
+		case EXP_IF:
+		{
+		} break;
 		
 		default:
 			break;

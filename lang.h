@@ -184,7 +184,9 @@ enum
 	TOK_BREAK = -32,
 	TOK_ELLIPSIS = -33,
 	TOK_AS = -34,
-	TOK_FORWARD = -35
+	TOK_FORWARD = -35,
+	TOK_DO = -36,
+	TOK_THEN = -37
 };
 
 extern size_t LexemeCapacity;

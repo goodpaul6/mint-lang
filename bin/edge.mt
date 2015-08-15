@@ -103,11 +103,13 @@ func list_reversed(self)
 	end)
 end
 
-func main()
-	var x = list.new(10, 20, 30)
-	var y = list.new(10, 10, 30)
+func add(x : number, y : number)
+	return x + y
+end
 
-	write(if x == y "true" else "false" end)
+func main()
+	var grades = [10, 20, 30]
+	write(grades.hi)
 
 	return 0
 end
