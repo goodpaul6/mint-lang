@@ -91,6 +91,8 @@ char CompareTypes(const TypeHint* a, const TypeHint* b)
 {
 	if(!a || !b) return 1;
 	
+	if(a->hint == VOID || b->hint == VOID) return a->hint == b->hint;
+	
 	if(a->hint == DYNAMIC || b->hint == DYNAMIC) return 1;
 	return (a->hint == b->hint) && CompareTypes(a->subType, b->subType);
 }
@@ -210,7 +212,7 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_CALL:
 		{
-			if(exp->callx.func->type == EXP_IDENT)
+			/*if(exp->callx.func->type == EXP_IDENT)
 			{
 				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
 				if(decl)
@@ -226,7 +228,17 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 				}
 			}
 			
-			return NULL;
+			return GetBroadTypeHint(DYNAMIC);*/
+			TypeHint* inf = InferTypeFromExpr(exp->callx.func);
+			if(inf && inf->hint == FUNC)
+			{
+				if(inf->subType)
+					return inf->subType;
+				else
+					return GetBroadTypeHint(DYNAMIC);
+			}
+			else
+				return GetBroadTypeHint(DYNAMIC);
 		} break;
 		
 		case EXP_VAR:
@@ -245,24 +257,14 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 				{
 					if(a && b)
 					{
-						if(a->hint == NUMBER)
+						if(a->hint == NUMBER && b->hint == NUMBER)
 							return GetBroadTypeHint(NUMBER);
-						else if(a->hint == DICT)
-							return GetBroadTypeHint(DYNAMIC);
 						else
-						{
-							Warn("Invalid binary operation between '%s' and '%s'\n", HintString(a), HintString(b));
-							return NULL;
-						}
+							return GetBroadTypeHint(DYNAMIC);
 					}
 				}
 				else if(a && a->hint == DICT) // possibly overloaded operation
 					return GetBroadTypeHint(DYNAMIC);
-				else
-				{
-					Warn("Invalid binary operation between '%s' and '%s'\n", HintString(a), HintString(b)); 
-					return NULL;
-				}
 			}
 			else
 				return GetBroadTypeHint(VOID);
@@ -311,7 +313,12 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
-			if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
+			TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			if(inf && inf->subType)
+				return inf->subType;
+			return GetBroadTypeHint(DYNAMIC);
+			
+			/*if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
 			{
 				Expr* id = exp->arrayIndex.arrExpr;
 				if(id->varx.varDecl)
@@ -324,7 +331,7 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 				}
 			}
 			
-			return GetBroadTypeHint(DYNAMIC);
+			return GetBroadTypeHint(DYNAMIC);*/
 		} break;
 		
 		case EXP_DOT:
@@ -409,8 +416,22 @@ void ResolveTypes(Expr* exp)
 	{
 		case EXP_BIN:
 		{
+			ResolveTypes(exp->binx.lhs);
+			ResolveTypes(exp->binx.rhs);
+			
 			if(exp->binx.op == '=')
 				ResolveTypeFromAssignment(exp);
+			else
+			{
+				const TypeHint* a = InferTypeFromExpr(exp->binx.lhs);
+				const TypeHint* b = InferTypeFromExpr(exp->binx.rhs);
+				
+				if(a && b)
+				{
+					if(!CompareTypes(a, b) && a->hint != DICT)
+						WarnE(exp, "Invalid binary operation between '%s' and '%s'\n", HintString(a), HintString(b));
+				}
+			}
 		} break;
 		
 		case EXP_PAREN:
@@ -426,13 +447,13 @@ void ResolveTypes(Expr* exp)
 		
 		case EXP_FUNC:
 		{
-			ResolveTypes(exp->funcx.bodyHead);
+			ResolveTypesExprList(exp->funcx.bodyHead);
 		} break;
 		
 		case EXP_IF:
 		{
 			ResolveTypes(exp->ifx.cond);
-			ResolveTypes(exp->ifx.bodyHead);
+			ResolveTypesExprList(exp->ifx.bodyHead);
 			
 			if(exp->ifx.alt)
 			{
@@ -458,8 +479,8 @@ void ResolveTypes(Expr* exp)
 					
 				if(decl->returnType)
 				{
-					if(CompareTypes(decl->returnType, VOID))
-						WarnE(exp, "Attempting to return a value in a function which was hinted to return 'void'\n", HintString(decl->returnType));
+					if(CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
+						WarnE(exp, "Attempting to return a value in a function which was hinted to return '%s'\n", HintString(decl->returnType));
 					else if(!CompareTypes(decl->returnType, inf))
 						WarnE(exp, "Return value type '%s' does not match with function '%s' designated return type '%s'\n", HintString(inf), decl->name, HintString(decl->returnType));
 				}
@@ -471,6 +492,10 @@ void ResolveTypes(Expr* exp)
 		case EXP_UNARY:
 		{
 			ResolveTypes(exp->unaryx.expr);
+			const TypeHint* inf = InferTypeFromExpr(exp->unaryx.expr);
+			
+			if(!CompareTypes(GetBroadTypeHint(NUMBER), inf))
+				WarnE(exp, "Applying unary operator to non-numerical value of type '%s'\n", HintString(inf));
 		} break;
 		
 		case EXP_FOR:
@@ -517,6 +542,9 @@ void ResolveTypes(Expr* exp)
 		
 		case EXP_CALL:
 		{
+			for(int i = 0; i < exp->callx.numArgs; ++i)
+				ResolveTypes(exp->callx.args[i]);
+				
 			if(exp->callx.func->type == EXP_IDENT)
 			{
 				if(!exp->callx.func->varx.varDecl)
@@ -543,12 +571,18 @@ void ResolveTypes(Expr* exp)
 				if(exp->arrayIndex.arrExpr->varx.varDecl)
 				{
 					if(!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(ARRAY)) &&
-						!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(DICT)))
+						!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(DICT)) &&
+						!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(STRING)))
 						WarnE(exp, "Attempted to index variable of type '%s'\n", HintString(exp->arrayIndex.arrExpr->varx.varDecl->type));
 				}
 			}
 			else
 				ResolveTypes(exp->arrayIndex.arrExpr);
+		} break;
+		
+		case EXP_LAMBDA:
+		{
+			ResolveTypesExprList(exp->lamx.bodyHead);
 		} break;
 		
 		default:	// no type information can/needs to be resolved for these expression types

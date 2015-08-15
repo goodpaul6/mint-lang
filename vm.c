@@ -1675,6 +1675,9 @@ void MarkObject(VM* vm, Object* obj)
 				node = node->next;
 			}
 		}
+
+		if(obj->meta)
+			MarkObject(vm, obj->meta);
 	}
 }
 
@@ -1872,6 +1875,7 @@ Object* PushArray(VM* vm, int length)
 Object* PushDict(VM* vm)
 {
 	Object* obj = NewObject(vm, OBJ_DICT);
+	obj->meta = NULL;
 	InitDict(&obj->dict);
 	PushObject(vm, obj);
 	return obj;
@@ -1898,6 +1902,13 @@ const char* PopString(VM* vm)
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_STRING) ErrorExit(vm, "Expected string but recieved %s\n", ObjectTypeNames[obj->type]);
 	return obj->string.raw;
+}
+
+Object* PopStringObject(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_STRING) ErrorExit(vm, "Expected string but received '%s'\n", ObjectTypeNames[obj->type]);
+	return obj;
 }
 
 int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs)
@@ -2007,6 +2018,8 @@ char* ReadStringFromStdin()
 
 void PushIndir(VM* vm, int nargs)
 {
+	if(vm->indirStackSize + 3 >= MAX_INDIR) ErrorExit(vm, "Imminent callstack overlflow\n");
+
 	vm->indirStack[vm->indirStackSize++] = nargs;
 	vm->indirStack[vm->indirStackSize++] = vm->fp;
 	vm->indirStack[vm->indirStackSize++] = vm->pc;
@@ -2024,6 +2037,8 @@ void PopIndir(VM* vm)
 		return;
 	}
 	
+	if(vm->indirStackSize - 3 < 0) ErrorExit(vm, "Imminent callstack underflow\n");
+
 	if(vm->debug)
 		printf("previous fp: %i\n", vm->fp);
 
@@ -2074,9 +2089,9 @@ void CallOverloadedOperator(VM* vm, const char* name, Object* val1, Object* val2
 {
 	if(vm->debug)
 		printf("overload %s\n", name);
-	if(val1->type != OBJ_DICT)																														
+	if(val1->type != OBJ_DICT || !val1->meta)																														
 		ErrorExit(vm, "Invalid binary operation\n");																								
-	Object* binFunc = DictGet(&val1->dict, name);
+	Object* binFunc = DictGet(&val1->meta->dict, name);																							
 	if(!binFunc)
 		ErrorExit(vm, "Attempted to perform binary operation with dictionary as lhs (and no operator overload) for op '%s'\n", name);
 	if(binFunc->type != OBJ_FUNC)																													
@@ -2095,7 +2110,10 @@ char CallOverloadedOperatorIf(VM* vm, const char* name, Object* val1, Object* va
 		printf("overload %s\n", name);
 	if(val1->type != OBJ_DICT)																														
 		ErrorExit(vm, "Invalid binary operation\n");																								
-	Object* binFunc = DictGet(&val1->dict, name);
+	if(!val1->meta)
+		return 0;
+
+	Object* binFunc = DictGet(&val1->meta->dict, name);
 	if(!binFunc)
 		return 0;
 	if(binFunc->type != OBJ_FUNC)																													
@@ -2114,7 +2132,9 @@ char CallOverloadedOperatorEx(VM* vm, const char* name, Object* val1, Object* va
 		printf("overload %s\n", name);
 	if(val1->type != OBJ_DICT)																														
 		ErrorExit(vm, "Invalid binary operation\n");																								
-	Object* binFunc = DictGet(&val1->dict, name);
+	if(!val1->meta)
+		return 0;
+	Object* binFunc = DictGet(&val1->meta->dict, name);
 	if(!binFunc)
 		return 0;
 	if(binFunc->type != OBJ_FUNC)																													
@@ -2295,12 +2315,12 @@ void ExecuteCycle(VM* vm)
 				PushNumber(vm, strlen(obj->string.raw));
 			else if(obj->type == OBJ_ARRAY)
 				PushNumber(vm, obj->array.length);
-			else if(obj->type == OBJ_DICT)
+			else if(obj->type == OBJ_DICT && obj->meta)
 			{
-				Object* lenFunc = DictGet(&obj->dict, "LENGTH");
+				Object* lenFunc = DictGet(&obj->meta->dict, "LENGTH");
 				if(!lenFunc)
-					ErrorExit(vm, "Attempted to get length of dictionary without 'LENGTH' overload\n");
-				
+					ErrorExit(vm, "Attempted to get length of dictionary without 'LENGTH' overload\n");					
+
 				PushObject(vm, obj);
 				CallFunction(vm, lenFunc->func.index, 1);
 			}
@@ -2347,54 +2367,126 @@ void ExecuteCycle(VM* vm)
 			obj->array.length = 0;
 		} break;
 
+		case OP_SET_META:
+		{
+			if(vm->debug)
+				printf("set_meta\n");
+			++vm->pc;
+
+			Object* obj = PopDict(vm);
+			Object* meta = PopDict(vm);
+
+			obj->meta = meta;
+		} break;
+
+		case OP_GET_META:
+		{
+			if(vm->debug)
+				printf("get_meta\n");
+			++vm->pc;
+
+			Object* obj = PopDict(vm);
+			if(obj->meta)
+				PushObject(vm, obj->meta);
+			else
+				PushObject(vm, &NullObject);
+		} break;
+
 		case OP_DICT_SET:
 		{
 			++vm->pc;
-			int keyIndex = ReadInteger(vm);
-			
 			if(vm->debug)
-				printf("dict_set %s\n", vm->stringConstants[keyIndex]);
-				
+				printf("dict_set");
+
 			Object* obj = PopDict(vm);
+			Object* index = PopStringObject(vm);
 			Object* value = PopObject(vm);
 			
-			Object* over = DictGet(&obj->dict, "GETINDEX");
-			if(over && over->type == OBJ_FUNC)
+			if(vm->debug)
 			{
-				PushObject(vm, value);
-				PushString(vm, vm->stringConstants[keyIndex]);
-				PushObject(vm, obj);
-				CallFunction(vm, over->func.index, 3);
+				printf(" '%s' ", index->string.raw);
+				WriteObject(vm, value);
+				printf("\n");
+			}
+			
+			if(obj->meta)
+			{
+				Object* over = DictGet(&obj->meta->dict, "SETINDEX");
+				if(over && over->type == OBJ_FUNC)
+				{
+					PushObject(vm, value);
+					PushObject(vm, index);
+					PushObject(vm, obj);
+					CallFunction(vm, over->func.index, 3);
+				}
+				else
+					DictPut(&obj->dict, index->string.raw, value);
 			}
 			else
-				DictPut(&obj->dict, vm->stringConstants[keyIndex], value);
+				DictPut(&obj->dict, index->string.raw, value);
 		} break;
 		
 		case OP_DICT_GET:
 		{
 			++vm->pc;
-			int keyIndex = ReadInteger(vm);
-			
 			if(vm->debug)
-				printf("dict_get %s\n", vm->stringConstants[keyIndex]);
+				printf("dict_get");
 				
 			Object* obj = PopDict(vm);
+			Object* index = PopObject(vm);
 			
-			Object* over = DictGet(&obj->dict, "GETINDEX");
-			if(over && over->type == OBJ_FUNC)
-			{
-				PushString(vm, vm->stringConstants[keyIndex]);
-				PushObject(vm, obj);
-				CallFunction(vm, over->func.index, 2);
-			}
+			if(vm->debug)
+				printf(" %s\n", index->string.raw);
+			
+			Object* value;
+
+			value = index->type == OBJ_STRING ? DictGet(&obj->dict, index->string.raw) : NULL;
+			if(value)
+				PushObject(vm, value);
 			else
 			{
-				Object* value = DictGet(&obj->dict, vm->stringConstants[keyIndex]);
-				if(value)
-					PushObject(vm, value);
+				// only invoke metadict functions if the key is non-existent
+				if(obj->meta)
+				{
+					Object* over = DictGet(&obj->meta->dict, "GETINDEX");
+					if(over && over->type == OBJ_FUNC)
+					{
+						PushObject(vm, index);
+						PushObject(vm, obj);
+						CallFunction(vm, over->func.index, 2);
+						PushObject(vm, vm->retVal);
+					}
+					else
+						PushObject(vm, &NullObject);
+				}
 				else
 					PushObject(vm, &NullObject);
 			}
+		} break;
+		
+		case OP_DICT_SET_RAW:
+		{
+			++vm->pc;
+			
+			Object* obj = PopDict(vm);
+			const char* index = PopString(vm);
+			Object* value = PopObject(vm);
+			
+			DictPut(&obj->dict, index, value);
+		} break;
+		
+		case OP_DICT_GET_RAW:
+		{
+			++vm->pc;
+			
+			Object* obj = PopDict(vm);
+			const char* index = PopString(vm);
+			
+			Object* value = DictGet(&obj->dict, index);
+			if(value)
+				PushObject(vm, value);
+			else
+				PushObject(vm, &NullObject);
 		} break;
 
 		case OP_DICT_PAIRS:
@@ -2497,7 +2589,26 @@ void ExecuteCycle(VM* vm)
 			
 			++vm->pc;
 			Object* obj = PopObject(vm);
-			PushNumber(vm, -obj->number);
+
+			if(obj->type == OBJ_DICT)
+			{
+				if(obj->meta)
+				{
+					Object* negFunc = DictGet(&obj->meta->dict, "NEG");
+					if(negFunc && negFunc->type == OBJ_FUNC)
+					{
+						PushObject(vm, obj);
+						CallFunction(vm, negFunc->func.index, 1);
+						PushObject(vm, vm->retVal);
+					}
+					else
+						ErrorExit(vm, "Invalid negation of dictionary\n");
+				}
+				else
+					ErrorExit(vm, "Invalid negation of dictionary\n");
+			}
+			else
+				PushNumber(vm, -obj->number);
 		} break;
 		
 		case OP_LOGICAL_NOT:
@@ -2507,7 +2618,25 @@ void ExecuteCycle(VM* vm)
 			
 			++vm->pc;
 			Object* obj = PopObject(vm);
-			PushNumber(vm, !obj->number);
+			if(obj->type == OBJ_DICT)
+			{
+				if(obj->meta)
+				{
+					Object* notFunc = DictGet(&obj->meta->dict, "NOT");
+					if(notFunc && notFunc->type == OBJ_FUNC)
+					{
+						PushObject(vm, obj);
+						CallFunction(vm, notFunc->func.index, 1);
+						PushObject(vm, vm->retVal);
+					}
+					else
+						ErrorExit(vm, "Invalid logical not-ing of dictionary\n");
+				}
+				else
+					ErrorExit(vm, "Invalid logical not-ing of dictionary\n");
+			}
+			else
+				PushNumber(vm, !obj->number);
 		} break;
 		
 		case OP_SETINDEX:
@@ -2596,16 +2725,12 @@ void ExecuteCycle(VM* vm)
 			}
 			else if(obj->type == OBJ_DICT)
 			{
-				if(!CallOverloadedOperatorIf(vm, "GETINDEX", obj, indexObj))
-				{
-					if(indexObj->type != OBJ_STRING)
-						ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
-					Object* val = (Object*)DictGet(&obj->dict, indexObj->string.raw);
-					if(val)
-						PushObject(vm, val);
-					else
-						PushObject(vm, &NullObject);
-				}
+				Object* val = indexObj->type == OBJ_STRING ? DictGet(&obj->dict, indexObj->string.raw) : NULL;
+
+				if(val)
+					PushObject(vm, val);
+				else if(!CallOverloadedOperatorIf(vm, "GETINDEX", obj, indexObj))
+					PushObject(vm, &NullObject);
 				else
 					PushObject(vm, vm->retVal);
 			}
@@ -2685,7 +2810,6 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 		
-		
 		case OP_CALL:
 		{
 			Word nargs = vm->program[++vm->pc];
@@ -2723,11 +2847,11 @@ void ExecuteCycle(VM* vm)
 			
 			Object* obj = PopObject(vm);
 			
-			if(obj->type == OBJ_DICT)
+			if(obj->type == OBJ_DICT && obj->meta)
 			{
 				// NOTE: CALL operators must be function pointers since they take the dict as
 				// their first argument
-				Object* fobj = DictGet(&obj->dict, "CALL");
+				Object* fobj = DictGet(&obj->meta->dict, "CALL");
 				if(!fobj || fobj->type != OBJ_FUNC)
 					ErrorExit(vm, "Attempted to call dictionary object without valid CALL overload\n");
 				id = fobj->func.index;
@@ -2839,29 +2963,6 @@ void ExecuteCycle(VM* vm)
 			char debug = vm->program[++vm->pc];
 			++vm->pc;
 			vm->debug = debug;
-		} break;
-		
-		case OP_DICT_GET_RKEY:
-		{
-			Object* obj = PopObject(vm);
-			const char* key = PopString(vm);
-			
-			Object* val = (Object*)DictGet(&obj->dict, key);
-			if(val)
-				PushObject(vm, val);
-			else
-				PushObject(vm, &NullObject);
-			++vm->pc;
-		} break;
-		
-		case OP_DICT_SET_RKEY:
-		{
-			Object* obj = PopObject(vm);
-			const char* key = PopString(vm);
-			Object* value = PopObject(vm);
-			
-			DictPut(&obj->dict, key, value);
-			++vm->pc;
 		} break;
 		
 		case OP_GETARGS:

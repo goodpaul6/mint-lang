@@ -117,16 +117,6 @@ func output_code(s, ctx)
 end
 ~#
 
-var _op_push_null
-var _op_push_number
-var _op_push_string
-var _op_write
-
-var _op_add
-var _op_sub
-var _op_mul
-var _op_div
-var _op_halt
 
 #~_OP_ADD = 18,
 OP_SUB,
@@ -147,6 +137,17 @@ OP_LOGICAL_AND,
 OP_LOGICAL_OR,
 OP_SHL,
 OP_SHR,~#
+
+var _op_push_null
+var _op_push_number
+var _op_push_string
+var _op_write
+
+var _op_add
+var _op_sub
+var _op_mul
+var _op_div
+var _op_halt
 
 var _exp_unknown
 var _exp_number

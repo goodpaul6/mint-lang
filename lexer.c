@@ -101,6 +101,30 @@ int GetToken(FILE* in)
 	if(isdigit(last))
 	{	
 		ClearLexeme();
+		
+		if(last == '0')
+		{
+			last = getc(in);
+			if(last == 'x')
+			{
+				last = getc(in);
+				while(isxdigit(last))
+				{
+					AppendLexChar(last);
+					last = getc(in);
+				}
+				AppendLexChar('\0');
+				
+				return TOK_HEXNUM;
+			}
+			else
+			{	
+				ungetc(last, in);
+				ungetc('0', in);
+				last = '0';
+			}
+		}
+		
 		while(isdigit(last) || last == '.')
 		{
 			AppendLexChar(last);
@@ -109,20 +133,6 @@ int GetToken(FILE* in)
 		AppendLexChar('\0');
 		
 		return TOK_NUMBER;
-	}
-
-	if(last == '$')
-	{
-		last = getc(in);
-		ClearLexeme();
-		while(isxdigit(last))
-		{
-			AppendLexChar(last);
-			last = getc(in);
-		}
-		AppendLexChar('\0');
-		
-		return TOK_HEXNUM;
 	}
 	
 	if(last == '"')

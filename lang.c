@@ -115,6 +115,11 @@ int main(int argc, char* argv[])
 		}
 	}					
 	
+	// NOTE: setting this to zero so that any variables declared at compile time are global
+	VarStackDepth = 0;
+
+	ResolveTypesExprList(exprHead);
+
 	CompileExprList(exprHead);
 	_AppendCode(OP_HALT, LineNumber, RegisterString(FileName)->index);
 	

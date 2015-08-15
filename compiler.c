@@ -107,7 +107,7 @@ void DebugExpr(Expr* exp)
 			if(exp->retx.exp)
 			{
 				printf("(");
-				DebugExpr(exp->retExpr);
+				DebugExpr(exp->retx.exp);
 				printf(")");
 			}
 			else
@@ -137,6 +137,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(1);
 			AppendInt(ReferenceFunction("_number_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 		
 		case EXP_STRING:
@@ -147,6 +148,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(1);
 			AppendInt(ReferenceFunction("_string_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 		
 		case EXP_IDENT:
@@ -157,6 +159,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(1);
 			AppendInt(ReferenceFunction("_ident_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 		
 		case EXP_PAREN:
@@ -166,6 +169,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(1);
 			AppendInt(ReferenceFunction("_paren_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 		
 		case EXP_BIN:
@@ -179,6 +183,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(3);
 			AppendInt(ReferenceFunction("_binary_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 		
 		case EXP_CALL:
@@ -191,6 +196,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(exp->callx.numArgs + 1);
 			AppendInt(ReferenceFunction("_call_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 		
 		default:
@@ -198,6 +204,7 @@ void ExposeExpr(Expr* exp)
 			AppendCode(OP_CALL);
 			AppendCode(0);
 			AppendInt(ReferenceFunction("_unknown_expr")->index);
+			AppendCode(OP_GET_RETVAL);
 		} break;
 	}
 }
@@ -327,24 +334,24 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		AppendCode(OP_POP_STACK);
 		return 1;
 	}
-	else if(strcmp(name, "dict_get") == 0)
+	else if(strcmp(name, "rawget") == 0)
 	{
 		if(exp->callx.numArgs != 2)
 			ErrorExitE(exp, "Intrinsic 'dict_get' takes 2 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
-		AppendCode(OP_DICT_GET_RKEY);
+		AppendCode(OP_DICT_GET_RAW);
 		return 1;
 	}
-	else if(strcmp(name, "dict_set") == 0)
+	else if(strcmp(name, "rawset") == 0)
 	{
 		if(exp->callx.numArgs != 3)
 			ErrorExitE(exp, "Intrinsic 'dict_set' takes 3 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
-		AppendCode(OP_DICT_SET_RKEY);
+		AppendCode(OP_DICT_SET_RAW);
 		return 1;
 	}
 	else if(strcmp(name, "expand") == 0)
@@ -444,11 +451,43 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		
 		return 1;
 	}
-	
+	else if(strcmp(name, "setmeta") == 0)
+	{
+		if(exp->callx.numArgs != 2)
+				ErrorExitE(exp, "Intrinsic 'setmeta' takes 2 arguments\n");
+
+		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+			CompileValueExpr(exp->callx.args[i]);
+
+		AppendCode(OP_SET_META);
+		return 1;
+	}
+	else if(strcmp(name, "getmeta") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+				ErrorExitE(exp, "Intrinsic 'getmeta' takes 1 argument\n");
+		
+		CompileValueExpr(exp->callx.args[0]);
+
+		AppendCode(OP_GET_META);
+		return 1;
+	}
+
 	return 0;
 }
 
-Patch* Patches = NULL;
+Patch* Patches[MAX_SCOPES] = {NULL};
+int CurrentPatchScope = 0;
+
+void PushPatchScope()
+{
+	++CurrentPatchScope;
+}
+
+void PopPatchScope()
+{
+	--CurrentPatchScope;
+}
 
 void AddPatch(PatchType type, int loc)
 {
@@ -458,19 +497,19 @@ void AddPatch(PatchType type, int loc)
 	p->type = type;
 	p->loc = loc;
 	
-	p->next = Patches;
-	Patches = p;
+	p->next = Patches[CurrentPatchScope];
+	Patches[CurrentPatchScope] = p;
 }
 
 void ClearPatches()
 {
 	Patch* next;
-	for(Patch* p = Patches; p != NULL; p = next)
+	for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = next)
 	{
 		next = p->next;
 		free(p);
 	}
-	Patches = NULL;
+	Patches[CurrentPatchScope] = NULL;
 }
 
 void CompileValueExpr(Expr* exp);
@@ -569,10 +608,13 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		// first argument to function is dictionary
 		CompileValueExpr(exp->callx.func->colonx.dict);
 		
+		AppendCode(OP_PUSH_STRING);
+		AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
+
 		// retrieve function from dictionary
 		CompileValueExpr(exp->callx.func->colonx.dict);
+		
 		AppendCode(OP_DICT_GET);
-		AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
 		
 		AppendCode(OP_CALLP);
 		AppendCode(exp->callx.numArgs + 1 - numExpansions);
@@ -594,6 +636,42 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 			AppendCode(OP_GET_RETVAL);
 	}
 }
+
+// sets variable to top of stack
+void _SetVar(Expr* exp, VarDecl* decl)
+{
+	assert(decl);
+
+	if(decl->isGlobal)
+	{
+		AppendCode(OP_SET);
+		AppendInt(decl->index);
+	}
+	else
+	{
+		AppendCode(OP_SETLOCAL);
+		AppendInt(decl->index);
+	}
+}
+
+void _GetVar(Expr* exp, VarDecl* decl)
+{
+	assert(decl);
+
+	if(decl->isGlobal)
+	{
+		AppendCode(OP_GET);
+		AppendInt(decl->index);
+	}
+	else
+	{
+		AppendCode(OP_GETLOCAL);
+		AppendInt(decl->index);
+	}
+}
+
+#define SetVar(decl) _SetVar(exp, decl)
+#define GetVar(decl) _GetVar(exp, decl)
 
 void CompileExprList(Expr* head);
 // Expression should have a resulting value (pushed onto the stack)
@@ -618,6 +696,28 @@ void CompileValueExpr(Expr* exp)
 			{
 				case '-': CompileValueExpr(exp->unaryx.expr); AppendCode(OP_NEG); break;
 				case '!': CompileValueExpr(exp->unaryx.expr); AppendCode(OP_LOGICAL_NOT); break;
+				case '$':
+				{
+					FuncDecl* meta = ReferenceFunction("__meta_mt");
+					
+					if(!meta)
+						ErrorExitE(exp, "the unary operator '$' requires the 'meta.mt' library");
+					
+					static char init = 0;
+					if(!init)
+					{
+						init = 1;
+						AppendCode(OP_CALL);
+						AppendCode(0);
+						AppendInt(meta->index);
+					}
+					
+					Expr* tree = exp->unaryx.expr;
+					if(tree->type == EXP_PAREN)	
+						tree = tree->parenExpr;
+						
+					ExposeExpr(tree);
+				} break;
 			}
 		} break;
 		
@@ -652,25 +752,14 @@ void CompileValueExpr(Expr* exp)
 				AppendInt(decl->index);
 			}
 			else
-			{
-				if(exp->varx.varDecl->isGlobal)
-				{
-					AppendCode(OP_GET);
-					AppendInt(exp->varx.varDecl->index);
-				}
-				else
-				{
-					AppendCode(OP_GETLOCAL);
-					AppendInt(exp->varx.varDecl->index);
-				}
-			}
+				GetVar(exp->varx.varDecl);
 		} break;
 		
 		case EXP_ARRAY_INDEX:
 		{
 			CompileValueExpr(exp->arrayIndex.indexExpr);
 			CompileValueExpr(exp->arrayIndex.arrExpr);
-			
+
 			AppendCode(OP_GETINDEX);
 		} break;
 		
@@ -732,10 +821,16 @@ void CompileValueExpr(Expr* exp)
 			}
 			else
 			{
+				AppendCode(OP_PUSH_STRING);
+				AppendInt(RegisterString(exp->dotx.name)->index);
 				CompileValueExpr(exp->dotx.dict);
 				AppendCode(OP_DICT_GET);
-				AppendInt(RegisterString(exp->dotx.name)->index);
 			}
+		} break;
+		
+		case EXP_COLON:
+		{
+			ErrorExitE(exp, "Attempted to use ':' to index value inside dictionary; use '.' instead (or call the function you're indexing)\n");
 		} break;
 		
 		case EXP_DICT_LITERAL:
@@ -744,9 +839,9 @@ void CompileValueExpr(Expr* exp)
 			
 			VarDecl* decl = exp->dictx.decl;
 			
+			// TODO: Write function to set variables (select global or local automatically)
 			AppendCode(OP_PUSH_DICT);
-			AppendCode(OP_SETLOCAL);
-			AppendInt(decl->index);
+			SetVar(decl);
 			
 			while(node)
 			{
@@ -762,19 +857,19 @@ void CompileValueExpr(Expr* exp)
 				
 				CompileValueExpr(node->binx.rhs);
 				
-				AppendCode(OP_GETLOCAL);
-				AppendInt(decl->index);
-				
-				AppendCode(OP_DICT_SET);
+				AppendCode(OP_PUSH_STRING);
 				if(node->binx.lhs->type == EXP_IDENT)
 					AppendInt(RegisterString(node->binx.lhs->varx.name)->index);
 				else
 					AppendInt(node->binx.lhs->constDecl->index);
 				
+				GetVar(decl);
+
+				AppendCode(OP_DICT_SET_RAW);
+				
 				node = node->next;
 			}
-			AppendCode(OP_GETLOCAL);
-			AppendInt(decl->index);
+			GetVar(decl);
 			
 			/*AppendCode(OP_CREATE_DICT_BLOCK);
 			AppendInt(exp->dictx.length);*/
@@ -808,9 +903,8 @@ void CompileValueExpr(Expr* exp)
 			VarDecl* decl = exp->lamx.dictDecl;
 		
 			AppendCode(OP_PUSH_DICT);
-			AppendCode(OP_SETLOCAL);
-			AppendInt(decl->index);
-			
+			SetVar(decl);
+
 			// each nested lambda stores the previous env so that values above the uppermost lambda are accessible
 			if(exp->lamx.decl->prevDecl->isLambda)
 			{
@@ -819,11 +913,13 @@ void CompileValueExpr(Expr* exp)
 				strcpy(prevEnv->varx.name, exp->lamx.decl->prevDecl->envDecl->name);
 				CompileValueExpr(prevEnv);
 				
+				AppendCode(OP_PUSH_STRING);
+				AppendInt(RegisterString(exp->lamx.decl->prevDecl->envDecl->name)->index);
+				
 				AppendCode(OP_GETLOCAL);
 				AppendInt(decl->index);
 				
 				AppendCode(OP_DICT_SET);
-				AppendInt(RegisterString(exp->lamx.decl->prevDecl->envDecl->name)->index);
 			}
 			
 			Upvalue* upvalue = exp->lamx.decl->upvalues;
@@ -836,30 +932,50 @@ void CompileValueExpr(Expr* exp)
 				
 				CompileValueExpr(uexp);
 				
+				AppendCode(OP_PUSH_STRING);
+				AppendInt(RegisterString(upvalue->decl->name)->index);
+				
 				AppendCode(OP_GETLOCAL);
 				AppendInt(decl->index);
 				
 				AppendCode(OP_DICT_SET);
-				AppendInt(RegisterString(upvalue->decl->name)->index);
 				
 				upvalue = upvalue->next;
 			}
-			
+
+			static int nlambdas = 0;
+
+			char buf[256];
+			sprintf(buf, "__lmt%i__", nlambdas++);
+
+			// TODO: Should lambda metadicts be global like this (probably not)
+			// Metadicts are declared at global scope
+			VarDecl* metaDecl = RegisterVariable(buf);
+
+			AppendCode(OP_PUSH_DICT);
+			SetVar(metaDecl);
+
 			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
 			AppendCode(OP_PUSH_FUNC);
 			AppendCode(exp->lamx.decl->hasEllipsis);
 			AppendCode(exp->lamx.decl->isExtern);
 			AppendCode(exp->lamx.decl->numArgs);
 			AppendInt(exp->lamx.decl->index);
-			
-			AppendCode(OP_GETLOCAL);
-			AppendInt(decl->index);
-			
-			AppendCode(OP_DICT_SET);
-			AppendInt(RegisterString("CALL")->index);
-			
-			AppendCode(OP_GETLOCAL);
-			AppendInt(decl->index);
+
+			AppendCode(OP_PUSH_STRING);
+			AppendInt(RegisterString("CALL")->index);			
+
+			GetVar(metaDecl);
+
+			AppendCode(OP_DICT_SET_RAW);
+
+			// setmeta(__ld%i__, __lmt%i__)
+			GetVar(metaDecl);
+			GetVar(decl);
+			AppendCode(OP_SET_META);
+
+			// __ld%i__
+			GetVar(decl);
 		} break;
 		
 		// when used as a value, it becomes a function pointer
@@ -887,7 +1003,51 @@ void CompileValueExpr(Expr* exp)
 			AppendCode(exp->funcx.decl->numArgs);
 			AppendInt(exp->funcx.decl->index);
 		} break;
-		
+
+		case EXP_IF:
+		{
+			CompileValueExpr(exp->ifx.cond);
+			AppendCode(OP_GOTOZ);
+			int emplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+
+			Expr* node = exp->ifx.bodyHead;
+			while(node)
+			{
+				if(node->next)
+					CompileExpr(node);
+				else
+					CompileValueExpr(node);
+				node = node->next;
+			}
+			
+			AppendCode(OP_GOTO);
+			int exitEmplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+			
+			EmplaceInt(emplaceLoc, CodeLength);
+			if(exp->ifx.alt)
+			{
+				if(exp->ifx.alt->type != EXP_IF)
+				{	
+					Expr* node = exp->ifx.alt;
+					while(node)
+					{
+						if(node->next)
+							CompileExpr(node);
+						else
+							CompileValueExpr(node);
+						node = node->next;
+					}
+				}
+				else
+					CompileValueExpr(exp->ifx.alt);
+			}
+			EmplaceInt(exitEmplaceLoc, CodeLength);
+		} break;
+
+		// TODO: maybe add while and for values which turn into arrays of the final values
+
 		default:
 			ErrorExitE(exp, "Expected value expression in place of %s\n", ExprNames[exp->type]);
 	}
@@ -938,9 +1098,10 @@ void CompileExpr(Expr* exp)
 					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
 						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
 					
+					AppendCode(OP_PUSH_STRING);
+					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
 					CompileValueExpr(exp->binx.lhs->dotx.dict);
 					AppendCode(OP_DICT_SET);
-					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
 				}
 				else
 					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %s\n", ExprNames[exp->binx.lhs->type]);
@@ -962,15 +1123,18 @@ void CompileExpr(Expr* exp)
 			// emplace integer of exit location here
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
+
+			PushPatchScope();
 			CompileExprList(exp->whilex.bodyHead);
-			
+			PopPatchScope();
+
 			AppendCode(OP_GOTO);
 			AppendInt(loopPc);
 			
 			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
 			
-			for(Patch* p = Patches; p != NULL; p = p->next)
+			for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = p->next)
 			{
 				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, loopPc);
 				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
@@ -988,8 +1152,10 @@ void CompileExpr(Expr* exp)
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
 			
+			PushPatchScope();
 			CompileExprList(exp->forx.bodyHead);
-			
+			PopPatchScope();
+
 			int continueLoc = CodeLength;
 
 			CompileExpr(exp->forx.iter);
@@ -1000,7 +1166,7 @@ void CompileExpr(Expr* exp)
 			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
 		
-			for(Patch* p = Patches; p != NULL; p = p->next)
+			for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = p->next)
 			{
 				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
 				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
@@ -1058,11 +1224,6 @@ void CompileExpr(Expr* exp)
 			}
 			else
 				AppendCode(OP_RETURN);
-		} break;
-		
-		case EXP_COLON:
-		{
-			ErrorExitE(exp, "Attempted to use ':' to index value inside dictionary; use '.' instead (or call the function you're indexing)\n");
 		} break;
 		
 		case EXP_CONTINUE:

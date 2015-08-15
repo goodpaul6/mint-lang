@@ -610,7 +610,7 @@ Expr* ParseFactor(FILE* in)
 			PopScope();
 			CurFunc = prevDecl;
 			
-			if(decl->hasReturn == -1)
+			if(decl->hasReturn == -1 || decl->hasReturn == 0)
 			{	
 				decl->hasReturn = 0;
 				if(!CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
@@ -647,13 +647,6 @@ Expr* ParseFactor(FILE* in)
 					else if(!CurFunc->hasReturn)
 						ErrorExit("Attempted to return value from function when previous return statement in the same function returned no value\n");
 					exp->retx.exp = ParseExpr(in);
-					
-					const TypeHint* inferredType = InferTypeFromExpr(exp->retx.exp);
-					if(!CompareTypes(inferredType, CurFunc->returnType))
-						Warn("Return value type '%s' does not match with function return value type '%s'\n", HintString(inferredType), HintString(CurFunc->returnType));
-				
-					if(!CurFunc->returnType)
-						CurFunc->returnType = InferTypeFromExpr(exp->retExpr);
 					
 					return exp;
 				}
@@ -865,8 +858,8 @@ Expr* ParseFactor(FILE* in)
 			PopScope();
 			CurFunc = prevDecl;
 			
-			if(decl->hasReturn == -1)
-			{	
+			if(decl->hasReturn == -1 || decl->hasReturn == 0)
+			{
 				decl->hasReturn = 0;
 				if(!CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
 					Warn("Reached end of non-void hinted lambda without a value returned\n");
@@ -907,12 +900,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			Expr* exp = CreateExpr(EXP_ARRAY_INDEX);
 			exp->arrayIndex.arrExpr = pre;
 			exp->arrayIndex.indexExpr = ParseExpr(in);
-			
-			const TypeHint* arrType = InferTypeFromExpr(exp->arrayIndex.arrExpr);
-			
-			if(!CompareTypes(arrType, GetBroadTypeHint(ARRAY)) && !CompareTypes(arrType, GetBroadTypeHint(STRING)) && !CompareTypes(arrType, GetBroadTypeHint(DICT)))
-				Warn("Attempted to index a '%s' (non-indexable type)\n", HintString(arrType));
-				
+		
 			if(CurTok != ']')
 				ErrorExit("Expected ']' after previous '['\n");
 			GetNextToken(in);
@@ -930,12 +918,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			Expr* exp = CreateExpr(EXP_DOT);
 			strcpy(exp->dotx.name, Lexeme);
 			exp->dotx.dict = pre;
-			
-			const TypeHint* dictType = InferTypeFromExpr(exp->dotx.dict);
-			
-			if(!CompareTypes(dictType, GetBroadTypeHint(DICT)))
-				Warn("Value being indexed using dot ('.') operator does not denote a dictionary (instead, it evaluates to a '%s')\n", HintString(dictType));
-			
+		
 			GetNextToken(in);
 			if(!IsPostOperator()) return exp;
 			return ParsePost(in, exp);
@@ -956,11 +939,6 @@ Expr* ParsePost(FILE* in, Expr* pre)
 				exp->callx.args[exp->callx.numArgs++] = ParseExpr(in);
 				if(CurTok == ',') GetNextToken(in);
 			}
-			
-			const TypeHint* funcType = InferTypeFromExpr(exp->callx.func);
-			
-			if(!CompareTypes(funcType, GetBroadTypeHint(FUNC)) && !CompareTypes(funcType, GetBroadTypeHint(DICT)))
-				Warn("Value being called does not denote a callable value (instead, it evaluates to a '%s')\n", HintString(funcType));
 				
 			GetNextToken(in);
 			
@@ -979,11 +957,6 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			strcpy(exp->colonx.name, Lexeme);
 			exp->colonx.dict = pre;
 			
-			const TypeHint* dictType = InferTypeFromExpr(exp->dotx.dict);
-			
-			if(!CompareTypes(dictType, GetBroadTypeHint(DICT)))
-				Warn("Value being index using colon (':') operator does not denote a dictionary (instead, it evaluates to a '%s')\n", HintString(dictType));
-			
 			GetNextToken(in);
 			if(!IsPostOperator()) return exp;
 			return ParsePost(in, exp);
@@ -998,7 +971,7 @@ Expr* ParseUnary(FILE* in)
 {
 	switch(CurTok)
 	{
-		case '-': case '!':
+		case '-': case '!': case '$':
 		{
 			int op = CurTok;
 			
@@ -1008,11 +981,6 @@ Expr* ParseUnary(FILE* in)
 			exp->unaryx.op = op;
 			exp->unaryx.expr = ParseExpr(in);
 			
-			const TypeHint* expType = InferTypeFromExpr(exp->unaryx.expr);
-			
-			if(!CompareTypes(expType, GetBroadTypeHint(NUMBER)))
-				Warn("Applying unary operator to non-numerical value of type '%s'\n", HintString(expType));
-				
 			return exp;
 		} break;
 		
