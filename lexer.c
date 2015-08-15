@@ -88,10 +88,9 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
 		if(strcmp(Lexeme, "null") == 0) return TOK_NULL;
 		if(strcmp(Lexeme, "inline") == 0) return TOK_INLINE;
-		if(strcmp(Lexeme, "lambda") == 0) return TOK_LAMBDA;
+		if(strcmp(Lexeme, "lam") == 0) return TOK_LAMBDA;
 		if(strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
 		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
-		if(strcmp(Lexeme, "new") == 0) return TOK_NEW;
 		if(strcmp(Lexeme, "as") == 0) return TOK_AS;
 		if(strcmp(Lexeme, "forward") == 0) return TOK_FORWARD;
 

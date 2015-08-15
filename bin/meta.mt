@@ -255,6 +255,13 @@ func _call_expr(f, ...)
 	}
 end
 
+func _array_literal_expr(...)
+	return {
+		type = _exp_array_literal,
+		values = getargs()
+	}
+end
+
 func _unknown_expr()
 	return {
 		type = _exp_unknown

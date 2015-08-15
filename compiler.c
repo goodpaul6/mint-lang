@@ -1046,7 +1046,67 @@ void CompileValueExpr(Expr* exp)
 			EmplaceInt(exitEmplaceLoc, CodeLength);
 		} break;
 
-		// TODO: maybe add while and for values which turn into arrays of the final values
+		// TODO: maybe add for values which turn into arrays of the final values
+		case EXP_FOR:
+		{
+			// each of these array comprehension literals are 
+			static int comIndex = 0;
+			static char buf[256];
+
+			sprintf(buf, "__ac%i__", comIndex++);
+			VarDecl* comDecl = RegisterVariable(buf);
+
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(0)->index);
+
+			AppendCode(OP_CREATE_ARRAY);
+			SetVar(comDecl);
+
+			PushPatchScope();
+
+			CompileExpr(exp->forx.init);
+			int loopPc = CodeLength;
+			
+			CompileValueExpr(exp->forx.cond);
+			AppendCode(OP_GOTOZ);
+			int emplaceLoc = CodeLength;
+			AllocatePatch(sizeof(int) / sizeof(Word));
+			
+			Expr* node = exp->forx.bodyHead;
+			while(node)
+			{
+				if(node->next)
+					CompileExpr(node);
+				else
+				{
+					CompileValueExpr(node);
+					GetVar(comDecl);
+					AppendCode(OP_ARRAY_PUSH);
+				}
+				node = node->next;
+			}
+
+			int continueLoc = CodeLength;
+
+			CompileExpr(exp->forx.iter);
+			
+			AppendCode(OP_GOTO);
+			AppendInt(loopPc);
+			
+			int exitLoc = CodeLength;
+			EmplaceInt(emplaceLoc, CodeLength);
+		
+			for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = p->next)
+			{
+				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
+				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+			}
+			ClearPatches();
+			
+			PopPatchScope();
+
+			GetVar(comDecl);
+		} break;
 
 		default:
 			ErrorExitE(exp, "Expected value expression in place of %s\n", ExprNames[exp->type]);
@@ -1117,6 +1177,8 @@ void CompileExpr(Expr* exp)
 		
 		case EXP_WHILE:
 		{
+			PushPatchScope();
+
 			int loopPc = CodeLength;
 			CompileValueExpr(exp->whilex.cond);
 			AppendCode(OP_GOTOZ);
@@ -1124,9 +1186,7 @@ void CompileExpr(Expr* exp)
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
 
-			PushPatchScope();
 			CompileExprList(exp->whilex.bodyHead);
-			PopPatchScope();
 
 			AppendCode(OP_GOTO);
 			AppendInt(loopPc);
@@ -1140,10 +1200,14 @@ void CompileExpr(Expr* exp)
 				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
 			}
 			ClearPatches();
+
+			PopPatchScope();
 		} break;
 		
 		case EXP_FOR:
 		{
+			PushPatchScope();
+
 			CompileExpr(exp->forx.init);
 			int loopPc = CodeLength;
 			
@@ -1152,9 +1216,7 @@ void CompileExpr(Expr* exp)
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
 			
-			PushPatchScope();
 			CompileExprList(exp->forx.bodyHead);
-			PopPatchScope();
 
 			int continueLoc = CodeLength;
 
@@ -1172,6 +1234,8 @@ void CompileExpr(Expr* exp)
 				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
 			}
 			ClearPatches();
+
+			PopPatchScope();
 		} break;
 		
 		case EXP_IF:

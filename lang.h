@@ -183,9 +183,8 @@ enum
 	TOK_CONTINUE = -31,
 	TOK_BREAK = -32,
 	TOK_ELLIPSIS = -33,
-	TOK_NEW = -34,
-	TOK_AS = -35,
-	TOK_FORWARD = -36
+	TOK_AS = -34,
+	TOK_FORWARD = -35
 };
 
 extern size_t LexemeCapacity;
@@ -220,7 +219,6 @@ typedef enum
 	EXP_CONTINUE,
 	EXP_BREAK,
 	EXP_COLON,
-	EXP_NEW,
 	EXP_LAMBDA,
 	EXP_FORWARD,
 	//EXP_LINKED_BINARY_CODE
@@ -254,7 +252,6 @@ typedef struct _Expr
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
 		struct { struct _Expr* pairsHead; int length; VarDecl* decl; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
-		struct _Expr* newExpr;
 		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl;} lamx;
 		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
 	};

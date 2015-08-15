@@ -29,7 +29,6 @@ const char* ExprNames[] = {
 	"EXP_CONTINUE",
 	"EXP_BREAK",
 	"EXP_COLON",
-	"EXP_NEW",
 	"EXP_LAMBDA",
 	"EXP_FORWARD"
 };
@@ -76,6 +75,8 @@ Expr* ParseIf(FILE* in)
 			exprCurrent = exprCurrent->next;
 		}
 	}
+
+	exprCurrent->next = NULL;
 	
 	exp->ifx.cond = cond;
 	exp->ifx.bodyHead = exprHead;
@@ -162,15 +163,7 @@ Expr* ParseFactor(FILE* in)
 			Expr* exp = CreateExpr(EXP_NULL);
 			return exp;
 		} break;
-		
-		case TOK_NEW:
-		{
-			GetNextToken(in);
-			Expr* exp = CreateExpr(EXP_NEW);
-			exp->newExpr = ParseExpr(in);
-			return exp;
-		} break;
-		
+	
 		case TOK_FORWARD:
 		{
 			GetNextToken(in);
@@ -883,7 +876,7 @@ char IsPostOperator()
 {
 	switch(CurTok)
 	{
-		case '[': case '.':  case '(': case ':':
+		case '[': case '.':  case '(': case ':': case '{':
 			return 1;
 	}
 	return 0;
@@ -946,6 +939,19 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			else return ParsePost(in, exp);
 		} break;
 		
+		case '{':
+		{
+			Expr* dict = ParseExpr(in);
+
+			Expr* exp = CreateExpr(EXP_CALL);
+			exp->callx.numArgs = 1;
+			exp->callx.args[0] = dict;
+			exp->callx.func = pre;
+
+			if(!IsPostOperator()) return exp;
+			else return ParsePost(in, exp);
+		} break;
+
 		case ':':
 		{
 			GetNextToken(in);

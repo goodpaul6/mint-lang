@@ -2323,6 +2323,7 @@ void ExecuteCycle(VM* vm)
 
 				PushObject(vm, obj);
 				CallFunction(vm, lenFunc->func.index, 1);
+				PushObject(vm, vm->retVal);
 			}
 			else
 				ErrorExit(vm, "Attempted to get length of %s\n", ObjectTypeNames[obj->type]);
@@ -2409,19 +2410,11 @@ void ExecuteCycle(VM* vm)
 				printf("\n");
 			}
 			
-			if(obj->meta)
-			{
-				Object* over = DictGet(&obj->meta->dict, "SETINDEX");
-				if(over && over->type == OBJ_FUNC)
-				{
-					PushObject(vm, value);
-					PushObject(vm, index);
-					PushObject(vm, obj);
-					CallFunction(vm, over->func.index, 3);
-				}
-				else
-					DictPut(&obj->dict, index->string.raw, value);
-			}
+			Object* val = index->type == OBJ_STRING ? DictGet(&obj->dict, index->string.raw) : NULL;
+			if(val)
+				DictPut(&obj->dict, index->string.raw, value);
+			else if(CallOverloadedOperatorEx(vm, "SETINDEX", obj, index, value))
+				PushObject(vm, vm->retVal);
 			else
 				DictPut(&obj->dict, index->string.raw, value);
 		} break;
@@ -2438,30 +2431,14 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf(" %s\n", index->string.raw);
 			
-			Object* value;
+			Object* val = index->type == OBJ_STRING ? DictGet(&obj->dict, index->string.raw) : NULL;
 
-			value = index->type == OBJ_STRING ? DictGet(&obj->dict, index->string.raw) : NULL;
-			if(value)
-				PushObject(vm, value);
+			if(val)
+				PushObject(vm, val);
+			else if(!CallOverloadedOperatorIf(vm, "GETINDEX", obj, index))
+				PushObject(vm, &NullObject);
 			else
-			{
-				// only invoke metadict functions if the key is non-existent
-				if(obj->meta)
-				{
-					Object* over = DictGet(&obj->meta->dict, "GETINDEX");
-					if(over && over->type == OBJ_FUNC)
-					{
-						PushObject(vm, index);
-						PushObject(vm, obj);
-						CallFunction(vm, over->func.index, 2);
-						PushObject(vm, vm->retVal);
-					}
-					else
-						PushObject(vm, &NullObject);
-				}
-				else
-					PushObject(vm, &NullObject);
-			}
+				PushObject(vm, vm->retVal);
 		} break;
 		
 		case OP_DICT_SET_RAW:
@@ -2676,12 +2653,13 @@ void ExecuteCycle(VM* vm)
 			}
 			else if(obj->type == OBJ_DICT)
 			{
-				if(!CallOverloadedOperatorEx(vm, "SETINDEX", obj, indexObj, value))
-				{	
-					if(indexObj->type != OBJ_STRING)
-						ErrorExit(vm, "Attempted to index dict with a %s (expected string)\n", ObjectTypeNames[indexObj->type]);
+				Object* val = indexObj->type == OBJ_STRING ? DictGet(&obj->dict, indexObj->string.raw) : NULL;
+				if(val)
 					DictPut(&obj->dict, indexObj->string.raw, value);
-				}
+				else if(CallOverloadedOperatorEx(vm, "SETINDEX", obj, indexObj, value))
+					PushObject(vm, vm->retVal);
+				else
+					DictPut(&obj->dict, indexObj->string.raw, value);
 			}
 			else
 				ErrorExit(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
