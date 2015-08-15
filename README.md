@@ -18,7 +18,7 @@ end
 
 func run()
 	# array comprehension
-	var values = for var i = 1, i <= 10, i = i + 1 do 1 end
+	var values = for var i = 1, i <= 10, i = i + 1 do i end
 
 	# lambdas :D
 	each(values, lam (x, pre)
