@@ -92,9 +92,12 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
 		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
 		if(strcmp(Lexeme, "as") == 0) return TOK_AS;
-		if(strcmp(Lexeme, "forward") == 0) return TOK_FORWARD;
 		if(strcmp(Lexeme, "do") == 0) return TOK_DO;
 		if(strcmp(Lexeme, "then") == 0) return TOK_THEN;
+		if(strcmp(Lexeme, "type") == 0) return TOK_TYPE;
+		if(strcmp(Lexeme, "inst") == 0) return TOK_INST;
+		if(strcmp(Lexeme, "has") == 0) return TOK_HAS;
+		if(strcmp(Lexeme, "trait") == 0) return TOK_TRAIT;
 
 		return TOK_IDENT;
 	}
@@ -297,8 +300,8 @@ int GetToken(FILE* in)
 	else if(lastChar == '.' && last == '.')
 	{
 		last = getc(in);
-		if(lastChar != '.')
-			ErrorExit("Invalid token '...'\n");
+		if(last != '.')
+			return TOK_CAT;
 		last = getc(in);
 		return TOK_ELLIPSIS;
 	}

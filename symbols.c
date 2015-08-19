@@ -173,8 +173,7 @@ FuncDecl* DeclareFunction(const char* name, int index)
 		FunctionsCurrent = decl;
 	}
 	
-	decl->argTypes = NULL;
-	decl->returnType = NULL;
+	decl->type = NULL;
 	
 	decl->isAliased = 0;
 	decl->isExtern = 0;
@@ -193,6 +192,8 @@ FuncDecl* DeclareFunction(const char* name, int index)
 	decl->upvalues = NULL;
 	decl->envDecl = NULL;
 	decl->scope = VarStackDepth;
+
+	decl->bodyHead = NULL;
 	
 	return decl;
 }

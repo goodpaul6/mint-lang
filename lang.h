@@ -9,12 +9,13 @@
 #include <assert.h>
 #include <stdarg.h>
 
-
 #include "vm.h"
 
 #define MAX_ID_NAME_LENGTH 64
 #define MAX_SCOPES 32
 #define MAX_ARGS 64
+#define MAX_STRUCT_ELEMENTS 64
+#define MAX_STRUCT_TRAITS 16
 
 void ErrorExit(const char* format, ...);
 void Warn(const char* format, ...);
@@ -31,6 +32,8 @@ void EmplaceInt(int loc, int value);
 
 void OutputCode(FILE* out);
 
+struct _Expr;
+
 typedef enum
 {
 	NUMBER,
@@ -41,18 +44,41 @@ typedef enum
 	NATIVE,
 	VOID,
 	DYNAMIC,
+	USERTYPE,
 	NUM_HINTS
 } Hint;
 
 extern const char* HintStrings[NUM_HINTS];
 
+// TODO: don't store arguments in an array like that
 typedef struct _TypeHint
 {
 	struct _TypeHint* next;
 	Hint hint;
 	
-	// for indexable values
-	struct _TypeHint* subType;
+	// TODO: maybe don't use anonymous structs here
+	union
+	{
+		// for indexable values
+		struct _TypeHint* subType;
+		// for usertypes
+		struct
+		{
+			struct _TypeHint* traits[MAX_STRUCT_TRAITS];
+			char isTrait;
+			char name[MAX_ID_NAME_LENGTH];
+			int numElements;
+			struct _TypeHint* elements[MAX_STRUCT_ELEMENTS];  
+			char* names[MAX_STRUCT_ELEMENTS];
+		} user;
+		// for funcs
+		struct
+		{
+			struct _TypeHint* ret;
+			int numArgs;
+			struct _TypeHint* args[MAX_ARGS];
+		} func;
+	};
 } TypeHint;
 
 typedef enum
@@ -73,8 +99,6 @@ typedef struct _ConstDecl
 		char* string;
 	};
 } ConstDecl;
-
-struct _Expr;
 
 typedef struct _VarDecl
 {
@@ -109,9 +133,9 @@ typedef struct _FuncDecl
 	Word numArgs;
 	int pc;
 	
-	TypeHint* argTypes;
-	TypeHint* returnType;
-	
+	// type signature
+	TypeHint* type;
+
 	char hasEllipsis;
 	
 	// -1 = unknown, 0 = no return, 1 = returns value
@@ -127,6 +151,8 @@ typedef struct _FuncDecl
 	VarDecl* envDecl;
 	// scope at which the function has been declared
 	char scope;
+
+	struct _Expr* bodyHead;
 } FuncDecl;
 
 ConstDecl* RegisterNumber(double number);
@@ -184,9 +210,13 @@ enum
 	TOK_BREAK = -32,
 	TOK_ELLIPSIS = -33,
 	TOK_AS = -34,
-	TOK_FORWARD = -35,
-	TOK_DO = -36,
-	TOK_THEN = -37
+	TOK_DO = -35,
+	TOK_THEN = -36,
+	TOK_TYPE = -37,
+	TOK_INST = -38,
+	TOK_HAS = -39,
+	TOK_TRAIT = -40,
+	TOK_CAT = -41
 };
 
 extern size_t LexemeCapacity;
@@ -222,8 +252,10 @@ typedef enum
 	EXP_BREAK,
 	EXP_COLON,
 	EXP_LAMBDA,
-	EXP_FORWARD,
 	//EXP_LINKED_BINARY_CODE
+	EXP_TYPE_DECL,
+	EXP_TYPE_CAST,
+	EXP_INST,
 	NUM_EXPR_TYPES
 } ExprType;
 
@@ -250,12 +282,15 @@ typedef struct _Expr
 		struct { struct _Expr* head; int length; } arrayx;
 		struct { struct _Expr* arrExpr; struct _Expr* indexExpr; } arrayIndex;
 		struct { int op; struct _Expr* expr; } unaryx;
-		struct { struct _Expr *init, *cond, *iter, *bodyHead; } forx;
+		// comDecl: for array comprehensions
+		struct { struct _Expr *init, *cond, *iter, *bodyHead; VarDecl* comDecl; } forx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
 		struct { struct _Expr* pairsHead; int length; VarDecl* decl; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
 		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl;} lamx;
-		struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
+		//struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
+		struct { struct _Expr* expr; TypeHint* newType; } castx;
+		TypeHint* instType;
 	};
 } Expr;
 
@@ -274,6 +309,10 @@ TypeHint* ParseTypeHint(FILE* in);
 void ResolveTypesExprList(Expr* head);
 TypeHint* InferTypeFromExpr(Expr* exp);
 const char* HintString(const TypeHint* type);
+TypeHint* RegisterUserType(const char* name);
+TypeHint* GetUserTypeElement(const TypeHint* type, const char* name);
+int GetUserTypeElementIndex(const TypeHint* type, const char* name);
+int GetUserTypeNumElements(const TypeHint* type);
 
 typedef enum 
 {

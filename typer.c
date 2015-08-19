@@ -8,16 +8,17 @@ const char* HintStrings[] = {
 	"function",
 	"native",
 	"void",
-	"dynamic"
+	"dynamic",
+	"usertype"
 };
+
+TypeHint* UserTypes = NULL;
 
 TypeHint* CreateTypeHint(Hint hint)
 {
-	TypeHint* type = malloc(sizeof(TypeHint));
+	TypeHint* type = calloc(1, sizeof(TypeHint));
 	assert(type);
 	type->hint = hint;
-	type->next = NULL;
-	type->subType = NULL;
 
 	return type;
 }
@@ -39,8 +40,12 @@ TypeHint* GetBroadTypeHint(Hint type)
 		
 		case DYNAMIC: return CreateTypeHint(DYNAMIC);
 		
-		case FUNC: return CreateTypeHint(FUNC);
-		
+		case FUNC:
+		{ 
+			TypeHint* type = CreateTypeHint(FUNC);
+			type->func.numArgs = -1;
+			return type;
+		} break;
 		case DICT:
 		{
 			TypeHint* type = CreateTypeHint(DICT);
@@ -60,6 +65,7 @@ TypeHint* GetBroadTypeHint(Hint type)
 	return NULL;
 }
 
+// TODO: this is weird for function types
 const char* HintString(const TypeHint* type)
 {
 	// TODO: maybe this should take a string buffer
@@ -70,18 +76,55 @@ const char* HintString(const TypeHint* type)
 			return HintStrings[DYNAMIC];
 		else
 		{
-			if(!type->subType)
-				return HintStrings[type->hint];
-			else
+			if(type->hint != USERTYPE)
 			{
-				char buf[256];
-				sprintf(buf, "%s-%s", HintStrings[type->hint], HintString(type->subType)); 
-				
-				char* str = malloc(strlen(buf) + 1);
-				assert(str);
-				strcpy(str, buf);
-				return str;
+				if(type->hint != FUNC)
+				{
+					if(!type->subType)
+						return HintStrings[type->hint];
+					else
+					{
+						char buf[256];
+						sprintf(buf, "%s-%s", HintStrings[type->hint], HintString(type->subType)); 
+						
+						char* str = malloc(strlen(buf) + 1);
+						assert(str);
+						strcpy(str, buf);
+						return str;
+					}
+				}
+				else
+				{
+					char buf[512];
+					char* pbuf = buf;
+
+					if(type->func.numArgs >= 0)
+					{
+						// TODO: check for buffer overflows pls
+						pbuf += sprintf(pbuf, "function(");
+						for(int i = 0; i < type->func.numArgs; ++i)
+						{
+							if(i + 1 < type->func.numArgs)
+								pbuf += sprintf(pbuf, "%s,", HintString(type->func.args[i]));
+							else
+								pbuf += sprintf(pbuf, "%s", HintString(type->func.args[i]));
+						}
+
+						if(type->func.ret)
+							pbuf += sprintf(pbuf, ")-%s", HintString(type->func.ret));
+						else
+							pbuf += sprintf(pbuf, ")");
+					}
+					else
+						strcpy(buf, "function");
+					char* str = malloc(strlen(buf) + 1);
+					assert(str);
+					strcpy(str, buf);
+					return str;
+				}
 			}
+			else
+				return type->user.name;
 		}
 	}
 	return "unknown";
@@ -94,6 +137,34 @@ char CompareTypes(const TypeHint* a, const TypeHint* b)
 	if(a->hint == VOID || b->hint == VOID) return a->hint == b->hint;
 	
 	if(a->hint == DYNAMIC || b->hint == DYNAMIC) return 1;
+	if(a->hint == USERTYPE || b->hint == USERTYPE)
+	{
+		if(a->hint == b->hint) 
+			return strcmp(a->user.name, b->user.name) == 0;
+		return 0;
+	}
+	if(a->hint == FUNC || b->hint == FUNC)
+	{
+		if(a->hint == b->hint)
+		{
+			if(a->func.numArgs < 0 || b->func.numArgs < 0)
+				return CompareTypes(a->func.ret, b->func.ret);
+
+			if(a->func.numArgs == b->func.numArgs)
+			{
+				for(int i = 0; i < a->func.numArgs; ++i)
+				{
+					if(!CompareTypes(a->func.args[i], b->func.args[i]))
+						return 0;
+				}
+
+				return CompareTypes(a->func.ret, b->func.ret);
+			}
+			return 0;
+		}
+		return 0;
+	}
+
 	return (a->hint == b->hint) && CompareTypes(a->subType, b->subType);
 }
 
@@ -110,6 +181,61 @@ TypeHint* GetTypeHintFromString(const char* n)
 	else ErrorExit("Invalid type hint '%s'\n", Lexeme);
 	
 	return NULL;
+}
+
+TypeHint* RegisterUserType(const char* name)
+{
+	for(TypeHint* type = UserTypes; type; type = type->next)
+	{
+		if(strcmp(type->user.name, name) == 0)
+			return type;
+	}
+
+	TypeHint* type = CreateTypeHint(USERTYPE);
+	strcpy(type->user.name, name);
+
+	type->user.numElements = 0;
+
+	type->next = UserTypes;
+	UserTypes = type;
+
+	return type;
+}
+
+TypeHint* GetUserTypeElement(const TypeHint* type, const char* name)
+{
+	assert(type);
+	assert(type->hint == USERTYPE);
+
+	for(int i = 0; i < type->user.numElements; ++i)
+	{
+		if(strcmp(type->user.names[i], name) == 0)
+			return type->user.elements[i];
+	}
+
+	return NULL;
+}
+
+int GetUserTypeElementIndex(const TypeHint* type, const char* name)
+{
+	assert(type);
+	assert(type->hint == USERTYPE);
+
+	for(int i = 0; i < type->user.numElements; ++i)
+	{
+		if(strcmp(type->user.names[i], name) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+int GetUserTypeNumElements(const TypeHint* type)
+{
+	if(!type) return 0;
+
+	assert(type->hint == USERTYPE);
+	return type->user.numElements;
 }
 
 TypeHint* ParseTypeHint(FILE* in)
@@ -153,20 +279,64 @@ TypeHint* ParseTypeHint(FILE* in)
 	*/
 	if(CurTok == TOK_IDENT)
 	{
-		TypeHint* type = GetTypeHintFromString(Lexeme);
-		GetNextToken(in);
-		
-		if(CurTok == '-')
+		TypeHint* userType = NULL;
+		TypeHint* node = UserTypes;
+		while(node)
 		{
-			GetNextToken(in);
-			TypeHint* subType = ParseTypeHint(in);
-			type->subType = subType;
+			if(strcmp(node->user.name, Lexeme) == 0)
+			{
+				userType = node;
+				break;
+			}
+			node = node->next;
 		}
-		
-		return type;
+
+		if(!userType)
+		{
+			TypeHint* type = GetTypeHintFromString(Lexeme);
+			GetNextToken(in);
+
+			if(CurTok == '(')
+			{
+				if(type->hint == FUNC)
+				{
+					// NOTE: set to 0 because it's -1 (indeterminate amount of arguments) by default
+					type->func.numArgs = 0;
+
+					GetNextToken(in);
+
+					while(CurTok != ')')
+					{
+						TypeHint* arg = ParseTypeHint(in);
+						
+						if(type->func.numArgs >= MAX_ARGS)
+							ErrorExit("Exceeded maximum number of arguments %d in type declaration\n", MAX_ARGS);
+
+						type->func.args[type->func.numArgs++] = arg;
+
+						if(CurTok == ',') GetNextToken(in);
+						else if(CurTok != ')') ErrorExit("Expected ')' or ',' in type declaration list\n");
+					}
+					
+					GetNextToken(in);
+				}
+				else
+					ErrorExit("Attempted to declare argument types for non-function type\n");
+			}
+			
+			if(CurTok == '-')
+			{
+				GetNextToken(in);
+				TypeHint* subType = ParseTypeHint(in);
+				type->subType = subType;
+			}
+			return type;
+		}
+		GetNextToken(in);
+		return userType;
 	}
 	else
-		ErrorExit("Expected identifier for type declaration\n");
+		ErrorExit("Expected type\n");
 	
 	return NULL;
 }
@@ -182,7 +352,11 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_STRING: return GetBroadTypeHint(STRING); break;
 		
-		case EXP_IDENT: 
+		case EXP_TYPE_CAST: return exp->castx.newType; break;
+
+		case EXP_INST: return exp->instType; break;
+
+		case EXP_IDENT:
 		{
 			if(!exp->varx.varDecl)
 				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
@@ -194,16 +368,10 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 				FuncDecl* decl = ReferenceFunction(exp->varx.name);
 				
 				if(decl)
-				{	
-					if(!decl->returnType)
-						return GetBroadTypeHint(FUNC);
-					else
-					{
-						TypeHint* type = CreateTypeHint(FUNC);
-						type->subType = decl->returnType;
-						
-						return type;
-					}
+				{
+					if(!decl->type)
+						ResolveTypesExprList(decl->bodyHead);
+					return decl->type;
 				}
 				else
 					return NULL;
@@ -229,14 +397,9 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 			}
 			
 			return GetBroadTypeHint(DYNAMIC);*/
-			TypeHint* inf = InferTypeFromExpr(exp->callx.func);
+			const TypeHint* inf = InferTypeFromExpr(exp->callx.func);
 			if(inf && inf->hint == FUNC)
-			{
-				if(inf->subType)
-					return inf->subType;
-				else
-					return GetBroadTypeHint(DYNAMIC);
-			}
+				return inf->func.ret;
 			else
 				return GetBroadTypeHint(DYNAMIC);
 		} break;
@@ -313,7 +476,7 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
-			TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			const TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
 			if(inf && inf->subType)
 				return inf->subType;
 			return GetBroadTypeHint(DYNAMIC);
@@ -336,19 +499,77 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_DOT:
 		{
+			const TypeHint* type = InferTypeFromExpr(exp->dotx.dict);
+			if(type ? type->hint == USERTYPE : 0)
+				return GetUserTypeElement(type, exp->dotx.name);
+			return GetBroadTypeHint(DYNAMIC);
+		} break;
+
+		case EXP_COLON:
+		{
+			const TypeHint* type = InferTypeFromExpr(exp->colonx.dict);
+			if(type ? type->hint == USERTYPE : 0)
+				return GetUserTypeElement(type, exp->colonx.name);
 			return GetBroadTypeHint(DYNAMIC);
 		} break;
 		
-		case EXP_LAMBDA:
+		case EXP_FUNC:
 		{
-			TypeHint* hint = CreateTypeHint(FUNC);
-			hint->subType = exp->lamx.decl->returnType;
-			
-			return hint;
+			return exp->funcx.decl->type;
+		} break;
+
+		case EXP_LAMBDA:
+		{	
+			return exp->lamx.decl->type;
 		} break;
 
 		case EXP_IF:
 		{
+			Expr* node = exp->ifx.bodyHead;
+			TypeHint* inf = NULL;
+			while(node)
+			{
+				if(!node->next)
+					inf = InferTypeFromExpr(node);
+				node = node->next;
+			}
+
+			if(exp->ifx.alt->type == EXP_IF)
+			{
+				TypeHint* newInf = InferTypeFromExpr(exp->ifx.alt);
+				if(!CompareTypes(newInf, inf)) return GetBroadTypeHint(DYNAMIC);
+			}
+			else
+			{
+				node = exp->ifx.alt;
+				TypeHint* newInf = NULL;
+				
+				while(node)
+				{
+					if(!node->next)
+						newInf = InferTypeFromExpr(node);
+					node = node->next;
+				}
+
+				if(!CompareTypes(newInf, inf)) return GetBroadTypeHint(DYNAMIC);
+			}
+
+			return inf;
+		} break;
+
+		case EXP_FOR:
+		{
+			Expr* node = exp->forx.bodyHead;
+			TypeHint* inf = NULL;
+			while(node)
+			{
+				if(!node->next)
+					inf = InferTypeFromExpr(node);
+				node = node->next;
+			}
+			TypeHint* super = GetBroadTypeHint(ARRAY);
+			super->subType = inf;
+			return super;
 		} break;
 		
 		default:
@@ -481,15 +702,15 @@ void ResolveTypes(Expr* exp)
 			{ 
 				TypeHint* inf = InferTypeFromExpr(exp->retx.exp);
 					
-				if(decl->returnType)
+				if(decl->type->func.ret)
 				{
-					if(CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
-						WarnE(exp, "Attempting to return a value in a function which was hinted to return '%s'\n", HintString(decl->returnType));
-					else if(!CompareTypes(decl->returnType, inf))
-						WarnE(exp, "Return value type '%s' does not match with function '%s' designated return type '%s'\n", HintString(inf), decl->name, HintString(decl->returnType));
+					if(CompareTypes(decl->type->func.ret, GetBroadTypeHint(VOID)))
+						WarnE(exp, "Attempting to return a value in a function which was hinted to return '%s'\n", HintString(decl->type->func.ret));
+					else if(!CompareTypes(decl->type->func.ret, inf))
+						WarnE(exp, "Return value type '%s' does not match with function '%s' designated return type '%s'\n", HintString(inf), decl->name, HintString(decl->type->func.ret));
 				}
 				else
-					decl->returnType = inf;
+					decl->type->func.ret = inf;
 			}
 		} break;
 		
@@ -512,7 +733,8 @@ void ResolveTypes(Expr* exp)
 		
 		case EXP_DOT:
 		{
-			if(exp->dotx.dict->type == EXP_IDENT)
+			TypeHint* inf = InferTypeFromExpr(exp->dotx.dict);
+			/*if(exp->dotx.dict->type == EXP_IDENT)
 			{
 				if(!exp->dotx.dict->varx.varDecl)
 					exp->dotx.dict->varx.varDecl = ReferenceVariable(exp->dotx.dict->varx.name);
@@ -522,6 +744,14 @@ void ResolveTypes(Expr* exp)
 					if(!CompareTypes(exp->dotx.dict->varx.varDecl->type, GetBroadTypeHint(DICT)))
 						WarnE(exp, "Attempted to use dot '.' operator on value of type '%s'\n", HintString(exp->dotx.dict->varx.varDecl->type));
 				}
+			}*/
+			if(inf)
+			{
+				if(inf->hint != USERTYPE)
+				{
+					if(!CompareTypes(inf, GetBroadTypeHint(DICT)))
+						WarnE(exp, "Attempted to use dot '.' operator on value of type '%s'\n", HintString(inf));
+				} // NOTE: otherwise, it's the compilers problem (SHOULD IT BE THO?)
 			}
 			else
 				ResolveTypes(exp->dotx.dict);
@@ -529,7 +759,8 @@ void ResolveTypes(Expr* exp)
 		
 		case EXP_COLON:
 		{
-			if(exp->colonx.dict->type == EXP_IDENT)
+			TypeHint* inf = InferTypeFromExpr(exp->dotx.dict);
+			/*if(exp->colonx.dict->type == EXP_IDENT)
 			{
 				if(!exp->colonx.dict->varx.varDecl)
 					exp->colonx.dict->varx.varDecl = ReferenceVariable(exp->colonx.dict->varx.name);
@@ -539,6 +770,14 @@ void ResolveTypes(Expr* exp)
 					if(!CompareTypes(exp->colonx.dict->varx.varDecl->type, GetBroadTypeHint(DICT)))
 						WarnE(exp, "Attempted to use dot '.' operator on value of type '%s'\n", HintString(exp->colonx.dict->varx.varDecl->type));
 				}
+			}*/
+			if(inf)
+			{
+				if(inf->hint != USERTYPE)
+				{
+					if(!CompareTypes(inf, GetBroadTypeHint(DICT)))
+						WarnE(exp, "Attempted to use dot '.' operator on value of type '%s'\n", HintString(inf));
+				} // NOTE: see previous note (SHOULD IT BE THO?)
 			}
 			else
 				ResolveTypes(exp->colonx.dict);
@@ -549,7 +788,8 @@ void ResolveTypes(Expr* exp)
 			for(int i = 0; i < exp->callx.numArgs; ++i)
 				ResolveTypes(exp->callx.args[i]);
 				
-			if(exp->callx.func->type == EXP_IDENT)
+			TypeHint* inf = InferTypeFromExpr(exp->callx.func);
+			/*if(exp->callx.func->type == EXP_IDENT)
 			{
 				if(!exp->callx.func->varx.varDecl)
 						exp->callx.func->varx.varDecl = ReferenceVariable(exp->callx.func->varx.name);
@@ -560,6 +800,22 @@ void ResolveTypes(Expr* exp)
 						!CompareTypes(exp->callx.func->varx.varDecl->type, GetBroadTypeHint(DICT)))
 						WarnE(exp, "Attempted to call variable of type '%s'\n", HintString(exp->callx.func->varx.varDecl->type));
 				}
+			}*/
+			if(inf)
+			{
+				if(!CompareTypes(inf, GetBroadTypeHint(FUNC)) &&
+					!CompareTypes(inf, GetBroadTypeHint(DICT)))
+					WarnE(exp, "Attempted to call variable of type '%s'\n", HintString(inf));
+
+				if(inf->hint == FUNC && !inf->func.ret)
+				{
+					if(exp->callx.func->type == EXP_IDENT)
+					{
+						FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+						if(decl)
+							ResolveTypesExprList(decl->bodyHead);
+					}
+				}
 			}
 			else
 				ResolveTypes(exp->callx.func);
@@ -567,7 +823,8 @@ void ResolveTypes(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
-			if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
+			TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			/*if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
 			{
 				if(!exp->arrayIndex.arrExpr->varx.varDecl)
 						exp->arrayIndex.arrExpr->varx.varDecl = ReferenceVariable(exp->arrayIndex.arrExpr->varx.name);
@@ -579,11 +836,19 @@ void ResolveTypes(Expr* exp)
 						!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(STRING)))
 						WarnE(exp, "Attempted to index variable of type '%s'\n", HintString(exp->arrayIndex.arrExpr->varx.varDecl->type));
 				}
+				else if
+			}*/
+			if(inf)
+			{
+				if(!CompareTypes(inf, GetBroadTypeHint(ARRAY)) &&
+			   	   !CompareTypes(inf, GetBroadTypeHint(DICT)) &&
+			   	   !CompareTypes(inf, GetBroadTypeHint(STRING)))
+					WarnE(exp, "Attempted to index variable of type '%s'\n", HintString(inf));
 			}
 			else
 				ResolveTypes(exp->arrayIndex.arrExpr);
 		} break;
-		
+
 		case EXP_LAMBDA:
 		{
 			ResolveTypesExprList(exp->lamx.bodyHead);

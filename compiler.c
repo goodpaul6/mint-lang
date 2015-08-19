@@ -512,6 +512,22 @@ void ClearPatches()
 	Patches[CurrentPatchScope] = NULL;
 }
 
+void CheckArgumentTypes(const TypeHint* type, Expr* exp)
+{
+	assert(exp->type == EXP_CALL);
+	assert(CompareTypes(type, GetBroadTypeHint(FUNC)));
+
+	if(type && type->hint == FUNC)
+	{
+		for(int i = 0; i < type->func.numArgs && i < exp->callx.numArgs; ++i)
+		{
+			const TypeHint* inf = InferTypeFromExpr(exp->callx.args[i]);
+			if(!CompareTypes(inf, type->func.args[i]))
+				WarnE(exp->callx.args[i], "Argument %i's type '%s' does not match the expected type '%s'\n", i + 1, HintString(inf), HintString(type->func.args[i]));
+		}
+	}
+}
+
 void CompileValueExpr(Expr* exp);
 void CompileCallExpr(Expr* exp, char expectReturn)
 {
@@ -537,17 +553,7 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
 		if(decl)
 		{
-			const TypeHint* node = decl->argTypes;
-			
-			for(int i = 0; node && i < exp->callx.numArgs; ++i)
-			{
-				const TypeHint* inf = InferTypeFromExpr(exp->callx.args[i]);
-				
-				if(!CompareTypes(inf, node))
-					WarnE(exp->callx.args[i], "Argument %i's type '%s' does not match the expected type '%s'\n", i + 1, HintString(inf), HintString(node));
-			
-				node = node->next;
-			}
+			CheckArgumentTypes(decl->type, exp);
 			
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
@@ -589,6 +595,9 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		}
 		else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
 		{
+			const TypeHint* type = InferTypeFromExpr(exp->callx.func);
+			CheckArgumentTypes(type, exp);
+
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
 				
@@ -601,29 +610,78 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 				AppendCode(OP_GET_RETVAL);
 		}
 	}
-	else if(exp->callx.func->type == EXP_COLON)
+	/*else if(exp->callx.func->type == EXP_COLON)
 	{
-		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileValueExpr(exp->callx.args[i]);
-		// first argument to function is dictionary
-		CompileValueExpr(exp->callx.func->colonx.dict);
-		
-		AppendCode(OP_PUSH_STRING);
-		AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
+		const TypeHint* type = InferTypeFromExpr(exp->callx.func->colonx.dict);
 
-		// retrieve function from dictionary
-		CompileValueExpr(exp->callx.func->colonx.dict);
-		
-		AppendCode(OP_DICT_GET);
-		
-		AppendCode(OP_CALLP);
-		AppendCode(exp->callx.numArgs + 1 - numExpansions);
-		
-		if(expectReturn)
-			AppendCode(OP_GET_RETVAL);
-	}
+		if(type ? type->hint != USERTYPE : 1)
+		{
+			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+				CompileValueExpr(exp->callx.args[i]);
+			// first argument to function is dictionary
+			CompileValueExpr(exp->callx.func->colonx.dict);
+			
+			AppendCode(OP_PUSH_STRING);
+			AppendInt(RegisterString(exp->callx.func->colonx.name)->index);
+
+			// retrieve function from dictionary
+			CompileValueExpr(exp->callx.func->colonx.dict);
+			
+			AppendCode(OP_DICT_GET);
+			
+			AppendCode(OP_CALLP);
+			AppendCode(exp->callx.numArgs + 1 - numExpansions);
+			
+			if(expectReturn)
+				AppendCode(OP_GET_RETVAL);
+		}
+		else
+		{
+			int eindex = GetUserTypeElementIndex(type, exp->callx.func->colonx.name);
+
+			if(eindex < 0)
+				ErrorExitE(exp, "Attempted to access non-existent field '%s' in usertype '%s'\n", exp->callx.func->colonx.name, type->user.name);
+			const TypeHint* etype = GetUserTypeElement(type, exp->callx.func->colonx.name);
+			if(!CompareTypes(etype, GetBroadTypeHint(FUNC)))
+				ErrorExitE(exp, "Attempted to call usertype field '%s' which is of type '%s'\n", exp->callx.func->colonx.name, HintString(etype));
+			else if(etype->func.numArgs == 0)
+				WarnE(exp, "Calling function (field '%s' in type '%s') with colon operator when function is declared to take no arguments\n", exp->callx.func->colonx.name, HintString(type));
+
+			// the first argument must be of type 'type'
+			if(!CompareTypes(type, etype->func.args[0]))
+				WarnE(exp, "Usertype '%s's field '%s' (a function) does not take the usertype as its first argument: it cannot be called with a colon\n", 
+					type->user.name, type->user.names[eindex]);
+
+			for(int i = 0; i + 1 < etype->func.numArgs && i < exp->callx.numArgs; ++i)
+			{
+				const TypeHint* inf = InferTypeFromExpr(exp->callx.args[i]);
+				if(!CompareTypes(inf, etype->func.args[i + 1]))
+					WarnE(exp, "Argument %i's type '%s' does not match the expected type '%s'\n", i + 1, HintString(inf), HintString(etype->func.args[i + 1]));
+			}
+
+			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+				CompileValueExpr(exp->callx.args[i]);
+			// first argument is the type instance itself
+			CompileValueExpr(exp->callx.func->colonx.dict);
+
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(eindex)->index);
+			CompileValueExpr(exp->callx.func->colonx.dict);
+			AppendCode(OP_GETINDEX);
+
+			AppendCode(OP_CALLP);
+			AppendCode(exp->callx.numArgs + 1 - numExpansions);
+
+			if(expectReturn)
+				AppendCode(OP_GET_RETVAL);
+		}
+	}*/
 	else
 	{			
+		const TypeHint* type = InferTypeFromExpr(exp->callx.func);
+
+		CheckArgumentTypes(type, exp);
+
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
 			
@@ -689,7 +747,20 @@ void CompileValueExpr(Expr* exp)
 		{
 			AppendCode(OP_PUSH_NULL);
 		} break;
+
+		case EXP_TYPE_CAST:
+		{
+			CompileValueExpr(exp->castx.expr);
+		} break;
 		
+		case EXP_INST:
+		{
+			AppendCode(OP_PUSH_NUMBER);
+			AppendInt(RegisterNumber(GetUserTypeNumElements(exp->instType))->index);
+
+			AppendCode(OP_CREATE_ARRAY);
+		} break;
+
 		case EXP_UNARY:
 		{
 			switch(exp->unaryx.op)
@@ -791,6 +862,7 @@ void CompileValueExpr(Expr* exp)
 					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
 					case TOK_LSHIFT: AppendCode(OP_SHL); break;
 					case TOK_RSHIFT: AppendCode(OP_SHR); break;
+					case TOK_CAT: AppendCode(OP_CAT); break;
 					/*case TOK_CADD: AppendCode(OP_CADD); break;
 					case TOK_CSUB: AppendCode(OP_CSUB); break;
 					case TOK_CMUL: AppendCode(OP_CMUL); break;
@@ -821,10 +893,28 @@ void CompileValueExpr(Expr* exp)
 			}
 			else
 			{
-				AppendCode(OP_PUSH_STRING);
-				AppendInt(RegisterString(exp->dotx.name)->index);
-				CompileValueExpr(exp->dotx.dict);
-				AppendCode(OP_DICT_GET);
+				TypeHint* type = InferTypeFromExpr(exp->dotx.dict);
+
+				// NOTE: this is sorta weird, but I guess it's okay right?
+				if(type ? type->hint != USERTYPE : 1)
+				{
+					AppendCode(OP_PUSH_STRING);
+					AppendInt(RegisterString(exp->dotx.name)->index);
+					CompileValueExpr(exp->dotx.dict);
+					AppendCode(OP_DICT_GET);
+				}
+				else
+				{
+					int eindex = GetUserTypeElementIndex(type, exp->dotx.name);
+
+					if(eindex < 0)
+						ErrorExitE(exp, "Attempted to access non-existent field '%s' in usertype '%s'\n", exp->dotx.name, type->user.name);
+					
+					AppendCode(OP_PUSH_NUMBER);
+					AppendInt(RegisterNumber(eindex)->index);
+					CompileValueExpr(exp->dotx.dict);
+					AppendCode(OP_GETINDEX);
+				}
 			}
 		} break;
 		
@@ -938,7 +1028,7 @@ void CompileValueExpr(Expr* exp)
 				AppendCode(OP_GETLOCAL);
 				AppendInt(decl->index);
 				
-				AppendCode(OP_DICT_SET);
+				AppendCode(OP_DICT_SET_RAW);
 				
 				upvalue = upvalue->next;
 			}
@@ -1046,15 +1136,9 @@ void CompileValueExpr(Expr* exp)
 			EmplaceInt(exitEmplaceLoc, CodeLength);
 		} break;
 
-		// TODO: maybe add for values which turn into arrays of the final values
 		case EXP_FOR:
 		{
-			// each of these array comprehension literals are 
-			static int comIndex = 0;
-			static char buf[256];
-
-			sprintf(buf, "__ac%i__", comIndex++);
-			VarDecl* comDecl = RegisterVariable(buf);
+			VarDecl* comDecl = exp->forx.comDecl;
 
 			AppendCode(OP_PUSH_NUMBER);
 			AppendInt(RegisterNumber(0)->index);
@@ -1120,7 +1204,7 @@ void CompileExpr(Expr* exp)
 	
 	switch(exp->type)
 	{	
-		case EXP_EXTERN: case EXP_VAR: break;
+		case EXP_EXTERN: case EXP_VAR: case EXP_TYPE_DECL: break;
 		
 		case EXP_BIN:
 		{	
@@ -1155,16 +1239,41 @@ void CompileExpr(Expr* exp)
 				}
 				else if(exp->binx.lhs->type == EXP_DOT)
 				{
-					if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
-						ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
+					TypeHint* type = InferTypeFromExpr(exp->binx.lhs->dotx.dict);
+
+					if(type ? type->hint != USERTYPE : 0)
+					{
+						if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
+							ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");
 					
-					AppendCode(OP_PUSH_STRING);
-					AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
-					CompileValueExpr(exp->binx.lhs->dotx.dict);
-					AppendCode(OP_DICT_SET);
+						AppendCode(OP_PUSH_STRING);
+						AppendInt(RegisterString(exp->binx.lhs->dotx.name)->index);
+						CompileValueExpr(exp->binx.lhs->dotx.dict);
+						AppendCode(OP_DICT_SET);
+					}
+					else
+					{
+						int eindex = GetUserTypeElementIndex(type, exp->binx.lhs->dotx.name);
+						const TypeHint* etype = NULL;
+
+						if(eindex < 0)
+							ErrorExitE(exp, "Attempted to set non-existent field '%s' in usertype '%s'\n", exp->binx.lhs->dotx.name, type->user.name);
+						etype = GetUserTypeElement(type, exp->binx.lhs->dotx.name);
+
+						TypeHint* rtype = InferTypeFromExpr(exp->binx.rhs);
+						if(!CompareTypes(rtype, etype))
+							WarnE(exp, "Attempted to set field '%s' of type '%s' to value of type '%s' when field has type '%s'\n", exp->binx.lhs->dotx.name, HintString(type), 
+								HintString(rtype), 
+								HintString(etype));
+
+						AppendCode(OP_PUSH_NUMBER);
+						AppendInt(RegisterNumber(eindex)->index);
+						CompileValueExpr(exp->binx.lhs->dotx.dict);
+						AppendCode(OP_SETINDEX);
+					}
 				}
 				else
-					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index) instead of %s\n", ExprNames[exp->binx.lhs->type]);
+					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index, usertype) instead of %s\n", ExprNames[exp->binx.lhs->type]);
 			}
 			else
 				ErrorExitE(exp, "Invalid top level binary expression\n");
@@ -1303,8 +1412,6 @@ void CompileExpr(Expr* exp)
 			AddPatch(PATCH_BREAK, CodeLength);
 			AllocatePatch(sizeof(int) / sizeof(Word));
 		} break;
-		
-		case EXP_FORWARD: break; // compile time thing, should be allowed at top level
 		
 		/*case EXP_LINKED_BINARY_CODE:
 		{

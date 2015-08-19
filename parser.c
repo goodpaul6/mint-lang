@@ -30,7 +30,8 @@ const char* ExprNames[] = {
 	"EXP_BREAK",
 	"EXP_COLON",
 	"EXP_LAMBDA",
-	"EXP_FORWARD"
+	"EXP_FORWARD",
+	"EXP_TYPE_DECL"
 };
 
 Expr* CreateExpr(ExprType type)
@@ -60,7 +61,7 @@ Expr* ParseIf(FILE* in)
 	if(CurTok != TOK_THEN)
 		ErrorExit("Expected 'then' after if condition\n");
 	GetNextToken(in);
-	
+
 	PushScope();
 	
 	Expr* exprHead = NULL;
@@ -167,84 +168,92 @@ Expr* ParseFactor(FILE* in)
 			Expr* exp = CreateExpr(EXP_NULL);
 			return exp;
 		} break;
-	
-		case TOK_FORWARD:
+
+		case TOK_INST:
 		{
 			GetNextToken(in);
-			
-			if(CurTok != TOK_IDENT)
-				ErrorExit("Expected identifier after 'forward'\n");
-				
-			char name[MAX_ID_NAME_LENGTH];
-			strcpy(name, Lexeme);
-			
+
+			TypeHint* type = ParseTypeHint(in);
+			if(type->hint != USERTYPE) ErrorExit("Attempted to use inst for non-usertype '%s'\n", HintString(type));
+
+			Expr* exp = CreateExpr(EXP_INST);
+			exp->instType = type;
+
+			return exp;
+		} break;
+
+		case TOK_TRAIT:
+		{
 			GetNextToken(in);
-			
-			// function forward declaration
-			if(CurTok == '(')
+			Warn("TRAITS NOT IMPLEMENTED! WORK ON THEM YOU PERSON!\n");
+			/*if(CurTok != TOK_IDENT)
+				ErrorExit("Expected identifier after 'trait'\n");
+
+			TypeHint* type = RegisterUserType(Lexeme);
+			GetNextToken(in);
+
+			while(CurTok != TOK_END)
+			{
+
+			}*/
+		} break;
+
+		case TOK_TYPE:
+		{
+			GetNextToken(in);
+			if(CurTok != TOK_IDENT)
+				ErrorExit("Expected identifier after 'type'\n");
+
+			TypeHint* type = RegisterUserType(Lexeme);
+			GetNextToken(in);
+
+			if(CurTok == TOK_HAS)
 			{
 				GetNextToken(in);
-				
-				FuncDecl* decl = ReferenceFunction(name);
-				if(decl)
+
+				if(type->user.numElements != 0)
+					ErrorExit("Attempted to incorporate another type into type '%s' which already had previous fields declared\n", type->user.name);
+
+				TypeHint* parent = ParseTypeHint(in);
+				if(parent->hint != USERTYPE)
+					ErrorExit("Attempted to incorporate type '%s' (which is not a usertype) into type '%s'\n", HintString(parent), type->user.name);
+
+				type->user.numElements += parent->user.numElements;
+				if(type->user.numElements >= MAX_STRUCT_ELEMENTS)
+					ErrorExit("Exceeded maximum struct element types\n");
+
+				for(int i = 0; i < type->user.numElements; ++i)
 				{
-					decl = malloc(sizeof(FuncDecl)); // allocate a dummy decl so that it doesn't affect the initial declaration
-					assert(decl);
-				}
-				else
-					decl = DeclareFunction(name, NumFunctions++);
-				
-				TypeHint* argTypes = NULL;
-				TypeHint* currentType = NULL;
-				
-				while(CurTok != ')')
-				{
-					TypeHint* type = ParseTypeHint(in);
-					
-					if(!argTypes)
-					{
-						argTypes = type;
-						currentType = type;
-					}
-					else
-					{
-						currentType->next = type;
-						currentType = type;
-					}
-					
-					if(CurTok == ',') GetNextToken(in);
-					else if(CurTok != ')') ErrorExit("Expected '(' or ',' in forward type declaration list\n");
-				}
-				decl->argTypes = argTypes;
-				GetNextToken(in);
-				
-				if(CurTok == ':')
-				{
-					GetNextToken(in);
-					TypeHint* type = ParseTypeHint(in);
-					decl->returnType = type;
+					type->user.names[i] = malloc(strlen(parent->user.names[i]) + 1);
+					assert(type->user.names[i]);
+					strcpy(type->user.names[i], parent->user.names[i]);
+					type->user.elements[i] = parent->user.elements[i];
 				}
 			}
-			else if(CurTok == ':')
+
+			while(CurTok != TOK_END)
 			{
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier in type declaration '%s'\n", type->user.name);
+				
+				if(type->user.numElements + 1 >= MAX_STRUCT_ELEMENTS)
+					ErrorExit("Exceeded maximum number of usertype elements in type declaration '%s'\n", type->user.name);
+
+				type->user.names[type->user.numElements] = malloc(strlen(Lexeme) + 1);
+				assert(type->user.names[type->user.numElements]);
+				strcpy(type->user.names[type->user.numElements], Lexeme);
+
 				GetNextToken(in);
-				
-				VarDecl* decl = ReferenceVariable(name);
-				if(decl)
-				{
-					decl = malloc(sizeof(VarDecl)); // allocate a dummy decl so that it doesn't affect the initial declaration
-					assert(decl);
-				}
-				else
-					decl = RegisterVariable(name);
-				
-				TypeHint* type = ParseTypeHint(in);
-				decl->type = type;
+				if(CurTok != ':')
+					ErrorExit("Expected ':' after identifier in type declaration '%s'\n", type->user.name);
+				GetNextToken(in);
+				TypeHint* elementType = ParseTypeHint(in);
+				type->user.elements[type->user.numElements++] = elementType;
 			}
-			else
-				ErrorExit("Expected ':' or '(' after 'forward %s'\n", name);
-		
-			return CreateExpr(EXP_FORWARD);
+
+			GetNextToken(in);
+
+			return CreateExpr(EXP_TYPE_DECL);
 		} break;
 		
 		case TOK_CONTINUE:
@@ -434,6 +443,10 @@ Expr* ParseFactor(FILE* in)
 			
 			exp->whilex.cond = ParseExpr(in);
 		
+			if(CurTok != TOK_DO)
+				ErrorExit("Expected 'do' after while condition\n");
+			GetNextToken(in);
+
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
@@ -464,6 +477,13 @@ Expr* ParseFactor(FILE* in)
 			Expr* exp = CreateExpr(EXP_FOR);
 			GetNextToken(in);
 			
+
+			static int comIndex = 0;
+			static char buf[256];
+
+			sprintf(buf, "__ac%i__", comIndex++);
+			exp->forx.comDecl = RegisterVariable(buf);
+
 			PushScope();
 			exp->forx.init = ParseExpr(in);
 			
@@ -530,18 +550,19 @@ Expr* ParseFactor(FILE* in)
 			{
 				if(decl->isExtern)
 					ErrorExit("Function '%s' has the same name as an extern\n", name);
-				CurFunc = decl;
+				else
+					ErrorExit("Function '%s' has the same name as another function\n", name);
 			}
 			else
 				decl = EnterFunction(name);
 			
 			PushScope();
+
+			decl->type = GetBroadTypeHint(FUNC);
 			
-			TypeHint* argTypes = NULL;
-			TypeHint* argTypesCurrent = NULL;
-			
+			int nargs = 0;
 			while(CurTok != ')')
-			{	
+			{
 				if(CurTok == TOK_ELLIPSIS)
 				{
 					decl->hasEllipsis = 1;
@@ -558,37 +579,36 @@ Expr* ParseFactor(FILE* in)
 				
 				GetNextToken(in);
 				
+				if(nargs >= MAX_ARGS)
+					ErrorExit("Exceeded maximum number of arguments in function '%s' declaration\n", name);
+
 				if(CurTok == ':')
 				{
+					// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
+					// so they must be set to 0 when they're about to be determined
+					if(decl->type->func.numArgs < 0)
+						decl->type->func.numArgs = 0;
+
 					GetNextToken(in);
 					TypeHint* type = ParseTypeHint(in);
-						
-					if(!argTypes)
-					{
-						argTypes = type;
-						argTypesCurrent = type;
-					}
-					else
-					{
-						argTypesCurrent->next = type;
-						argTypesCurrent = type;
-					}
+					
+					decl->type->func.args[decl->type->func.numArgs++] = type;
 					
 					argDecl->type = type;
 				}
 			
+				nargs += 1;
+
 				if(CurTok == ',') GetNextToken(in);
 				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
 			}
-			if(argTypes && !decl->argTypes)
-				decl->argTypes = argTypes;
 			
 			GetNextToken(in);
 			
 			if(CurTok == ':')
 			{
 				GetNextToken(in);
-				decl->returnType = ParseTypeHint(in);
+				decl->type->func.ret = ParseTypeHint(in);
 			}
 			
 			Expr* exprHead = NULL;
@@ -609,16 +629,19 @@ Expr* ParseFactor(FILE* in)
 			}
 			GetNextToken(in);
 			PopScope();
+			
+			decl->bodyHead = exprHead;
 			CurFunc = prevDecl;
 			
 			if(decl->hasReturn == -1 || decl->hasReturn == 0)
 			{	
 				decl->hasReturn = 0;
-				if(!CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
+				if(!CompareTypes(decl->type->func.ret, GetBroadTypeHint(VOID)))
 					Warn("Reached end of non-void hinted function '%s' without a value returned\n", decl->name);
 				else
-					decl->returnType = GetBroadTypeHint(VOID);
+					decl->type->func.ret = GetBroadTypeHint(VOID);
 			}
+
 			exp->funcx.decl = decl;
 			exp->funcx.bodyHead = exprHead;
 			
@@ -640,8 +663,8 @@ Expr* ParseFactor(FILE* in)
 				
 				if(CurTok != ';')
 				{
-					if(CurFunc->returnType && CurFunc->returnType->hint == VOID)
-						Warn("Attempting to return a value in a function which was hinted to return %s\n", HintString(CurFunc->returnType));
+					if(CurFunc->type->func.ret && CurFunc->type->func.ret->hint == VOID)
+						Warn("Attempting to return a value in a function which was hinted to return %s\n", HintString(CurFunc->type->func.ret));
 						
 					if(CurFunc->hasReturn == -1)
 						CurFunc->hasReturn = 1;
@@ -652,7 +675,7 @@ Expr* ParseFactor(FILE* in)
 					return exp;
 				}
 								
-				if(!CompareTypes(CurFunc->returnType, GetBroadTypeHint(VOID)))
+				if(!CompareTypes(CurFunc->type->func.ret, GetBroadTypeHint(VOID)))
 					Warn("Attempting to return without a value in a function which was hinted to return a value\n");
 				
 				if(CurFunc->hasReturn == -1)
@@ -679,33 +702,28 @@ Expr* ParseFactor(FILE* in)
 			if(CurTok != TOK_IDENT) ErrorExit("Expected identifier after 'extern'\n");
 			char name[MAX_ID_NAME_LENGTH];
 			strcpy(name, Lexeme);
-		
-			TypeHint* argTypes = NULL;
 
 			GetNextToken(in);
+
+			// TODO: check for multiply defined externs
+			exp->extDecl = DeclareExtern(name);
+			exp->extDecl->type = GetBroadTypeHint(FUNC);
+
 			if(CurTok == '(')
 			{
 				GetNextToken(in);
 				
-				TypeHint* argTypesCurrent = NULL;
-				
+				// NOTE: see TOK_FUNC note on this 
+				exp->extDecl->type->func.numArgs = 0;
+
 				while(CurTok != ')')
 				{
-					if(CurTok != TOK_IDENT)
-						ErrorExit("Expected identifier in extern type list\n");
-					
 					TypeHint* type = ParseTypeHint(in);
 					
-					if(!argTypes)
-					{
-						argTypes = type;
-						argTypesCurrent = type;
-					}
-					else
-					{
-						argTypesCurrent->next = type;
-						argTypesCurrent = type;
-					}
+					if(exp->extDecl->type->func.numArgs >= MAX_ARGS)
+						ErrorExit("Exceeded maximum number of arguments %d in extern '%s' type declaration\n", MAX_ARGS, name);
+
+					exp->extDecl->type->func.args[exp->extDecl->type->func.numArgs++] = type;	
 					
 					if(CurTok == ',') GetNextToken(in);
 					else if(CurTok != ')') ErrorExit("Expected ')' or ',' in extern argument type list\n");
@@ -729,22 +747,11 @@ Expr* ParseFactor(FILE* in)
 			}
 			else
 			{	
-				exp->extDecl = ReferenceFunction(name);
-				if(!exp->extDecl)
-					exp->extDecl = DeclareExtern(name);
-				else if(!exp->extDecl->isExtern)
-					ErrorExit("Attempted to declare extern with same name as previously defined function '%s'\n", name);
-				
 				if(CurTok == ':')
 				{
 					GetNextToken(in);
-					if(CurTok != TOK_IDENT)
-						ErrorExit("Expected identifier after ':'\n");
-					
-					exp->extDecl->returnType = ParseTypeHint(in);
+					exp->extDecl->type->func.ret = ParseTypeHint(in);
 				}
-				
-				exp->extDecl->argTypes = argTypes;
 			}
 			
 			return exp;
@@ -784,11 +791,11 @@ Expr* ParseFactor(FILE* in)
 			
 			decl->envDecl = RegisterArgument("env");
 			
-			TypeHint* argTypes = NULL;
-			TypeHint* argTypesCurrent = NULL;
+			decl->type = GetBroadTypeHint(FUNC);
 			
+			int nargs = 0;
 			while(CurTok != ')')
-			{	
+			{
 				if(CurTok == TOK_ELLIPSIS)
 				{
 					decl->hasEllipsis = 1;
@@ -805,37 +812,34 @@ Expr* ParseFactor(FILE* in)
 				
 				GetNextToken(in);
 				
+				if(nargs >= MAX_ARGS)
+					ErrorExit("Exceeded maximum number of arguments in lambda declaration\n");
+
 				if(CurTok == ':')
 				{
+					// NOTE: see TOK_FUNC note on this 
+					if(decl->type->func.numArgs < 0)
+						decl->type->func.numArgs = 0;
+
 					GetNextToken(in);
-					
 					TypeHint* type = ParseTypeHint(in);
-						
-					if(!argTypes)
-					{
-						argTypes = type;
-						argTypesCurrent = type;
-					}
-					else
-					{
-						argTypesCurrent->next = type;
-						argTypesCurrent = type;
-					}
+					
+					decl->type->func.args[decl->type->func.numArgs++] = type;
 					
 					argDecl->type = type;
 				}
 			
+				nargs += 1;
+
 				if(CurTok == ',') GetNextToken(in);
 				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in lambda argument list\n");
 			}
-			decl->argTypes = argTypes;
-			
 			GetNextToken(in);
 			
 			if(CurTok == ':')
 			{
 				GetNextToken(in);
-				decl->returnType = ParseTypeHint(in);
+				decl->type->func.ret = ParseTypeHint(in);
 			}
 			
 			Expr* exprHead = NULL;
@@ -857,15 +861,17 @@ Expr* ParseFactor(FILE* in)
 			GetNextToken(in);
 			
 			PopScope();
+
+			decl->bodyHead = exprHead;
 			CurFunc = prevDecl;
 			
 			if(decl->hasReturn == -1 || decl->hasReturn == 0)
 			{
 				decl->hasReturn = 0;
-				if(!CompareTypes(decl->returnType, GetBroadTypeHint(VOID)))
+				if(!CompareTypes(decl->type->func.ret, GetBroadTypeHint(VOID)))
 					Warn("Reached end of non-void hinted lambda without a value returned\n");
 				else
-					decl->returnType = GetBroadTypeHint(VOID);
+					decl->type->func.ret = GetBroadTypeHint(VOID);
 			}
 			
 			exp->lamx.decl = decl;
@@ -884,10 +890,29 @@ char IsPostOperator()
 {
 	switch(CurTok)
 	{
-		case '[': case '.':  case '(': case ':': case '{':
+		case '[': case '.':  case '(': case ':': case '{': case TOK_AS:
 			return 1;
 	}
 	return 0;
+}
+
+Expr* ConvertColonCall(Expr* callExp)
+{
+	assert(callExp->type == EXP_CALL);
+	assert(callExp->callx.func->type == EXP_COLON);
+
+	Expr* dotExp = CreateExpr(EXP_DOT);
+	dotExp->dotx.dict = callExp->callx.func->colonx.dict;
+	strcpy(dotExp->dotx.name, callExp->callx.func->colonx.name);
+
+	Expr* exp = CreateExpr(EXP_CALL);
+	exp->callx.numArgs = 1;
+	exp->callx.args[0] = dotExp->dotx.dict;
+	for(int i = 0; i < callExp->callx.numArgs; ++i)
+		exp->callx.args[exp->callx.numArgs++] = callExp->callx.args[i];
+	exp->callx.func = dotExp;
+
+	return exp;
 }
 
 Expr* ParsePost(FILE* in, Expr* pre)
@@ -933,7 +958,10 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			exp->callx.numArgs = 0;
 			exp->callx.func = pre;
-			
+
+			if(pre->type == EXP_COLON)
+				exp = ConvertColonCall(exp);
+
 			while(CurTok != ')')
 			{
 				if(exp->callx.numArgs >= MAX_ARGS) ErrorExit("Exceeded maximum argument amount");
@@ -947,6 +975,17 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			else return ParsePost(in, exp);
 		} break;
 		
+		case TOK_AS:
+		{
+			GetNextToken(in);
+
+			Expr* exp = CreateExpr(EXP_TYPE_CAST);
+			exp->castx.expr = pre;
+			exp->castx.newType = ParseTypeHint(in);
+
+			return exp;
+		} break;
+
 		case '{':
 		{
 			Expr* dict = ParseExpr(in);
@@ -956,6 +995,9 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			exp->callx.args[0] = dict;
 			exp->callx.func = pre;
 
+			if(pre->type == EXP_COLON)
+				exp = ConvertColonCall(exp);
+			
 			if(!IsPostOperator()) return exp;
 			else return ParsePost(in, exp);
 		} break;
@@ -1008,7 +1050,7 @@ int GetTokenPrec()
 	int prec = -1;
 	switch(CurTok)
 	{
-		case '*': case '/': case '%': case '&': case '|': case TOK_LSHIFT: case TOK_RSHIFT: prec = 6; break;
+		case '*': case '/': case '%': case '&': case '|': case TOK_LSHIFT: case TOK_RSHIFT: case TOK_CAT: prec = 6; break;
 		
 		case '+': case '-': prec = 5; break;
 	

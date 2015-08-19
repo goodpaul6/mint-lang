@@ -284,7 +284,7 @@ void Std_Tostring(VM* vm)
 	ReturnTop(vm);
 }
 
-void Std_Type(VM* vm)
+void Std_Typeof(VM* vm)
 {
 	Object* obj = PopObject(vm);
 	PushString(vm, ObjectTypeNames[obj->type]);
@@ -1218,12 +1218,154 @@ void Std_ArrayFill(VM* vm)
 		obj->array.members[i] = filler;
 }
 
+void Std_FreeThread(void* pThread)
+{
+	VM* thread = pThread;
+	// NOTE: DO NOT USE DELETEVM because a lot of the pointers in thread point to the same places
+	// parent vm points to
+	thread->stackSize = 0;
+	CollectGarbage(thread);
+	free(thread);
+}
+
+void Std_Thread(VM* vm)
+{
+	VM* thread = emalloc(sizeof(VM));
+	memcpy(thread, vm, sizeof(VM));
+
+	thread->isActive = 0;
+
+	thread->numGlobals = 0;
+	thread->stackSize = 0;
+	thread->numExpandedArgs = 0;
+
+	thread->gcHead = NULL;
+	thread->freeHead = NULL;
+	thread->numObjects = 0;
+	thread->maxObjectsUntilGc = INIT_GC_THRESH;
+
+	thread->indirStackSize = 0;
+	thread->fp = 0;
+	thread->pc = -1;
+
+	thread->inExternBody = 0;
+	thread->retVal = NULL;
+
+	// thread native pointer
+	PushNative(vm, thread, Std_FreeThread, NULL);
+	ReturnTop(vm);
+}
+
+void ExecuteCycle(VM* vm);
+void Std_StartThread(VM* vm)
+{
+	VM* thread = PopNative(vm);
+	Object* obj = PopObject(vm);
+	if(obj->type == OBJ_FUNC)
+	{
+		if(obj->func.isExtern)
+			ErrorExit(vm, "Thread function cannot be an extern\n");
+	}
+	else if(obj->type != OBJ_DICT)
+		ErrorExit(vm, "Invalid thread function: expected function or lambda but received %s\n", ObjectTypeNames[obj->type]);
+		
+	Object* data = PopObject(vm);
+	
+	thread->isActive = 1;
+	if(obj->type == OBJ_FUNC)
+	{
+		thread->pc = vm->functionPcs[obj->func.index];			
+					
+		PushObject(thread, data);
+		thread->fp = 1;
+	}
+	else if(obj->meta)
+	{
+		// NOTE: CALL operators must be function pointers since they take the dict as
+		// their first argument
+		Object* fobj = DictGet(&obj->meta->dict, "CALL");
+		if(!fobj || fobj->type != OBJ_FUNC)
+			ErrorExit(vm, "Thread function dictionary does not have valid CALL overload\n");
+		thread->pc = vm->functionPcs[fobj->func.index];
+		PushObject(thread, data);
+		PushObject(thread, obj);
+		thread->fp = 2;
+	}
+	else
+		ErrorExit(vm, "Invalid thread function\n");
+	
+	// run the code
+	while(thread->isActive)
+	{
+		if(thread->pc < 0)
+			thread->isActive = 0; // stop the thread: it's complete
+		else
+			ExecuteCycle(thread);
+	}
+}
+
+void Std_ResumeThread(VM* vm)
+{
+	VM* thread = PopNative(vm);
+	
+	thread->isActive = 1;
+	while(thread->isActive)
+	{	
+		if(thread->pc < 0)
+			thread->isActive = 0; // stop the thread: it's complete
+		else
+			ExecuteCycle(thread);
+	}
+}
+
+void Std_IsThreadComplete(VM* vm)
+{
+	VM* thread = PopNative(vm);
+	PushNumber(vm, thread->pc == -1);
+	ReturnTop(vm);
+}
+
+void Std_CurrentThread(VM* vm)
+{
+	PushNative(vm, vm, NULL, NULL);
+	ReturnTop(vm);
+}
+
+void Std_Yield(VM* vm)
+{
+	vm->isActive = 0;
+	// the value passed in is returned
+	ReturnTop(vm);
+}
+
+void Std_GetThreadResult(VM* vm)
+{
+	VM* thread = PopNative(vm);
+	if(thread->retVal)
+		PushObject(vm, thread->retVal);
+	else
+		PushObject(vm, &NullObject);
+	ReturnTop(vm);
+}
+
+void PushIndir(VM* vm, int nargs);
+void ExecuteCycle(VM* vm);
+void Std_JoinThread(VM* vm)
+{
+	VM* thread = PopNative(vm);
+
+	while(thread->pc >= 0)
+		ExecuteCycle(thread);
+}
+
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
 {
 	NullObject.type = OBJ_NULL;
 	
+	vm->isActive = 0;
+
 	vm->hasCodeMetadata = 0;
 	vm->pcLineTable = NULL;
 	vm->pcFileTable = NULL;
@@ -1526,7 +1668,7 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "strcat", Std_Strcat);
 	HookExternNoWarn(vm, "tonumber", Std_Tonumber);
 	HookExternNoWarn(vm, "tostring", Std_Tostring);
-	HookExternNoWarn(vm, "type", Std_Type);
+	HookExternNoWarn(vm, "typeof", Std_Typeof);
 	HookExternNoWarn(vm, "assert", Std_Assert);
 	HookExternNoWarn(vm, "erase", Std_Erase);
 	HookExternNoWarn(vm, "rand", Std_Rand);
@@ -1573,6 +1715,15 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "arraycopy", Std_ArrayCopy);
 	HookExternNoWarn(vm, "arraysort", Std_ArraySort);
 	HookExternNoWarn(vm, "arrayfill", Std_ArrayFill);
+
+	HookExternNoWarn(vm, "thread", Std_Thread);
+	HookExternNoWarn(vm, "start_thread", Std_StartThread);
+	HookExternNoWarn(vm, "resume_thread", Std_ResumeThread);
+	HookExternNoWarn(vm, "is_thread_complete", Std_IsThreadComplete);
+	HookExternNoWarn(vm, "current_thread", Std_CurrentThread);
+	HookExternNoWarn(vm, "yield", Std_Yield);
+	HookExternNoWarn(vm, "get_thread_result", Std_GetThreadResult);
+	HookExternNoWarn(vm, "join_thread", Std_JoinThread);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -1924,6 +2075,13 @@ int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs)
 	return obj->func.index;
 }
 
+Object* PopFuncObject(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_FUNC) ErrorExit(vm, "Expected function but received %s\n", ObjectTypeNames[obj->type]);
+	return obj;
+}
+
 Object** PopArray(VM* vm, int* length)
 {
 	Object* obj = PopObject(vm);
@@ -1944,6 +2102,13 @@ Object* PopDict(VM* vm)
 {
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_DICT) ErrorExit(vm, "Expected dictionary but received %s\n", ObjectTypeNames[obj->type]);
+	return obj;
+}
+
+Object* PopNativeObject(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if(obj->type != OBJ_NATIVE) ErrorExit(vm, "Expected native pointer but recieved %s\n", ObjectTypeNames[obj->type]);
 	return obj;
 }
 
@@ -2031,7 +2196,7 @@ void PushIndir(VM* vm, int nargs)
 
 void PopIndir(VM* vm)
 {
-	if(vm->indirStackSize == 0)
+	if(vm->indirStackSize <= 0)
 	{
 		vm->pc = -1;
 		return;
@@ -2495,6 +2660,26 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 		
+		case OP_CAT:
+		{
+			++vm->pc;
+			if(vm->debug)
+				printf("cat\n");
+
+			const char* b = PopString(vm);
+			const char* a = PopString(vm);
+
+			size_t la = strlen(a);
+			size_t lb = strlen(b);
+
+			char* cat = alloca(la + lb + 1);
+			if(!cat)
+				ErrorExit(vm, "Out of stack memory.\n");
+			strcpy(cat, a);
+			strcpy(cat + la, b);
+			PushString(vm, cat);
+		} break;
+
 		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExit(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
@@ -2718,6 +2903,9 @@ void ExecuteCycle(VM* vm)
 
 		case OP_SET:
 		{
+			if(vm->numGlobals == 0)
+				ErrorExit(vm, "Invalid access to global variables\n");
+
 			++vm->pc;
 			int index = ReadInteger(vm);
 			
@@ -2733,6 +2921,9 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_GET:
 		{
+			if(vm->numGlobals == 0)
+				ErrorExit(vm, "Invalid access to global variables\n");
+
 			++vm->pc;
 			int index = ReadInteger(vm);
 			if(vm->stack[index])
@@ -2780,7 +2971,7 @@ void ExecuteCycle(VM* vm)
 			int pc = ReadInteger(vm);
 			
 			Object* top = PopObject(vm);
-			if(top->number == 0)
+			if(top->type == OBJ_NUMBER ? top->number == 0 : top == &NullObject)
 			{
 				vm->pc = pc;
 				if(vm->debug)
@@ -2961,7 +3152,10 @@ void ExecuteCycle(VM* vm)
 		} break;
 		
 		default:
-			printf("Invalid instruction %i\n", vm->program[vm->pc]);
+			if(vm->hasCodeMetadata)
+				printf("(%s:%i:%i): Invalid instruction\n", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc], vm->pc);
+			else 
+				printf("pc %i: Invalid instruction\n", vm->pc);
 			break;
 	}
 }

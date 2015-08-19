@@ -34,6 +34,7 @@ func try_operation(exp)
 	end
 end
 
+
 func optimized(exp)
 	var result = try_operation(exp)
 	if result != null
@@ -116,7 +117,6 @@ func output_code(s, ctx)
 	s:write_binary_value(0, nb_s8)							# has debug metadata
 end
 ~#
-
 
 #~_OP_ADD = 18,
 OP_SUB,

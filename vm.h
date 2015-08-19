@@ -11,7 +11,7 @@ typedef void (*ExternFunction)(struct _VM*);
 typedef unsigned char Word;
 
 enum
-{
+{	
 	OP_GET_RETVAL,
 	
 	OP_PUSH_NULL,
@@ -51,6 +51,9 @@ enum
 	
 	OP_DICT_PAIRS,
 	
+	// concatenate strings
+	OP_CAT,
+
 	OP_ADD,
 	OP_SUB,
 	OP_MUL,
@@ -99,6 +102,9 @@ enum
 	OP_SETVMDEBUG,
 
 	OP_GETARGS,
+	
+	OP_FILE, // set current file name
+	OP_LINE, // set current line name
 	
 	NUM_OPCODES
 };
@@ -153,11 +159,14 @@ typedef struct _Object
 #define MAX_TRACKED_CALLSTACK_LENGTH 	8
 #define MAX_CIF_ARGS					32
 #define CIF_STACK_SIZE					4096
+#define MAX_THREADS						8
 
 typedef struct _VM
 {
+	char isActive;
+
 	int pc, fp;
-	
+
 	char hasCodeMetadata;
 	int* pcLineTable;
 	int* pcFileTable;
@@ -216,6 +225,11 @@ typedef struct _VM
 	char inExternBody;
 
 	char debug;
+
+	/*// all of these are executed every time an
+	// instruction is executed in this machine
+	int threadIndex; // this vm's thread index
+	struct _VM* threads[MAX_THREADS];*/
 } VM;
 
 VM* NewVM(); 
@@ -249,9 +263,11 @@ double PopNumber(VM* vm);
 const char* PopString(VM* vm);
 Object* PopStringObject(VM* vm);
 int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs);
+Object* PopFuncObject(VM* vm);
 Object** PopArray(VM* vm, int* length);
 Object* PopArrayObject(VM* vm);
 Object* PopDict(VM* vm);
+Object* PopNativeObject(VM* vm);
 void* PopNative(VM* vm);
 void* PopNativeOrNull(VM* vm);
 
