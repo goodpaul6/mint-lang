@@ -71,8 +71,7 @@ void WriteNonVerbose(VM* vm, Object* obj)
 Object* GetLocal(VM* vm, int index);
 void ErrorExit(VM* vm, const char* format, ...)
 {
-	if(!vm->hasCodeMetadata) fprintf(stderr, "Error at pc %i (last function called: %s):\n", vm->pc, vm->lastFunctionName);
-	else fprintf(stderr, "Error (%s:%i) (last function called: %s):\n", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc], vm->lastFunctionName);
+	fprintf(stderr, "Error (%s:%i:%i) (last function called: %s):\n", vm->curFile, vm->curLine, vm->pc, vm->lastFunctionName);
 	
 	va_list args;
 	va_start(args, format);
@@ -1348,16 +1347,6 @@ void Std_GetThreadResult(VM* vm)
 	ReturnTop(vm);
 }
 
-void PushIndir(VM* vm, int nargs);
-void ExecuteCycle(VM* vm);
-void Std_JoinThread(VM* vm)
-{
-	VM* thread = PopNative(vm);
-
-	while(thread->pc >= 0)
-		ExecuteCycle(thread);
-}
-
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
@@ -1366,9 +1355,8 @@ void InitVM(VM* vm)
 	
 	vm->isActive = 0;
 
-	vm->hasCodeMetadata = 0;
-	vm->pcLineTable = NULL;
-	vm->pcFileTable = NULL;
+	vm->curFile = "unknown";
+	vm->curLine = -1;
 	
 	vm->program = NULL;
 	vm->programLength = 0;
@@ -1428,11 +1416,6 @@ VM* NewVM()
 void ResetVM(VM* vm)
 {
 	if(vm->pc != -1) ErrorExit(vm, "Attempted to reset a running virtual machine\n");
-	
-	if(vm->pcLineTable)
-		free(vm->pcLineTable);
-	if(vm->pcFileTable)
-		free(vm->pcFileTable);
 	
 	if(vm->program)
 		free(vm->program);
@@ -1519,11 +1502,6 @@ number constants as doubles
 
 number of string constants
 string length followed by string as chars
-
-whether the program has code metadata (i.e line numbers and file names for errors) (represented by char)
-if so (length of each of the arrays below must be the same as program length):
-line numbers mapping to pcs
-file names as indices into string table (integers)
 */
 
 void LoadBinaryFile(VM* vm, FILE* in)
@@ -1642,18 +1620,6 @@ void LoadBinaryFile(VM* vm, FILE* in)
 		
 		vm->stringConstants[i] = string;
 	}
-	
-	char hasCodeMetadata;
-	fread(&hasCodeMetadata, sizeof(char), 1, in);
-	vm->hasCodeMetadata = hasCodeMetadata;
-	if(hasCodeMetadata)
-	{
-		vm->pcLineTable = emalloc(sizeof(int) * programLength);
-		vm->pcFileTable = emalloc(sizeof(int) * programLength);
-		
-		fread(vm->pcLineTable, sizeof(int), programLength, in);
-		fread(vm->pcFileTable, sizeof(int), programLength, in);
-	}
 }
 
 void HookStandardLibrary(VM* vm)
@@ -1723,7 +1689,6 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "current_thread", Std_CurrentThread);
 	HookExternNoWarn(vm, "yield", Std_Yield);
 	HookExternNoWarn(vm, "get_thread_result", Std_GetThreadResult);
-	HookExternNoWarn(vm, "join_thread", Std_JoinThread);
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -2319,13 +2284,7 @@ void ExecuteCycle(VM* vm)
 {
 	if(vm->pc == -1) return;
 	if(vm->debug)
-	{
-		if(vm->hasCodeMetadata)
-			printf("(%s:%i:%i): ", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc], vm->pc);
-		else 
-			printf("pc %i: ", vm->pc);
-	}
-	
+		printf("(%s:%i:%i): ", vm->curFile, vm->curLine, vm->pc);
 	
 	if(vm->stackSize < vm->numGlobals)
 		printf("Global(s) were removed from the stack!\n");
@@ -2914,8 +2873,9 @@ void ExecuteCycle(VM* vm)
 			
 			if(vm->debug)
 			{
-				if(top->type == OBJ_NUMBER) printf("set %i to %g\n", index, top->number);
-				else if(top->type == OBJ_STRING) printf("set %i to %s\n", index, top->string.raw);	
+				printf("set %s to ", vm->globalNames[index]);
+				WriteObject(vm, top);
+				printf("\n");
 			}
 		} break;
 		
@@ -2932,7 +2892,7 @@ void ExecuteCycle(VM* vm)
 				PushObject(vm, &NullObject);
 				
 			if(vm->debug)
-				printf("get %i\n", index);
+				printf("get %s\n", vm->globalNames[index]);
 		} break;
 		
 		case OP_WRITE:
@@ -3151,11 +3111,25 @@ void ExecuteCycle(VM* vm)
 			}
 		} break;
 		
+		case OP_FILE:
+		{
+			++vm->pc;
+			int fileIndex = ReadInteger(vm);
+			if(vm->debug)
+				printf("\n");
+			vm->curFile = vm->stringConstants[fileIndex];
+		} break;
+		
+		case OP_LINE:
+		{
+			++vm->pc;
+			vm->curLine = ReadInteger(vm);
+			if(vm->debug)
+				printf("\n");
+		} break;
+		
 		default:
-			if(vm->hasCodeMetadata)
-				printf("(%s:%i:%i): Invalid instruction\n", vm->stringConstants[vm->pcFileTable[vm->pc]], vm->pcLineTable[vm->pc], vm->pc);
-			else 
-				printf("pc %i: Invalid instruction\n", vm->pc);
+			printf("(%s:%i:%i): Invalid instruction\n", vm->curFile, vm->curLine, vm->pc);
 			break;
 	}
 }

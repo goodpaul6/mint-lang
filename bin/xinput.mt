@@ -45,7 +45,7 @@ end
 
 func _xinput_state_poll(self)
 	write([self.index, self.ptr])
-	if ffi_call(_xinput_get_state_addr, ffi_ulong, [ffi_ulong, ffi_pointer], [self.index, self.ptr])
+	if ffi_call(_xinput_get_state_addr, ffi_ulong, [ffi_ulong, ffi_pointer], [self.index, self.ptr]) then
 		var s = self.ptr
 		var so = _xinput_state_offsets
 		var go = _xinput_gamepad_offsets

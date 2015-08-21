@@ -30,6 +30,8 @@
  */
 #include "lang.h"
 
+char ProduceDebugInfo = 0;
+
 const char* StandardSourceSearchPath = "C:\\Mint\\src\\";
 const char* StandardLibSearchPath = "C:\\Mint\\lib\\";
 
@@ -46,9 +48,9 @@ int main(int argc, char* argv[])
 	for(int i = 1; i < argc; ++i)
 	{
 		if(strcmp(argv[i], "-o") == 0)
-		{
 			outPath = argv[++i];
-		}
+		else if(strcmp(argv[i], "-g") == 0)
+			ProduceDebugInfo = 1;
 		else if(strcmp(argv[i], "-l") == 0)
 		{		
 			/*FILE* in = fopen(argv[++i], "rb");
@@ -121,7 +123,7 @@ int main(int argc, char* argv[])
 	ResolveTypesExprList(exprHead);
 
 	CompileExprList(exprHead);
-	_AppendCode(OP_HALT, LineNumber, RegisterString(FileName)->index);
+	AppendCode(OP_HALT);
 	
 	FILE* out;
 	

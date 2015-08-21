@@ -17,18 +17,16 @@
 #define MAX_STRUCT_ELEMENTS 64
 #define MAX_STRUCT_TRAITS 16
 
+extern char ProduceDebugInfo;
+
 void ErrorExit(const char* format, ...);
 void Warn(const char* format, ...);
 
-void _AppendCode(Word code, int line, int fileNameIndex);
-void _AppendInt(int value, int line, int fileNameIndex);
-void _AllocatePatch(int length, int line, int file);
+void AppendCode(Word code);
+void AppendInt(int value);
+void AllocatePatch(int length);
 
 void EmplaceInt(int loc, int value);
-
-#define AppendCode(code) _AppendCode((code), exp->line, RegisterString(exp->file)->index)
-#define AppendInt(value) _AppendInt((value), exp->line, RegisterString(exp->file)->index)
-#define AllocatePatch(length) _AllocatePatch((length), exp->line, RegisterString(exp->file)->index)
 
 void OutputCode(FILE* out);
 
@@ -65,6 +63,8 @@ typedef struct _TypeHint
 		struct
 		{
 			struct _TypeHint* traits[MAX_STRUCT_TRAITS];
+			int numTraits;
+			
 			char isTrait;
 			char name[MAX_ID_NAME_LENGTH];
 			int numElements;
@@ -216,7 +216,8 @@ enum
 	TOK_INST = -38,
 	TOK_HAS = -39,
 	TOK_TRAIT = -40,
-	TOK_CAT = -41
+	TOK_CAT = -41,
+	TOK_IS = -42
 };
 
 extern size_t LexemeCapacity;
@@ -284,7 +285,7 @@ typedef struct _Expr
 		struct { int op; struct _Expr* expr; } unaryx;
 		// comDecl: for array comprehensions
 		struct { struct _Expr *init, *cond, *iter, *bodyHead; VarDecl* comDecl; } forx;
-		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } dotx;
+		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; char isColon; } dotx;
 		struct { struct _Expr* pairsHead; int length; VarDecl* decl; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
 		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl;} lamx;

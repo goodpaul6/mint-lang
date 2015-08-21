@@ -1,8 +1,7 @@
 # cffi.mt -- mint code used by the compiler for interfacing with c code
+
 extern loadlib
 extern getprocaddress
-
-extern type
 
 extern malloc
 extern memcpy

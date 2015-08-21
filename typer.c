@@ -139,7 +139,7 @@ char CompareTypes(const TypeHint* a, const TypeHint* b)
 	if(a->hint == DYNAMIC || b->hint == DYNAMIC) return 1;
 	if(a->hint == USERTYPE || b->hint == USERTYPE)
 	{
-		if(a->hint == b->hint) 
+		if(a->hint == b->hint)
 			return strcmp(a->user.name, b->user.name) == 0;
 		return 0;
 	}
@@ -195,6 +195,7 @@ TypeHint* RegisterUserType(const char* name)
 	strcpy(type->user.name, name);
 
 	type->user.numElements = 0;
+	type->user.numTraits = 0;
 
 	type->next = UserTypes;
 	UserTypes = type;

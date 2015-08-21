@@ -185,17 +185,40 @@ Expr* ParseFactor(FILE* in)
 		case TOK_TRAIT:
 		{
 			GetNextToken(in);
-			Warn("TRAITS NOT IMPLEMENTED! WORK ON THEM YOU PERSON!\n");
-			/*if(CurTok != TOK_IDENT)
+			if(CurTok != TOK_IDENT)
 				ErrorExit("Expected identifier after 'trait'\n");
 
 			TypeHint* type = RegisterUserType(Lexeme);
 			GetNextToken(in);
-
+			
+			type->user.isTrait = 1;
+			
 			while(CurTok != TOK_END)
 			{
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier in type declaration '%s'\n", type->user.name);
+				
+				if(type->user.numElements + 1 >= MAX_STRUCT_ELEMENTS)
+					ErrorExit("Exceeded maximum number of usertype elements in type declaration '%s'\n", type->user.name);
 
-			}*/
+				type->user.names[type->user.numElements] = malloc(strlen(Lexeme) + 1);
+				assert(type->user.names[type->user.numElements]);
+				strcpy(type->user.names[type->user.numElements], Lexeme);
+
+				GetNextToken(in);
+				if(CurTok != ':')
+					ErrorExit("Expected ':' after identifier in type declaration '%s'\n", type->user.name);
+				GetNextToken(in);
+				TypeHint* elementType = ParseTypeHint(in);
+				if(!CompareTypes(elementType, GetBroadTypeHint(FUNC)))
+					ErrorExit("Trait elements must be functions\n");
+				
+				type->user.elements[type->user.numElements++] = elementType;
+			}
+
+			GetNextToken(in);
+
+			return CreateExpr(EXP_TYPE_DECL);
 		} break;
 
 		case TOK_TYPE:
@@ -220,7 +243,7 @@ Expr* ParseFactor(FILE* in)
 
 				type->user.numElements += parent->user.numElements;
 				if(type->user.numElements >= MAX_STRUCT_ELEMENTS)
-					ErrorExit("Exceeded maximum struct element types\n");
+					ErrorExit("Exceeded maximum element types in type declaration\n");
 
 				for(int i = 0; i < type->user.numElements; ++i)
 				{
@@ -229,6 +252,19 @@ Expr* ParseFactor(FILE* in)
 					strcpy(type->user.names[i], parent->user.names[i]);
 					type->user.elements[i] = parent->user.elements[i];
 				}
+			}
+			
+			while (CurTok == TOK_IS)
+			{
+				GetNextToken(in);
+				
+				TypeHint* trait = ParseTypeHint(in);
+				if(trait->hint != USERTYPE || !trait->user.isTrait)
+					ErrorExit("'is' expects a trait type, not just any type\n");
+				
+				if(type->user.numTraits >= MAX_STRUCT_TRAITS)
+					ErrorExit("Exceeded maximum number of traits in type declaration\n");
+				type->user.traits[type->user.numTraits++] = trait;
 			}
 
 			while(CurTok != TOK_END)
@@ -249,6 +285,29 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 				TypeHint* elementType = ParseTypeHint(in);
 				type->user.elements[type->user.numElements++] = elementType;
+			}
+			
+			// Check if all the elements of the trait are present on the type
+			for(int traitIndex = 0; traitIndex < type->user.numTraits; ++traitIndex)
+			{
+				TypeHint* trait = type->user.traits[traitIndex];
+				for(int i = 0; i < trait->user.numElements; ++i)
+				{
+					const char* name = trait->user.names[i];
+					char present = 0;
+					for(int j = 0; j < type->user.numElements; ++j)
+					{
+						if(strcmp(name, type->user.names[j]) == 0 && CompareTypes(trait->user.elements[i], type->user.elements[j]))
+						{	
+							present = 1;
+							break;
+						}
+					}
+					
+					if(!present)
+						ErrorExit("Type '%s' missing field '%s' of type '%s' required for trait '%s'\n", type->user.name,
+								  name, HintString(trait->user.elements[i]), trait->user.name);
+				}
 			}
 
 			GetNextToken(in);
@@ -534,11 +593,21 @@ Expr* ParseFactor(FILE* in)
 			
 			char name[MAX_ID_NAME_LENGTH];
 			if(CurTok != TOK_IDENT)
-				ErrorExit("Expected identifier after 'func'\n");
-			
-			strcpy(name, Lexeme);
-			
-			GetNextToken(in);
+			{
+				if(CurTok != '(')
+					ErrorExit("Expected identifier or '(' after 'func'\n");
+				else
+				{
+					// anon function
+					static int numAnon = 0;
+					sprintf(name, "__af%d__", numAnon++);
+				}
+			}
+			else
+			{
+				strcpy(name, Lexeme);
+				GetNextToken(in);
+			}
 			
 			if(CurTok != '(')
 				ErrorExit("Expected '(' after 'func' %s\n", name);
@@ -904,6 +973,7 @@ Expr* ConvertColonCall(Expr* callExp)
 	Expr* dotExp = CreateExpr(EXP_DOT);
 	dotExp->dotx.dict = callExp->callx.func->colonx.dict;
 	strcpy(dotExp->dotx.name, callExp->callx.func->colonx.name);
+	dotExp->dotx.isColon = 1;
 
 	Expr* exp = CreateExpr(EXP_CALL);
 	exp->callx.numArgs = 1;
@@ -944,6 +1014,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			Expr* exp = CreateExpr(EXP_DOT);
 			strcpy(exp->dotx.name, Lexeme);
 			exp->dotx.dict = pre;
+			exp->dotx.isColon = 0;
 		
 			GetNextToken(in);
 			if(!IsPostOperator()) return exp;

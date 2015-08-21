@@ -528,6 +528,60 @@ void CheckArgumentTypes(const TypeHint* type, Expr* exp)
 	}
 }
 
+void CompileUsertypeCall(Expr* exp, char expectReturn)
+{
+	
+}
+
+void CastToTrait(const TypeHint* targetType, Expr* exp)
+{
+	assert(targetType);
+	assert(targetType->hint == USERTYPE && targetType->user.isTrait);
+
+	TypeHint* type = InferTypeFromExpr(exp);
+	if(type && type->hint == USERTYPE)
+	{
+		for(int i = 0; i < type->user.numTraits; ++i)
+		{
+			// the expression type has the target type as a trait so 
+			// it's possible to implicitly convert it to said trait
+			if(CompareTypes(type->user.traits[i], targetType))
+			{
+				// construct an array to hold all the functions
+				// required in the trait
+				
+				// first, the array (user type instance) itself
+				CompileValueExpr(exp);
+				
+				// find and get all the pertinent indices in the array which is being converted
+				for(int traitElementIndex = 0; traitElementIndex < targetType->user.numElements; ++traitElementIndex)
+				{
+					for(int elementIndex = 0; elementIndex < type->user.numElements; ++elementIndex)
+					{
+						if(strcmp(type->user.names[elementIndex], targetType->user.names[traitElementIndex]) == 0)
+						{
+							AppendCode(OP_PUSH_NUMBER);
+							AppendInt(RegisterNumber(elementIndex)->index);
+							CompileValueExpr(exp);
+							AppendCode(OP_GETINDEX);
+						}
+					}
+				}
+				
+				AppendCode(OP_CREATE_ARRAY_BLOCK);
+				AppendInt(targetType->user.numElements);
+				
+				AppendCode(OP_CREATE_ARRAY_BLOCK);
+				AppendInt(2);
+				
+				return;
+			}
+		}
+	}
+	
+	ErrorExitE(exp, "Cannot cast type '%s' to trait '%s'\n", HintString(type), HintString(targetType));
+}
+
 void CompileValueExpr(Expr* exp);
 void CompileCallExpr(Expr* exp, char expectReturn)
 {
@@ -679,19 +733,90 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 	else
 	{			
 		const TypeHint* type = InferTypeFromExpr(exp->callx.func);
+	
+		if(exp->callx.func->type == EXP_DOT)
+		{
+			Expr* pre = exp->callx.func;
+			const TypeHint* dictType = InferTypeFromExpr(pre->dotx.dict);
+			// calling a trait function (a trait is an array [type_value, [trait_functions...]]
+			// whereas a normal type is an array [values...]
+			if(dictType && dictType->hint == USERTYPE && dictType->user.isTrait)
+			{
+				const TypeHint* elementType = GetUserTypeElement(dictType, pre->dotx.name);
+				CheckArgumentTypes(elementType, exp);
+				
+				// NOTE: ignore the first argument because it's just the trait value itself
+				// the function expects the type value instead, which is part of the 
+				// trait array
+				
+				if(pre->dotx.isColon)
+				{
+					for(int i = exp->callx.numArgs - 1; i >= 1; --i)
+						CompileValueExpr(exp->callx.args[i]);
+				}
+				else
+				{
+					WarnE(exp, "Calling trait function using dot ('.'); the trait will be passed in as the first argument to the function anyways\n"
+					"so it would be better to use the colon (':') operator to signify that instead");
+					for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+						CompileValueExpr(exp->callx.args[i]);
+				}
+				
+				// get the type_value
+				AppendCode(OP_PUSH_NUMBER);
+				AppendInt(RegisterNumber(0)->index);
+				CompileValueExpr(pre->dotx.dict);
+				AppendCode(OP_GETINDEX);
+				
+				// in the second array, get the function
+				AppendCode(OP_PUSH_NUMBER);
+				AppendInt(RegisterNumber(GetUserTypeElementIndex(dictType, pre->dotx.name))->index);
+				
+				// get the second array
+				AppendCode(OP_PUSH_NUMBER);
+				AppendInt(RegisterNumber(1)->index);
+				CompileValueExpr(pre->dotx.dict);
+				AppendCode(OP_GETINDEX);
+				
+				AppendCode(OP_GETINDEX);
+				
+				AppendCode(OP_CALLP);
+				AppendCode(exp->callx.numArgs - numExpansions);
+				
+				if(expectReturn)
+					AppendCode(OP_GET_RETVAL);
+			}
+			else
+			{
+				CheckArgumentTypes(type, exp);
 
-		CheckArgumentTypes(type, exp);
-
-		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileValueExpr(exp->callx.args[i]);
+				for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+					CompileValueExpr(exp->callx.args[i]);
+				
+				CompileValueExpr(exp->callx.func);
 			
-		CompileValueExpr(exp->callx.func);
+				AppendCode(OP_CALLP);
+				AppendCode(exp->callx.numArgs - numExpansions);
+			
+				if(expectReturn)
+					AppendCode(OP_GET_RETVAL);
+			}
+		}
+		else
+		{
+			CheckArgumentTypes(type, exp);
+
+			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+				CompileValueExpr(exp->callx.args[i]);
+			
+			CompileValueExpr(exp->callx.func);
 		
-		AppendCode(OP_CALLP);
-		AppendCode(exp->callx.numArgs - numExpansions);
+			AppendCode(OP_CALLP);
+			AppendCode(exp->callx.numArgs - numExpansions);
 		
-		if(expectReturn)
-			AppendCode(OP_GET_RETVAL);
+			if(expectReturn)
+				AppendCode(OP_GET_RETVAL);
+		}
 	}
 }
 
@@ -735,6 +860,15 @@ void CompileExprList(Expr* head);
 // Expression should have a resulting value (pushed onto the stack)
 void CompileValueExpr(Expr* exp)
 {
+	if(ProduceDebugInfo)
+	{
+		AppendCode(OP_FILE);
+		AppendInt(RegisterString(exp->file)->index);
+		
+		AppendCode(OP_LINE);
+		AppendInt(exp->line);
+	}
+	
 	switch(exp->type)
 	{
 		case EXP_NUMBER: case EXP_STRING:
@@ -750,7 +884,24 @@ void CompileValueExpr(Expr* exp)
 
 		case EXP_TYPE_CAST:
 		{
-			CompileValueExpr(exp->castx.expr);
+			const TypeHint* type = InferTypeFromExpr(exp->castx.expr);
+			if((type->hint == USERTYPE && !type->user.isTrait) && 
+			   (exp->castx.newType->hint == USERTYPE && exp->castx.newType->user.isTrait))
+				CastToTrait(exp->castx.newType, exp->castx.expr);
+			else if((type && type->hint == USERTYPE && type->user.isTrait) && 
+				    (exp->castx.newType->hint == USERTYPE))
+			{
+				if(exp->castx.newType->user.isTrait)
+					ErrorExitE(exp, "Cannot cast from one trait ('%s') to another ('%s') directly\n", HintString(type), HintString(exp->castx.newType));
+				
+				// the 0th index contains the type_value
+				AppendCode(OP_PUSH_NUMBER);
+				AppendInt(RegisterNumber(0)->index);
+				CompileValueExpr(exp->castx.expr);
+				AppendCode(OP_GETINDEX);
+			}
+			else
+				CompileValueExpr(exp->castx.expr);
 		} break;
 		
 		case EXP_INST:
@@ -903,7 +1054,7 @@ void CompileValueExpr(Expr* exp)
 					CompileValueExpr(exp->dotx.dict);
 					AppendCode(OP_DICT_GET);
 				}
-				else
+				else if(!type->user.isTrait)
 				{
 					int eindex = GetUserTypeElementIndex(type, exp->dotx.name);
 
@@ -913,6 +1064,23 @@ void CompileValueExpr(Expr* exp)
 					AppendCode(OP_PUSH_NUMBER);
 					AppendInt(RegisterNumber(eindex)->index);
 					CompileValueExpr(exp->dotx.dict);
+					AppendCode(OP_GETINDEX);
+				}
+				else
+				{
+					int eindex = GetUserTypeElementIndex(type, exp->dotx.name);
+					
+					if(eindex < 0)
+						ErrorExitE(exp, "Attempted to access non-existent field '%s' in usertype '%s'\n", exp->dotx.name, type->user.name);
+					
+					AppendCode(OP_PUSH_NUMBER);
+					AppendInt(RegisterNumber(eindex)->index);
+					
+					AppendCode(OP_PUSH_NUMBER);
+					AppendInt(RegisterNumber(1)->index);
+					CompileValueExpr(exp->dotx.dict);
+					AppendCode(OP_GETINDEX);
+					
 					AppendCode(OP_GETINDEX);
 				}
 			}
@@ -1201,6 +1369,14 @@ void CompileExprList(Expr* head);
 void CompileExpr(Expr* exp)
 {
 	// printf("compiling expression (%s:%i)\n", exp->file, exp->line);
+	if(ProduceDebugInfo)
+	{
+		AppendCode(OP_FILE);
+		AppendInt(RegisterString(exp->file)->index);
+		
+		AppendCode(OP_LINE);
+		AppendInt(exp->line);
+	}
 	
 	switch(exp->type)
 	{	
@@ -1241,7 +1417,7 @@ void CompileExpr(Expr* exp)
 				{
 					TypeHint* type = InferTypeFromExpr(exp->binx.lhs->dotx.dict);
 
-					if(type ? type->hint != USERTYPE : 0)
+					if(type ? type->hint != USERTYPE : 1)
 					{
 						if(strcmp(exp->binx.lhs->dotx.name, "pairs") == 0)
 							ErrorExitE(exp, "Cannot assign dictionary entry 'pairs' to a value\n");

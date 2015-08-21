@@ -6,15 +6,7 @@ Word* Code = NULL;
 int CodeCapacity = NULL;
 int CodeLength = NULL;
 
-struct
-{
-	int* lineNumbers;
-	int* fileNameIndices;
-	int length;
-	int capacity;
-} Debug = { NULL, NULL, 0, 0 };
-
-void _AppendCode(Word code, int line, int fileNameIndex)
+void AppendCode(Word code)
 {	
 	while(CodeLength + 1 >= CodeCapacity)
 	{
@@ -27,44 +19,19 @@ void _AppendCode(Word code, int line, int fileNameIndex)
 	}
 
 	Code[CodeLength++] = code;
-	
-	while(Debug.length + 1 >= Debug.capacity)
-	{
-		if(Debug.capacity == 0) Debug.capacity = 8;
-		else Debug.capacity *= 2;
-		
-		int* newLineNumbers = realloc(Debug.lineNumbers, sizeof(int) * Debug.capacity);
-		assert(newLineNumbers);
-		Debug.lineNumbers = newLineNumbers;
-		
-		int* newFileNameIndices = realloc(Debug.fileNameIndices, sizeof(int) * Debug.capacity);
-		assert(newFileNameIndices);
-		Debug.fileNameIndices = newFileNameIndices;
-	}
-	
-	Debug.lineNumbers[Debug.length] = line;
-	Debug.fileNameIndices[Debug.length] = fileNameIndex;
-	Debug.length += 1;
 }
-
-#define AppendCode(code) _AppendCode((code), exp->line, RegisterString(exp->file)->index)
-
-void _AppendInt(int value, int line, int file)
+void AppendInt(int value)
 {
 	Word* code = (Word*)(&value);
 	for(int i = 0; i < sizeof(int) / sizeof(Word); ++i)
-		_AppendCode(*code++, line, file);
+		AppendCode(*code++);
 }
 
-#define AppendInt(value) _AppendInt((value), exp->line, RegisterString(exp->file)->index)
-
-void _AllocatePatch(int length, int line, int file)
+void AllocatePatch(int length)
 {
 	for(int i = 0; i < length; ++i)
-		_AppendCode(0, line, file);
+		AppendCode(0);
 }
-
-#define AllocatePatch(length) _AllocatePatch((length), exp->line, RegisterString(exp->file)->index)
 
 void EmplaceInt(int loc, int value)
 {
@@ -186,9 +153,4 @@ void OutputCode(FILE* out)
 			fwrite(decl->string, sizeof(char), len, out);
 		}
 	}
-	
-	char hasCodeMetadata = 1;
-	fwrite(&hasCodeMetadata, sizeof(char), 1, out);
-	fwrite(Debug.lineNumbers, sizeof(int), Debug.length, out);
-	fwrite(Debug.fileNameIndices, sizeof(int), Debug.length, out);
 }

@@ -164,12 +164,11 @@ typedef struct _Object
 typedef struct _VM
 {
 	char isActive;
+	
+	const char* curFile; // name of the file the produced code is in
+	int curLine;		 // line number in the file from where this code was written
 
 	int pc, fp;
-
-	char hasCodeMetadata;
-	int* pcLineTable;
-	int* pcFileTable;
 	
 	Word* program;
 	int programLength;
@@ -225,11 +224,6 @@ typedef struct _VM
 	char inExternBody;
 
 	char debug;
-
-	/*// all of these are executed every time an
-	// instruction is executed in this machine
-	int threadIndex; // this vm's thread index
-	struct _VM* threads[MAX_THREADS];*/
 } VM;
 
 VM* NewVM(); 

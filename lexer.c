@@ -1,6 +1,6 @@
 #include "lang.h"
 
-const char* FileName = NULL;
+const char* FileName = "unknown";
 int LineNumber = 0;
 
 size_t LexemeCapacity = 0;
@@ -98,6 +98,22 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "inst") == 0) return TOK_INST;
 		if(strcmp(Lexeme, "has") == 0) return TOK_HAS;
 		if(strcmp(Lexeme, "trait") == 0) return TOK_TRAIT;
+		if(strcmp(Lexeme, "is") == 0) return TOK_IS;
+		if(strcmp(Lexeme, "this_function") == 0)
+		{
+			if(CurFunc && !CurFunc->isLambda)
+			{
+				if(LexemeCapacity < MAX_ID_NAME_LENGTH)
+				{
+					LexemeCapacity = MAX_ID_NAME_LENGTH;
+					void* newLexeme = realloc(Lexeme, LexemeCapacity);
+					assert(newLexeme);
+					Lexeme = newLexeme;
+				}
+				
+				strcpy(Lexeme, CurFunc->name);
+			}
+		}
 
 		return TOK_IDENT;
 	}
