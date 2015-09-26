@@ -15,7 +15,6 @@
 #define MAX_SCOPES 32
 #define MAX_ARGS 64
 #define MAX_STRUCT_ELEMENTS 64
-#define MAX_STRUCT_TRAITS 16
 
 extern char ProduceDebugInfo;
 
@@ -62,10 +61,6 @@ typedef struct _TypeHint
 		// for usertypes
 		struct
 		{
-			struct _TypeHint* traits[MAX_STRUCT_TRAITS];
-			int numTraits;
-			
-			char isTrait;
 			char name[MAX_ID_NAME_LENGTH];
 			int numElements;
 			struct _TypeHint* elements[MAX_STRUCT_ELEMENTS];  
@@ -213,11 +208,8 @@ enum
 	TOK_DO = -35,
 	TOK_THEN = -36,
 	TOK_TYPE = -37,
-	TOK_INST = -38,
-	TOK_HAS = -39,
-	TOK_TRAIT = -40,
-	TOK_CAT = -41,
-	TOK_IS = -42
+	TOK_HAS = -38,
+	TOK_CAT = -39
 };
 
 extern size_t LexemeCapacity;
@@ -256,7 +248,6 @@ typedef enum
 	//EXP_LINKED_BINARY_CODE
 	EXP_TYPE_DECL,
 	EXP_TYPE_CAST,
-	EXP_INST,
 	NUM_EXPR_TYPES
 } ExprType;
 
@@ -291,7 +282,6 @@ typedef struct _Expr
 		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl;} lamx;
 		//struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
 		struct { struct _Expr* expr; TypeHint* newType; } castx;
-		TypeHint* instType;
 	};
 } Expr;
 

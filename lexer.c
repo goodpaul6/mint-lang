@@ -95,10 +95,7 @@ int GetToken(FILE* in)
 		if(strcmp(Lexeme, "do") == 0) return TOK_DO;
 		if(strcmp(Lexeme, "then") == 0) return TOK_THEN;
 		if(strcmp(Lexeme, "type") == 0) return TOK_TYPE;
-		if(strcmp(Lexeme, "inst") == 0) return TOK_INST;
 		if(strcmp(Lexeme, "has") == 0) return TOK_HAS;
-		if(strcmp(Lexeme, "trait") == 0) return TOK_TRAIT;
-		if(strcmp(Lexeme, "is") == 0) return TOK_IS;
 		if(strcmp(Lexeme, "this_function") == 0)
 		{
 			if(CurFunc && !CurFunc->isLambda)

@@ -169,58 +169,6 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 
-		case TOK_INST:
-		{
-			GetNextToken(in);
-
-			TypeHint* type = ParseTypeHint(in);
-			if(type->hint != USERTYPE) ErrorExit("Attempted to use inst for non-usertype '%s'\n", HintString(type));
-
-			Expr* exp = CreateExpr(EXP_INST);
-			exp->instType = type;
-
-			return exp;
-		} break;
-
-		case TOK_TRAIT:
-		{
-			GetNextToken(in);
-			if(CurTok != TOK_IDENT)
-				ErrorExit("Expected identifier after 'trait'\n");
-
-			TypeHint* type = RegisterUserType(Lexeme);
-			GetNextToken(in);
-			
-			type->user.isTrait = 1;
-			
-			while(CurTok != TOK_END)
-			{
-				if(CurTok != TOK_IDENT)
-					ErrorExit("Expected identifier in type declaration '%s'\n", type->user.name);
-				
-				if(type->user.numElements + 1 >= MAX_STRUCT_ELEMENTS)
-					ErrorExit("Exceeded maximum number of usertype elements in type declaration '%s'\n", type->user.name);
-
-				type->user.names[type->user.numElements] = malloc(strlen(Lexeme) + 1);
-				assert(type->user.names[type->user.numElements]);
-				strcpy(type->user.names[type->user.numElements], Lexeme);
-
-				GetNextToken(in);
-				if(CurTok != ':')
-					ErrorExit("Expected ':' after identifier in type declaration '%s'\n", type->user.name);
-				GetNextToken(in);
-				TypeHint* elementType = ParseTypeHint(in);
-				if(!CompareTypes(elementType, GetBroadTypeHint(FUNC)))
-					ErrorExit("Trait elements must be functions\n");
-				
-				type->user.elements[type->user.numElements++] = elementType;
-			}
-
-			GetNextToken(in);
-
-			return CreateExpr(EXP_TYPE_DECL);
-		} break;
-
 		case TOK_TYPE:
 		{
 			GetNextToken(in);
@@ -254,19 +202,6 @@ Expr* ParseFactor(FILE* in)
 				}
 			}
 			
-			while (CurTok == TOK_IS)
-			{
-				GetNextToken(in);
-				
-				TypeHint* trait = ParseTypeHint(in);
-				if(trait->hint != USERTYPE || !trait->user.isTrait)
-					ErrorExit("'is' expects a trait type, not just any type\n");
-				
-				if(type->user.numTraits >= MAX_STRUCT_TRAITS)
-					ErrorExit("Exceeded maximum number of traits in type declaration\n");
-				type->user.traits[type->user.numTraits++] = trait;
-			}
-
 			while(CurTok != TOK_END)
 			{
 				if(CurTok != TOK_IDENT)
@@ -287,29 +222,6 @@ Expr* ParseFactor(FILE* in)
 				type->user.elements[type->user.numElements++] = elementType;
 			}
 			
-			// Check if all the elements of the trait are present on the type
-			for(int traitIndex = 0; traitIndex < type->user.numTraits; ++traitIndex)
-			{
-				TypeHint* trait = type->user.traits[traitIndex];
-				for(int i = 0; i < trait->user.numElements; ++i)
-				{
-					const char* name = trait->user.names[i];
-					char present = 0;
-					for(int j = 0; j < type->user.numElements; ++j)
-					{
-						if(strcmp(name, type->user.names[j]) == 0 && CompareTypes(trait->user.elements[i], type->user.elements[j]))
-						{	
-							present = 1;
-							break;
-						}
-					}
-					
-					if(!present)
-						ErrorExit("Type '%s' missing field '%s' of type '%s' required for trait '%s'\n", type->user.name,
-								  name, HintString(trait->user.elements[i]), trait->user.name);
-				}
-			}
-
 			GetNextToken(in);
 
 			return CreateExpr(EXP_TYPE_DECL);

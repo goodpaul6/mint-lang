@@ -200,8 +200,7 @@ TypeHint* RegisterUserType(const char* name)
 	strcpy(type->user.name, name);
 
 	type->user.numElements = 0;
-	type->user.numTraits = 0;
-
+	
 	type->next = UserTypes;
 	UserTypes = type;
 
@@ -359,9 +358,7 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		case EXP_STRING: return GetBroadTypeHint(STRING); break;
 		
 		case EXP_TYPE_CAST: return exp->castx.newType; break;
-
-		case EXP_INST: return exp->instType; break;
-
+		
 		case EXP_IDENT:
 		{
 			if(!exp->varx.varDecl)

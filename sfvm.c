@@ -78,6 +78,7 @@ void Ext_sfTransform_create(VM* vm)
 	sfTransform* transform = emalloc(sizeof(sfTransform));
 	*transform = sfTransform_Identity;
 	PushNative(vm, transform, free, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfTransform_identity(VM* vm)
@@ -99,6 +100,7 @@ void Ext_sfTransform_transformPoint(VM* vm)
 	obj->array.members[0] = PopObject(vm);
 	PushNumber(vm, p.y);
 	obj->array.members[1] = PopObject(vm);
+	ReturnTop(vm);
 }
 
 void Ext_sfTransform_transformRect(VM* vm)
@@ -118,6 +120,7 @@ void Ext_sfTransform_transformRect(VM* vm)
 	obj->array.members[2] = PopObject(vm);
 	PushNumber(vm, rect.height);
 	obj->array.members[3] = PopObject(vm);
+	ReturnTop(vm);
 }
 
 void Ext_sfTransform_combine(VM* vm)
@@ -186,21 +189,25 @@ void Ext_InitBlendModes()
 void Ext_sfBlendMode_getBlendAlpha(VM* vm)
 {
 	PushNative(vm, &Ext_sfBlendAlpha, NULL, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfBlendMode_getBlendAdd(VM* vm)
 {
 	PushNative(vm, &Ext_sfBlendAdd, NULL, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfBlendMode_getBlendMultiply(VM* vm)
 {
 	PushNative(vm, &Ext_sfBlendMultiply, NULL, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfBlendMode_getBlendNone(VM* vm)
 {
 	PushNative(vm, &Ext_sfBlendNone, NULL, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfShader_destroy(void* shader)
@@ -215,6 +222,7 @@ void Ext_sfShader_createFromFile(VM* vm)
 	
 	sfShader* shader = sfShader_createFromFile(vertexShaderFilename, fragmentShaderFilename);
 	PushNative(vm, shader, Ext_sfShader_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfShader_createFromMemory(VM* vm)
@@ -224,6 +232,7 @@ void Ext_sfShader_createFromMemory(VM* vm)
 	
 	sfShader* shader = sfShader_createFromMemory(vertexShader, fragmentShader);
 	PushNative(vm, shader, Ext_sfShader_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfShader_setFloatParameter(VM* vm)
@@ -315,6 +324,7 @@ void Ext_sfShader_setCurrentTextureParameter(VM* vm)
 void Ext_sfShader_isAvailable(VM* vm)
 {
 	PushNumber(vm, sfShader_isAvailable());
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderStates_create(VM* vm)
@@ -323,6 +333,7 @@ void Ext_sfRenderStates_create(VM* vm)
 	memset(states, 0, sizeof(sfRenderStates));
 	
 	PushNative(vm, states, free, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderStates_copy(VM* vm)
@@ -332,11 +343,17 @@ void Ext_sfRenderStates_copy(VM* vm)
 	memcpy(copiedStates, states, sizeof(sfRenderStates));
 	
 	PushNative(vm, copiedStates, free, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderStates_getBlendMode(VM* vm)
 {
 	sfRenderStates* states = PopNative(vm);
+	sfBlendMode* blendMode = emalloc(sizeof(sfBlendMode));
+	*blendMode = states->blendMode;
+	
+	PushNative(vm, blendMode, free, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderStates_setBlendMode(VM* vm)
@@ -377,6 +394,7 @@ void Ext_sfRenderWindow_create(VM* vm)
 	sfRenderWindow* window = sfRenderWindow_create(mode, PopString(vm), sfResize | sfClose, NULL);
 
 	PushNative(vm, window, Ext_sfRenderWindow_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderWindow_setFramerateLimit(VM* vm)
@@ -391,6 +409,7 @@ void Ext_sfRenderWindow_isOpen(VM* vm)
 {
 	sfRenderWindow* window = PopNative(vm);
 	PushNumber(vm, sfRenderWindow_isOpen(window));
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderWindow_close(VM* vm)
@@ -405,6 +424,7 @@ void Ext_sfRenderWindow_pollEvent(VM* vm)
 	sfEvent* event = PopNative(vm);
 	
 	PushNumber(vm, sfRenderWindow_pollEvent(window, event));
+	ReturnTop(vm);
 }
 
 void Ext_sfRenderWindow_clear(VM* vm)
@@ -439,30 +459,35 @@ void Ext_sfEvent_create(VM* vm)
 {
 	sfEvent* event = emalloc(sizeof(sfEvent));
 	PushNative(vm, event, free, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfEvent_type(VM* vm)
 {
 	sfEvent* event = PopNative(vm);
 	PushNumber(vm, event->type);
+	ReturnTop(vm);
 }
 
 void Ext_sfEvent_size_width(VM* vm)
 {
 	sfEvent* event = PopNative(vm);
 	PushNumber(vm, event->size.width);
+	ReturnTop(vm);
 }
 
 void Ext_sfEvent_size_height(VM* vm)
 {
 	sfEvent* event = PopNative(vm);
 	PushNumber(vm, event->size.height);
+	ReturnTop(vm);
 }
 
 void Ext_sfEvent_key_code(VM* vm)
 {
 	sfEvent* event = PopNative(vm);
 	PushNumber(vm, event->key.code);
+	ReturnTop(vm);
 }
 
 void Ext_sfTexture_destroy(void* pt)
@@ -481,6 +506,7 @@ void Ext_sfTexture_createFromFile(VM* vm)
 	}
 	
 	PushNative(vm, texture, Ext_sfTexture_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfTexture_getSize(VM* vm)
@@ -493,6 +519,7 @@ void Ext_sfTexture_getSize(VM* vm)
 	obj->array.members[0] = PopObject(vm);
 	PushNumber(vm, size.y);
 	obj->array.members[1] = PopObject(vm);
+	ReturnTop(vm);
 }
 
 void Ext_sfSprite_destroy(void* sp)
@@ -505,6 +532,7 @@ void Ext_sfSprite_create(VM* vm)
 {
 	sfSprite* sprite = sfSprite_create();
 	PushNative(vm, sprite, Ext_sfSprite_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfSprite_setTexture(VM* vm)
@@ -535,6 +563,7 @@ void Ext_sfVertex_create(VM* vm)
 {
 	sfVertex* vertex = emalloc(sizeof(sfVertex));
 	PushNative(vm, vertex, free, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfVertex_setPosition(VM* vm)
@@ -570,6 +599,7 @@ void Ext_sfVertexArray_create(VM* vm)
 {
 	sfVertexArray* vertexArray = sfVertexArray_create();
 	PushNative(vm, vertexArray, Ext_sfVertexArray_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfVertexArray_copy(VM* vm)
@@ -577,12 +607,14 @@ void Ext_sfVertexArray_copy(VM* vm)
 	sfVertexArray* vertexArray = PopNative(vm);
 	sfVertexArray* copiedVertexArray = sfVertexArray_copy(vertexArray);
 	PushNative(vm, copiedVertexArray, Ext_sfVertexArray_destroy, NULL);
+	ReturnTop(vm);
 }
 
 void Ext_sfVertexArray_getVertexCount(VM* vm)
 {
 	sfVertexArray* vertexArray = PopNative(vm);
 	PushNumber(vm, sfVertexArray_getVertexCount(vertexArray));
+	ReturnTop(vm);
 }
 
 void Ext_sfVertexArray_clear(VM* vm)

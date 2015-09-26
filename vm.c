@@ -2543,7 +2543,7 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 			{
 				printf(" '%s' ", index->string.raw);
-				WriteObject(vm, value);
+				WriteNonVerbose(vm, value);
 				printf("\n");
 			}
 			
