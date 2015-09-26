@@ -116,7 +116,12 @@ const char* HintString(const TypeHint* type)
 							pbuf += sprintf(pbuf, ")");
 					}
 					else
-						strcpy(buf, "function");
+					{
+						if(type->func.ret)
+							sprintf(buf, "function-%s", HintString(type->func.ret));
+						else
+							strcpy(buf, "function");
+					}
 					char* str = malloc(strlen(buf) + 1);
 					assert(str);
 					strcpy(str, buf);
@@ -381,23 +386,6 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_CALL:
 		{
-			/*if(exp->callx.func->type == EXP_IDENT)
-			{
-				FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
-				if(decl)
-					return decl->returnType;
-				else
-				{
-					VarDecl* decl = exp->callx.func->varx.varDecl ? exp->callx.func->varx.varDecl : ReferenceVariable(exp->callx.func->varx.name);
-					if(decl && decl->type)
-					{
-						if(decl->type->hint == FUNC)
-							return decl->type->subType;
-					}
-				}
-			}
-			
-			return GetBroadTypeHint(DYNAMIC);*/
 			const TypeHint* inf = InferTypeFromExpr(exp->callx.func);
 			if(inf && inf->hint == FUNC)
 				return inf->func.ret;

@@ -10,8 +10,10 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <assert.h>
+#ifdef MINT_FFI_SUPPORT
 #include <alloca.h>
 #include <dlfcn.h>
+#endif
 
 Object NullObject;
 
@@ -626,6 +628,8 @@ void Std_StringHash(VM* vm)
 	ReturnTop(vm);
 }
 
+#ifdef MINT_FFI_SUPPORT
+
 void Std_FreeLib(void* lib)
 {
 	dlclose(lib);
@@ -654,6 +658,8 @@ void Std_GetProcAddress(VM* vm)
 	PushNative(vm, proc, NULL, NULL);
 	ReturnTop(vm);
 }
+
+#endif
 
 void Std_Malloc(VM* vm)
 {
@@ -862,6 +868,7 @@ void Std_ExternAddr(VM* vm)
 	ReturnTop(vm);
 }
 
+#ifdef MINT_FFI_SUPPORT
 void Std_FfiPrimType(VM* vm)
 {
 	int itype = PopNumber(vm);
@@ -1127,6 +1134,7 @@ void Std_FfiStructTypeOffsets(VM* vm)
 	PushObject(vm, obj);
 	ReturnTop(vm);
 }
+#endif
 
 void Std_ArrayCopy(VM* vm)
 {
@@ -1659,8 +1667,11 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "stringhash", Std_StringHash);
 	HookExternNoWarn(vm, "number_to_bytes", Std_NumberToBytes);
 	HookExternNoWarn(vm, "bytes_to_number", Std_BytesToNumber);
+	
+#ifdef MINT_FFI_SUPPORT
 	HookExternNoWarn(vm, "loadlib", Std_LoadLib);
 	HookExternNoWarn(vm, "getprocaddress", Std_GetProcAddress);
+#endif
 	
 	HookExternNoWarn(vm, "malloc", Std_Malloc);
 	HookExternNoWarn(vm, "memcpy", Std_Memcpy);
@@ -1671,13 +1682,15 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "addressof", Std_Addressof);
 	HookExternNoWarn(vm, "ataddress", Std_AtAddress);
 	HookExternNoWarn(vm, "externaddr", Std_ExternAddr);
-	
+
+#ifdef MINT_FFI_SUPPORT	
 	HookExternNoWarn(vm, "ffi_prim_type", Std_FfiPrimType);
 	HookExternNoWarn(vm, "ffi_struct_type", Std_FfiStructType);
 	HookExternNoWarn(vm, "ffi_struct_type_offsets", Std_FfiStructTypeOffsets);
 	HookExternNoWarn(vm, "ffi_type_size", Std_FfiTypeSize);
 	HookExternNoWarn(vm, "ffi_call", Std_FfiCall);
-	
+#endif	
+
 	HookExternNoWarn(vm, "arraycopy", Std_ArrayCopy);
 	HookExternNoWarn(vm, "arraysort", Std_ArraySort);
 	HookExternNoWarn(vm, "arrayfill", Std_ArrayFill);

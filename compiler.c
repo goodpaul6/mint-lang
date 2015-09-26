@@ -885,7 +885,8 @@ void CompileValueExpr(Expr* exp)
 		case EXP_TYPE_CAST:
 		{
 			const TypeHint* type = InferTypeFromExpr(exp->castx.expr);
-			if((type->hint == USERTYPE && !type->user.isTrait) && 
+			
+			if(type && (type->hint == USERTYPE && !type->user.isTrait) && 
 			   (exp->castx.newType->hint == USERTYPE && exp->castx.newType->user.isTrait))
 				CastToTrait(exp->castx.newType, exp->castx.expr);
 			else if((type && type->hint == USERTYPE && type->user.isTrait) && 

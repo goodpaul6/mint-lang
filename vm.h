@@ -4,7 +4,10 @@
 #include "dict.h"
 
 #include <stdio.h>
+
+#ifdef MINT_FFI_SUPPORT
 #include <ffi.h>
+#endif
 
 struct _VM;
 typedef void (*ExternFunction)(struct _VM*);
@@ -156,10 +159,11 @@ typedef struct _Object
 #define MAX_INDIR						1024
 #define MAX_STACK						4096
 #define INIT_GC_THRESH					32
+#ifdef MINT_FFI_SUPPORT
 #define MAX_TRACKED_CALLSTACK_LENGTH 	8
 #define MAX_CIF_ARGS					32
 #define CIF_STACK_SIZE					4096
-#define MAX_THREADS						8
+#endif
 
 typedef struct _VM
 {
@@ -213,11 +217,13 @@ typedef struct _VM
 	ExternFunction* externs;
 	int numExterns;
 
+#ifdef MINT_FFI_SUPPORT
 	ffi_cif cif;
 	char cifStack[CIF_STACK_SIZE];
 	void* cifValues[MAX_CIF_ARGS];
 	size_t cifStackSize;
 	unsigned int cifNumArgs;
+#endif
 
 	// if the virtual machine is currently in use by C code then we shouldn't invoke the garbage collector
 	// until it exits
