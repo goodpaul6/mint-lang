@@ -84,21 +84,23 @@ int GetToken(FILE* in)
 		}
 		
 		if(strcmp(Lexeme, "for") == 0) return TOK_FOR;
-		if(strcmp(Lexeme, "else") == 0) return TOK_ELSE;
-		if(strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
-		if(strcmp(Lexeme, "null") == 0) return TOK_NULL;
-		if(strcmp(Lexeme, "inline") == 0) return TOK_INLINE;
-		if(strcmp(Lexeme, "lam") == 0) return TOK_LAMBDA;
-		if(strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
-		if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
-		if(strcmp(Lexeme, "as") == 0) return TOK_AS;
-		if(strcmp(Lexeme, "do") == 0) return TOK_DO;
-		if(strcmp(Lexeme, "then") == 0) return TOK_THEN;
-		if(strcmp(Lexeme, "type") == 0) return TOK_TYPE;
-		if(strcmp(Lexeme, "has") == 0) return TOK_HAS;
-		if(strcmp(Lexeme, "this_function") == 0)
+		else if(strcmp(Lexeme, "else") == 0) return TOK_ELSE;
+		else if(strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
+		else if(strcmp(Lexeme, "null") == 0) return TOK_NULL;
+		else if(strcmp(Lexeme, "inline") == 0) return TOK_INLINE;
+		else if(strcmp(Lexeme, "lam") == 0) return TOK_LAMBDA;
+		else if(strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
+		else if(strcmp(Lexeme, "break") == 0) return TOK_BREAK;
+		else if(strcmp(Lexeme, "as") == 0) return TOK_AS;
+		else if(strcmp(Lexeme, "do") == 0) return TOK_DO;
+		else if(strcmp(Lexeme, "then") == 0) return TOK_THEN;
+		else if(strcmp(Lexeme, "struct") == 0) return TOK_TYPE;
+		else if(strcmp(Lexeme, "as") == 0) return TOK_HAS;
+		else if(strcmp(Lexeme, "macro") == 0) return TOK_MACRO;
+		else if(strcmp(Lexeme, "operator") == 0) return TOK_OPERATOR;
+		else if(strcmp(Lexeme, "this_function") == 0)
 		{
-			if(CurFunc && !CurFunc->isLambda)
+			if(CurFunc && CurFunc->what != DECL_LAMBDA)
 			{
 				if(LexemeCapacity < MAX_ID_NAME_LENGTH)
 				{

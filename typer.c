@@ -65,7 +65,6 @@ TypeHint* GetBroadTypeHint(Hint type)
 	return NULL;
 }
 
-// TODO: this is weird for function types
 const char* HintString(const TypeHint* type)
 {
 	// TODO: maybe this should take a string buffer
@@ -312,13 +311,24 @@ TypeHint* ParseTypeHint(FILE* in)
 
 					while(CurTok != ')')
 					{
-						TypeHint* arg = ParseTypeHint(in);
+						if(CurTok == TOK_ELLIPSIS) // varargs
+						{	
+							type->func.numArgs = -1;
+							GetNextToken(in);
+							
+							if(CurTok != ')')
+								ErrorExit("ellipsis '...' can only be placed at the end of the argument type list\n");
+						}
+						else
+						{
+							TypeHint* arg = ParseTypeHint(in);
 						
-						if(type->func.numArgs >= MAX_ARGS)
-							ErrorExit("Exceeded maximum number of arguments %d in type declaration\n", MAX_ARGS);
+							if(type->func.numArgs >= MAX_ARGS)
+								ErrorExit("Exceeded maximum number of arguments %d in type declaration\n", MAX_ARGS);
 
-						type->func.args[type->func.numArgs++] = arg;
-
+							type->func.args[type->func.numArgs++] = arg;
+						}
+						
 						if(CurTok == ',') GetNextToken(in);
 						else if(CurTok != ')') ErrorExit("Expected ')' or ',' in type declaration list\n");
 					}
@@ -402,17 +412,23 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 			
 			if(exp->binx.op != '=')
 			{
+				FuncDecl* overload = GetOperatorOverload(a, b, exp->binx.op);
+				
 				if(CompareTypes(a, b))
 				{
 					if(a && b)
-					{
+					{			
 						if(a->hint == NUMBER && b->hint == NUMBER)
 							return GetBroadTypeHint(NUMBER);
+						else if(overload)
+							return overload->type;
 						else
 							return GetBroadTypeHint(DYNAMIC);
 					}
 				}
-				else if(a && a->hint == DICT) // possibly overloaded operation
+				else if(overload)
+					return overload->type->func.ret;
+				else if(a && a->hint == DICT) // possibly dynamic overloaded operation (metadict)
 					return GetBroadTypeHint(DYNAMIC);
 			}
 			else
@@ -639,8 +655,8 @@ void ResolveTypes(Expr* exp)
 				
 				if(a && b)
 				{
-					if(!CompareTypes(a, b) && a->hint != DICT)
-						WarnE(exp, "Invalid binary operation between '%s' and '%s'\n", HintString(a), HintString(b));
+					if(!CompareTypes(a, b) && a->hint != DICT && !GetOperatorOverload(a, b, exp->binx.op))
+						WarnE(exp, "Invalid binary operation %i (%c) between '%s' and '%s'\n", exp->binx.op, exp->binx.op, HintString(a), HintString(b));
 				}
 			}
 		} break;

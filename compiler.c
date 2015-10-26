@@ -384,7 +384,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		}
 		return 1;
 	}
-	else if(strcmp(name, "getfilename") == 0)
+	else if(strcmp(name, "get_file_name") == 0)
 	{
 		if(exp->callx.numArgs != 0)
 			ErrorExitE(exp, "Intrinsic 'getfilename' takes no arguments\n");
@@ -392,7 +392,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		AppendInt(RegisterString(exp->file)->index);
 		return 1;
 	}
-	else if(strcmp(name, "getlinenumber") == 0)
+	else if(strcmp(name, "get_line_number") == 0)
 	{
 		if(exp->callx.numArgs != 0)
 			ErrorExitE(exp, "Intrinsic 'getlinenumber' takes no arguments\n");
@@ -454,7 +454,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "setmeta") == 0)
 	{
 		if(exp->callx.numArgs != 2)
-				ErrorExitE(exp, "Intrinsic 'setmeta' takes 2 arguments\n");
+			ErrorExitE(exp, "Intrinsic 'setmeta' takes 2 arguments\n");
 
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
@@ -465,18 +465,77 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "getmeta") == 0)
 	{
 		if(exp->callx.numArgs != 1)
-				ErrorExitE(exp, "Intrinsic 'getmeta' takes 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'getmeta' takes 1 argument\n");
 		
 		CompileValueExpr(exp->callx.args[0]);
 
 		AppendCode(OP_GET_META);
 		return 1;
 	}
+	else if(strcmp(name, "typemembers") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'typemembers' takes 1 argument\n");
+			
+		if(exp->callx.args[0]->type != EXP_IDENT)
+			ErrorExitE(exp->callx.args[0], "First argument to intrinsic 'typemembers' must be the type\n");
+			
+		TypeHint* type = RegisterUserType(exp->callx.args[0]->varx.name);
+		if(!type || type->user.numElements == 0)
+			ErrorExitE(exp->callx.args[0], "'%s' is not a valid usertype.\n", exp->callx.args[0]->varx.name);
+			
+		for(int i = 0; i < type->user.numElements; ++i)
+		{
+			AppendCode(OP_PUSH_STRING);
+			AppendInt(RegisterString(type->user.names[i])->index);
+		}
+			
+		AppendCode(OP_CREATE_ARRAY_BLOCK);
+		AppendInt(type->user.numElements);
+		
+		return 1;
+	}
+	else if(strcmp(name, "check_safe_cast") == 0)
+	{
+		if(exp->callx.numArgs != 2)
+			ErrorExitE(exp, "Intrinsic 'check_safe_cast' takes 2 arguments\n");
+			
+		if(exp->callx.args[0]->type != EXP_IDENT || exp->callx.args[1]->type != EXP_IDENT)
+			ErrorExitE(exp->callx.args[0], "Argument to intrinsic 'check_safe_cast' must be types\n");
+		
+		TypeHint* a = RegisterUserType(exp->callx.args[0]->varx.name);
+		TypeHint* b = RegisterUserType(exp->callx.args[1]->varx.name);
+		
+		if(a->user.numElements == 0 || b->user.numElements == 0)
+			ErrorExitE(exp, "Invalid type(s) passed in to 'check_safe_cast'\n");
+		
+		for(int i = 0; i < b->user.numElements; ++i)
+		{
+			char found = 0;
+			
+			for(int j = 0; j < a->user.numElements; ++j)
+			{
+				if(strcmp(b->user.names[i], a->user.names[j]) == 0)
+				{
+					found = 1;
+					break;
+				}
+			}
+			
+			if(!found)
+			{
+				WarnE(exp, "Cast from type '%s' to '%s' is unsafe: missing member '%s'\n", a->user.name, b->user.name, b->user.names[i]);
+				break;
+			}
+		}
+		
+		return 1;
+	}
 
 	return 0;
 }
 
-Patch* Patches[MAX_SCOPES] = {NULL};
+Patch* Patches = NULL;
 int CurrentPatchScope = 0;
 
 void PushPatchScope()
@@ -496,27 +555,41 @@ void AddPatch(PatchType type, int loc)
 	
 	p->type = type;
 	p->loc = loc;
+	p->scope = CurrentPatchScope;
 	
-	p->next = Patches[CurrentPatchScope];
-	Patches[CurrentPatchScope] = p;
+	p->next = Patches;
+	Patches = p;
 }
 
 void ClearPatches()
 {
-	Patch* next;
-	for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = next)
+	Patch** p = &Patches;
+
+	while(*p)
 	{
-		next = p->next;
-		free(p);
+		if((*p)->scope == CurrentPatchScope)
+		{
+			Patch* removed = *p;
+			*p = removed->next;
+			free(removed);
+		}
+		else
+			p = &(*p)->next;
 	}
-	Patches[CurrentPatchScope] = NULL;
 }
 
 void CheckArgumentTypes(const TypeHint* type, Expr* exp)
 {
-	assert(exp->type == EXP_CALL);
+	assert(type);
+	assert((exp->type == EXP_CALL || exp->type == EXP_MACRO_CALL));
 	assert(CompareTypes(type, GetBroadTypeHint(FUNC)));
 
+	if(type->func.numArgs >= 0)
+	{
+		if(exp->callx.numArgs != type->func.numArgs)
+			WarnE(exp, "The number of types specified for the function being called (%i) exceed the number of arguments passed in (%i)\n", type->func.numArgs, exp->callx.numArgs);
+	}
+	
 	if(type && type->hint == FUNC)
 	{
 		for(int i = 0; i < type->func.numArgs && i < exp->callx.numArgs; ++i)
@@ -531,7 +604,7 @@ void CheckArgumentTypes(const TypeHint* type, Expr* exp)
 void CompileValueExpr(Expr* exp);
 void CompileCallExpr(Expr* exp, char expectReturn)
 {
-	assert(exp->type == EXP_CALL);
+	assert((exp->type == EXP_CALL || exp->type == EXP_MACRO_CALL));
 	
 	Word numExpansions = 0;
 	// TODO(optimization): do not iterate over the args more than once
@@ -553,12 +626,13 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
 		if(decl)
 		{
-			CheckArgumentTypes(decl->type, exp);
+			if(decl->type)
+				CheckArgumentTypes(decl->type, exp);
 			
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
 				
-			if(decl->isExtern)
+			if(decl->what == DECL_EXTERN || decl->what == DECL_EXTERN_ALIASED)
 			{
 				AppendCode(OP_CALLF);
 				AppendInt(decl->index);
@@ -596,7 +670,8 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
 		{
 			const TypeHint* type = InferTypeFromExpr(exp->callx.func);
-			CheckArgumentTypes(type, exp);
+			if(type)
+				CheckArgumentTypes(type, exp);
 
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
@@ -664,10 +739,24 @@ void _GetVar(Expr* exp, VarDecl* decl)
 #define SetVar(decl) _SetVar(exp, decl)
 #define GetVar(decl) _GetVar(exp, decl)
 
+static void CheckMacroCall(Expr* exp)
+{
+	assert(exp->type == EXP_MACRO_CALL);
+	
+	FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+	if(!decl)
+		ErrorExitE(exp, "Invalid reference to macro '%s'\n", exp->callx.func->varx.name);
+	
+	if(decl->what != DECL_MACRO)
+		ErrorExitE(exp, "Attempted to call '%s' using macro call operator '!' when it's not a macro\n", exp->callx.func->varx.name);	
+}
+
 void CompileExprList(Expr* head);
 // Expression should have a resulting value (pushed onto the stack)
 void CompileValueExpr(Expr* exp)
 {
+	exp->pc = CodeLength;
+	
 	if(ProduceDebugInfo)
 	{
 		AppendCode(OP_FILE);
@@ -741,6 +830,14 @@ void CompileValueExpr(Expr* exp)
 		
 		case EXP_IDENT:
 		{	
+			// NOTE: This is intended to skip checking if variables (not in macros) are declared until macros have executed
+			if(CompilingMacros && (!exp->curFunc || exp->curFunc->what != DECL_MACRO))
+			{
+				// printf("%s elided\n", exp->varx.name);
+				break;
+			}
+			// printf("name of var: %s\n", exp->varx.name);
+			
 			if(!exp->varx.varDecl)
 				exp->varx.varDecl = ReferenceVariable(exp->varx.name);
 
@@ -752,7 +849,7 @@ void CompileValueExpr(Expr* exp)
 				
 				AppendCode(OP_PUSH_FUNC);
 				AppendCode(decl->hasEllipsis);
-				AppendCode(decl->isExtern);
+				AppendCode(decl->what == DECL_EXTERN || decl->what == DECL_EXTERN_ALIASED);
 				AppendCode(decl->numArgs);
 				AppendInt(decl->index);
 			}
@@ -773,38 +870,68 @@ void CompileValueExpr(Expr* exp)
 			if(exp->binx.op == '=')
 				ErrorExitE(exp, "Assignment expressions cannot be used as values\n");
 			else
-			{
-				CompileValueExpr(exp->binx.lhs);
-				CompileValueExpr(exp->binx.rhs);
+			{				
+				const TypeHint* a = InferTypeFromExpr(exp->binx.lhs);
+				const TypeHint* b = InferTypeFromExpr(exp->binx.rhs);
 				
-				switch(exp->binx.op)
+				FuncDecl* overload = GetOperatorOverload(a, b, exp->binx.op);
+				
+				if(overload)
 				{
-					case '+': AppendCode(OP_ADD); break;
-					case '-': AppendCode(OP_SUB); break;
-					case '*': AppendCode(OP_MUL); break;
-					case '/': AppendCode(OP_DIV); break;
-					case '%': AppendCode(OP_MOD); break;
-					case '<': AppendCode(OP_LT); break;
-					case '>': AppendCode(OP_GT); break;
-					case '|': AppendCode(OP_OR); break;
-					case '&': AppendCode(OP_AND); break;
-					case TOK_EQUALS: AppendCode(OP_EQU); break;
-					case TOK_LTE: AppendCode(OP_LTE); break;
-					case TOK_GTE: AppendCode(OP_GTE); break;
-					case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
-					case TOK_AND: AppendCode(OP_LOGICAL_AND); break;
-					case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
-					case TOK_LSHIFT: AppendCode(OP_SHL); break;
-					case TOK_RSHIFT: AppendCode(OP_SHR); break;
-					case TOK_CAT: AppendCode(OP_CAT); break;
-					/*case TOK_CADD: AppendCode(OP_CADD); break;
-					case TOK_CSUB: AppendCode(OP_CSUB); break;
-					case TOK_CMUL: AppendCode(OP_CMUL); break;
-					case TOK_CDIV: AppendCode(OP_CDIV); break;*/
+					CompileValueExpr(exp->binx.rhs);
+					CompileValueExpr(exp->binx.lhs);
 					
-					default:
-						ErrorExitE(exp, "Unsupported binary operator %c (%i)\n", exp->binx.op, exp->binx.op);		
+					// call the overload with 2 arguments
+					AppendCode(OP_CALL);
+					AppendCode(2);
+					AppendInt(overload->index);
+					
+					AppendCode(OP_GET_RETVAL);
 				}
+				else
+				{
+					CompileValueExpr(exp->binx.lhs);
+					CompileValueExpr(exp->binx.rhs);
+					
+					switch(exp->binx.op)
+					{
+						case '+': AppendCode(OP_ADD); break;
+						case '-': AppendCode(OP_SUB); break;
+						case '*': AppendCode(OP_MUL); break;
+						case '/': AppendCode(OP_DIV); break;
+						case '%': AppendCode(OP_MOD); break;
+						case '<': AppendCode(OP_LT); break;
+						case '>': AppendCode(OP_GT); break;
+						case '|': AppendCode(OP_OR); break;
+						case '&': AppendCode(OP_AND); break;
+						case TOK_EQUALS: AppendCode(OP_EQU); break;
+						case TOK_LTE: AppendCode(OP_LTE); break;
+						case TOK_GTE: AppendCode(OP_GTE); break;
+						case TOK_NOTEQUAL: AppendCode(OP_NEQU); break;
+						case TOK_AND: AppendCode(OP_LOGICAL_AND); break;
+						case TOK_OR: AppendCode(OP_LOGICAL_OR); break;
+						case TOK_LSHIFT: AppendCode(OP_SHL); break;
+						case TOK_RSHIFT: AppendCode(OP_SHR); break;
+						case TOK_CAT: AppendCode(OP_CAT); break;
+						/*case TOK_CADD: AppendCode(OP_CADD); break;
+						case TOK_CSUB: AppendCode(OP_CSUB); break;
+						case TOK_CMUL: AppendCode(OP_CMUL); break;
+						case TOK_CDIV: AppendCode(OP_CDIV); break;*/
+						
+						default:
+							ErrorExitE(exp, "Unsupported binary operator %c (%i)\n", exp->binx.op, exp->binx.op);		
+					}
+				}
+			}
+		} break;
+		
+		case EXP_MACRO_CALL:
+		{
+			if(CompilingMacros)
+			{
+				CheckMacroCall(exp);
+				CompileCallExpr(exp, 1);
+				AppendCode(OP_HALT);
 			}
 		} break;
 		
@@ -921,7 +1048,7 @@ void CompileValueExpr(Expr* exp)
 			SetVar(decl);
 
 			// each nested lambda stores the previous env so that values above the uppermost lambda are accessible
-			if(exp->lamx.decl->prevDecl->isLambda)
+			if(exp->lamx.decl->prevDecl->what == DECL_LAMBDA)
 			{
 				Expr* prevEnv = CreateExpr(EXP_IDENT);
 				prevEnv->varx.varDecl = exp->lamx.decl->prevDecl->envDecl;
@@ -930,10 +1057,9 @@ void CompileValueExpr(Expr* exp)
 				
 				AppendCode(OP_PUSH_STRING);
 				AppendInt(RegisterString(exp->lamx.decl->prevDecl->envDecl->name)->index);
-				
-				AppendCode(OP_GETLOCAL);
-				AppendInt(decl->index);
-				
+					
+				GetVar(decl);
+
 				AppendCode(OP_DICT_SET);
 			}
 			
@@ -950,8 +1076,7 @@ void CompileValueExpr(Expr* exp)
 				AppendCode(OP_PUSH_STRING);
 				AppendInt(RegisterString(upvalue->decl->name)->index);
 				
-				AppendCode(OP_GETLOCAL);
-				AppendInt(decl->index);
+				GetVar(decl);
 				
 				AppendCode(OP_DICT_SET_RAW);
 				
@@ -965,7 +1090,7 @@ void CompileValueExpr(Expr* exp)
 
 			// TODO: Should lambda metadicts be global like this (probably not)
 			// Metadicts are declared at global scope
-			VarDecl* metaDecl = RegisterVariable(buf);
+			VarDecl* metaDecl = DeclareVariable(buf);
 
 			AppendCode(OP_PUSH_DICT);
 			SetVar(metaDecl);
@@ -973,7 +1098,7 @@ void CompileValueExpr(Expr* exp)
 			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
 			AppendCode(OP_PUSH_FUNC);
 			AppendCode(exp->lamx.decl->hasEllipsis);
-			AppendCode(exp->lamx.decl->isExtern);
+			AppendCode(0);
 			AppendCode(exp->lamx.decl->numArgs);
 			AppendInt(exp->lamx.decl->index);
 
@@ -1014,7 +1139,7 @@ void CompileValueExpr(Expr* exp)
 			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
 			AppendCode(OP_PUSH_FUNC);
 			AppendCode(exp->funcx.decl->hasEllipsis);
-			AppendCode(exp->funcx.decl->isExtern);
+			AppendCode(exp->funcx.decl->what == DECL_EXTERN || exp->funcx.decl->what == DECL_EXTERN_ALIASED);
 			AppendCode(exp->funcx.decl->numArgs);
 			AppendInt(exp->funcx.decl->index);
 		} break;
@@ -1105,13 +1230,16 @@ void CompileValueExpr(Expr* exp)
 			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
 		
-			for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = p->next)
+			for(Patch* p = Patches; p != NULL; p = p->next)
 			{
-				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
-				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+				if(p->scope == CurrentPatchScope)
+				{
+					if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
+					else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+				}
 			}
+
 			ClearPatches();
-			
 			PopPatchScope();
 
 			GetVar(comDecl);
@@ -1120,11 +1248,15 @@ void CompileValueExpr(Expr* exp)
 		default:
 			ErrorExitE(exp, "Expected value expression in place of %s\n", ExprNames[exp->type]);
 	}
+	
+	exp->compiled = 1;
 }
 
 void CompileExprList(Expr* head);
 void CompileExpr(Expr* exp)
 {
+	exp->pc = CodeLength;
+	
 	// printf("compiling expression (%s:%i)\n", exp->file, exp->line);
 	if(ProduceDebugInfo)
 	{
@@ -1204,7 +1336,35 @@ void CompileExpr(Expr* exp)
 					ErrorExitE(exp, "Left hand side of assignment operator '=' must be an assignable value (variable, array index, dictionary index, usertype) instead of %s\n", ExprNames[exp->binx.lhs->type]);
 			}
 			else
-				ErrorExitE(exp, "Invalid top level binary expression\n");
+			{
+				const TypeHint* a = InferTypeFromExpr(exp->binx.lhs);
+				const TypeHint* b = InferTypeFromExpr(exp->binx.rhs);
+			
+				FuncDecl* decl = GetOperatorOverload(a, b, exp->binx.op);
+					
+				if(decl)
+				{
+					CompileValueExpr(exp->binx.rhs);
+					CompileValueExpr(exp->binx.lhs);
+					AppendCode(OP_CALL);
+					AppendCode(2);
+					AppendInt(decl->index);
+					
+					// NOTE: Discards return value of overloaded function if there is one
+				}
+				else
+					ErrorExitE(exp, "Invalid top level binary expression\n");
+			}
+		} break;
+		
+		case EXP_MACRO_CALL:
+		{
+			if(CompilingMacros)
+			{
+				CheckMacroCall(exp);
+				CompileCallExpr(exp, 0);
+				AppendCode(OP_HALT);
+			}
 		} break;
 		
 		case EXP_CALL:
@@ -1231,13 +1391,16 @@ void CompileExpr(Expr* exp)
 			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
 			
-			for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = p->next)
+			for(Patch* p = Patches; p != NULL; p = p->next)
 			{
-				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, loopPc);
-				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+				if(p->scope == CurrentPatchScope)
+				{
+					if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, loopPc);
+					else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+				}
 			}
-			ClearPatches();
 
+			ClearPatches();
 			PopPatchScope();
 		} break;
 		
@@ -1265,13 +1428,16 @@ void CompileExpr(Expr* exp)
 			int exitLoc = CodeLength;
 			EmplaceInt(emplaceLoc, CodeLength);
 		
-			for(Patch* p = Patches[CurrentPatchScope]; p != NULL; p = p->next)
+			for(Patch* p = Patches; p != NULL; p = p->next)
 			{
-				if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
-				else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+				if(p->scope == CurrentPatchScope)
+				{
+					if(p->type == PATCH_CONTINUE) EmplaceInt(p->loc, continueLoc);
+					else if(p->type == PATCH_BREAK) EmplaceInt(p->loc, exitLoc);
+				}
 			}
-			ClearPatches();
 
+			ClearPatches();
 			PopPatchScope();
 		} break;
 		
@@ -1341,6 +1507,11 @@ void CompileExpr(Expr* exp)
 			AllocatePatch(sizeof(int) / sizeof(Word));
 		} break;
 		
+		case EXP_MULTI:
+		{
+			CompileExprList(exp->multiHead);
+		} break;
+		
 		/*case EXP_LINKED_BINARY_CODE:
 		{
 			for(int i = 0; i < exp->code.numFunctions; ++i)
@@ -1359,6 +1530,8 @@ void CompileExpr(Expr* exp)
 		default:
 			ErrorExitE(exp, "Invalid top level expression (expected non-value expression in place of %s)\n", ExprNames[exp->type]);
 	}
+	
+	exp->compiled = 1;
 }
 
 void CompileExprList(Expr* head)

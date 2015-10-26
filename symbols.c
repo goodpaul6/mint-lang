@@ -15,8 +15,9 @@ FuncDecl* CurFunc = NULL;
 FuncDecl* Functions = NULL;
 FuncDecl* FunctionsCurrent = NULL;
 
-VarDecl* VarStack[MAX_SCOPES];
-int VarStackDepth = 0;
+VarDecl* VarList = NULL;
+int VarScope = 0;
+int DeepestScope = 0;
 
 ConstDecl* RegisterNumber(double number)
 {
@@ -147,12 +148,28 @@ ConstDecl* RegisterString(const char* string)
 
 void PushScope()
 {
-	VarStack[++VarStackDepth] = NULL;
+	++VarScope;
+	if(VarScope > DeepestScope)
+		DeepestScope = VarScope;
 }
 
 void PopScope()
 {
-	--VarStackDepth;
+	// remove non-global variables
+	VarDecl** decl = &VarList;	
+
+	while(*decl)
+	{
+		if((*decl)->scope == VarScope && !(*decl)->isGlobal)
+		{
+			VarDecl* removed = *decl;
+			*decl = removed->next;
+		}
+		else
+			decl = &(*decl)->next;
+	}
+
+	--VarScope;
 }
 
 FuncDecl* DeclareFunction(const char* name, int index)
@@ -175,8 +192,8 @@ FuncDecl* DeclareFunction(const char* name, int index)
 	
 	decl->type = NULL;
 	
-	decl->isAliased = 0;
-	decl->isExtern = 0;
+	decl->what = DECL_NORMAL;
+	
 	decl->hasEllipsis = 0;
 	
 	strcpy(decl->name, name);
@@ -187,11 +204,10 @@ FuncDecl* DeclareFunction(const char* name, int index)
 	
 	decl->hasReturn = -1;
 
-	decl->isLambda = 0;
 	decl->prevDecl = NULL;
 	decl->upvalues = NULL;
 	decl->envDecl = NULL;
-	decl->scope = VarStackDepth;
+	decl->scope = VarScope;
 
 	decl->bodyHead = NULL;
 	
@@ -201,7 +217,7 @@ FuncDecl* DeclareFunction(const char* name, int index)
 FuncDecl* DeclareExtern(const char* name)
 {
 	FuncDecl* decl = DeclareFunction(name, NumExterns++);
-	decl->isExtern = 1;
+	decl->what = DECL_EXTERN;
 	return decl;
 }
 
@@ -220,7 +236,7 @@ FuncDecl* ReferenceFunction(const char* name)
 {
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
-		if(!decl->isAliased)
+		if(decl->what != DECL_EXTERN_ALIASED)
 		{
 			if(strcmp(decl->name, name) == 0)
 				return decl;
@@ -235,13 +251,27 @@ FuncDecl* ReferenceFunction(const char* name)
 	return NULL;
 }
 
-VarDecl* RegisterVariable(const char* name)
+FuncDecl* ReferenceExternRaw(const char* name)
+{
+	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
+	{
+		if(decl->what == DECL_EXTERN_ALIASED || decl->what == DECL_EXTERN)
+		{
+			if(strcmp(decl->name, name) == 0)
+				return decl;
+		}
+	}
+	
+	return NULL;
+}
+
+VarDecl* DeclareVariable(const char* name)
 {	
 	VarDecl* decl = malloc(sizeof(VarDecl));
 	assert(decl);
 	
-	decl->next = VarStack[VarStackDepth];
-	VarStack[VarStackDepth] = decl;
+	decl->next = VarList;
+	VarList = decl;
 	
 	decl->isGlobal = 0;
 		
@@ -254,19 +284,18 @@ VarDecl* RegisterVariable(const char* name)
 	else
 		decl->index = CurFunc->numLocals++;
 	
-	decl->scope = VarStackDepth;
-	
+	decl->scope = VarScope;
 	decl->type = NULL;
 	
 	return decl;
 }
 
-VarDecl* RegisterArgument(const char* name)
+VarDecl* DeclareArgument(const char* name)
 {
 	if(!CurFunc)
 		ErrorExit("(INTERNAL) Must be inside function when registering arguments\n");
 	
-	VarDecl* decl = RegisterVariable(name);
+	VarDecl* decl = DeclareVariable(name);
 	--CurFunc->numLocals;
 	decl->index = -(++CurFunc->numArgs);
 	
@@ -275,11 +304,25 @@ VarDecl* RegisterArgument(const char* name)
 
 VarDecl* ReferenceVariable(const char* name)
 {
-	for(int i = VarStackDepth; i >= 0; --i)
+	for(int i = VarScope; i >= 0; --i)
 	{
-		for(VarDecl* decl = VarStack[i]; decl != NULL; decl = decl->next)
+		for(VarDecl* decl = VarList; decl != NULL; decl = decl->next)
 		{
-			if(strcmp(decl->name, name) == 0)
+			if(decl->scope == i && strcmp(decl->name, name) == 0)
+				return decl;
+		}
+	}
+	
+	return NULL;
+}
+
+FuncDecl* GetOperatorOverload(const TypeHint* a, const TypeHint* b, int op)
+{
+	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
+	{
+		if(decl->what == DECL_OPERATOR)
+		{
+			if(decl->op == op && CompareTypes(decl->type->func.args[0], a) && CompareTypes(decl->type->func.args[1], b))
 				return decl;
 		}
 	}

@@ -164,6 +164,7 @@ typedef struct _Object
 #define MAX_CIF_ARGS					32
 #define CIF_STACK_SIZE					4096
 #endif
+#define NATIVE_STACK_SIZE				4096	
 
 typedef struct _VM
 {
@@ -225,6 +226,11 @@ typedef struct _VM
 	unsigned int cifNumArgs;
 #endif
 
+	// this stack can be used by native functions to allocate
+	// native values with an automatic lifetime (no destructors though)
+	size_t nativeStackSize;
+	unsigned char nativeStack[NATIVE_STACK_SIZE];
+
 	// if the virtual machine is currently in use by C code then we shouldn't invoke the garbage collector
 	// until it exits
 	char inExternBody;
@@ -233,6 +239,8 @@ typedef struct _VM
 } VM;
 
 VM* NewVM(); 
+
+void ErrorExitVM(VM* vm, const char* format, ...);
 
 void ResetVM(VM* vm);
 
@@ -249,6 +257,7 @@ void CallFunction(VM* vm, int id, Word numArgs);
 
 int GetGlobalId(VM* vm, const char* name);
 Object* GetGlobal(VM* vm, int id);
+void SetGlobal(VM* vm, int id);	// set global to object on top of stack
 
 void PushObject(VM* vm, Object* obj);
 void PushNumber(VM* vm, double value);
@@ -257,6 +266,7 @@ Object* PushFunc(VM* vm, int id, Word hasEllipsis, Word isExtern, Word numArgs);
 Object* PushArray(VM* vm, int length);
 Object* PushDict(VM* vm);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
+void PushNull(VM* vm);
 
 Object* PopObject(VM* vm);
 double PopNumber(VM* vm);
@@ -271,8 +281,12 @@ Object* PopNativeObject(VM* vm);
 void* PopNative(VM* vm);
 void* PopNativeOrNull(VM* vm);
 
+void* NativeStackAlloc(VM* vm, size_t size);
+
 void ReturnTop(VM* vm);
 void ReturnNullObject(VM* vm);
+
+void ExecuteCycle(VM* vm);
 
 void RunVM(VM* vm);
 

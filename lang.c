@@ -1,30 +1,21 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
- * TODO:
- * - Have a CurFileIndex global which stores the constant index of the file being compiled currently (PERFORMANCE) 
- * - DO TYPE INFERENCES AT COMPILE TIME NOT PARSE TIME cause all symbols should be defined 
- * - FIX compiler structure, have a function to compile expressions which should have resulting values
- * 	 and a function to compile expressions which shouldn't
- * - (Possibly fixed, haven't tested new compile time dict creation) WEIRD BUG: Dict literals occasionally cause ffi_calls after their creation to fail? (Depends on # of elements in dict, idk, maybe dict creation pollutes the stack)
- * - the offset passed to getstruct/setstruct memmber should be a native object, not a number
- * - Finish meta api
- * - Safe extern calls (preserve stack size before and after, unless value is returned)
- * - Should function declarations require a 'return' modifier if they return values (so the programmer knows that they have to return values no matter what)
- *   or you could do compile-time checks to see if a function doesn't return (this would be difficult cause of control flow, etc)
- * - BUG - vm fails to load code if there is no _main function
- * - expand could leak values onto the stack if used incorrectly (but then again, that's not the job of the compiler to check, right?)
- * - MORE CONST OMG (CompileExpr doesn't [read: shouldn't] change the expressions)
- * - enums
- * 
- * REQUIRED FIXES:
- * - parenthesized function calls will pollute the stack if they aren't assigned (see FIX compiler structure for a possible fix)
+ * TODO
+ * - DECL_LAMBDA unnecessary (just use DECL_NORMAL or create a DECL_ANON or something)
+ * - token names in error messages
+ * - store function names as indices into the stringConstants array in the vm
+ * - macro system sorta working except declaring variables in macros breaks the damn thing
+ * - certain top level code breaks binaries
+ * - Adjustable vm stack and indirection stack size
+ * - enums (could be implemented using macros, if the macro system actually ends up working)
  * 
  * IMPROVEMENTS:
- * - interpret intrinsic for compile time interpretation of simple expressions (addition, subtraction, etc)
+ * - store length of string in object (also, make strings immutable)
+ * - allocate number constants on an "operand stack" to speed up the operations
+ * - native lambdas (i.e implement them directly in the vm)
  * - op_dict_*_rkey: maybe write a version of these which doesn't use a runtime key
  * 
  * PARTIALLY COMPLETE (I.E NOT FULLY SATISFIED WITH SOLUTION):
- * - extern aliasing (functionality is there but it's broken and doesn't compile)
  * - using compound binary operators causes an error
  * - include/require other scripts (copy bytecode into vm at runtime?): can only include things at compile time (with cmd line)
  */
@@ -118,9 +109,12 @@ int main(int argc, char* argv[])
 	}					
 	
 	// NOTE: setting this to zero so that any variables declared at compile time are global
-	VarStackDepth = 0;
-
+	VarScope = 0;
+	CurFunc = NULL;
+	
 	ResolveTypesExprList(exprHead);
+	
+	ExecuteMacros(&exprHead);
 
 	CompileExprList(exprHead);
 	AppendCode(OP_HALT);

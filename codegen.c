@@ -3,8 +3,16 @@
 int EntryPoint = 0;
 
 Word* Code = NULL;
-int CodeCapacity = NULL;
-int CodeLength = NULL;
+int CodeCapacity = 0;
+int CodeLength = 0;
+
+void ClearCode()
+{
+	free(Code);
+	Code = NULL;
+	CodeCapacity = 0;
+	CodeLength = 0;
+}
 
 void AppendCode(Word code)
 {	
@@ -92,32 +100,44 @@ void OutputCode(FILE* out)
 	fwrite(Code, sizeof(Word), CodeLength, out);
 	
 	fwrite(&NumGlobals, sizeof(int), 1, out);
-	for(VarDecl* decl = VarStack[0]; decl != NULL; decl = decl->next)
+	int numGlobalsOutput = 0;
+	for(int i = 0; i < DeepestScope; ++i)
 	{
-		int len = strlen(decl->name);
-		fwrite(&len, sizeof(int), 1, out);
-		fwrite(decl->name, sizeof(char), len, out);
+		for(VarDecl* decl = VarList; decl != NULL; decl = decl->next)
+		{
+			if(decl->isGlobal)
+			{
+				int len = strlen(decl->name);
+				fwrite(&len, sizeof(int), 1, out);
+				fwrite(decl->name, sizeof(char), len, out);
+				++numGlobalsOutput;
+			}
+		}
 	}
+
+	if(numGlobalsOutput < NumGlobals)
+		printf("Not all global names were written to the binary file. (%d out of %d)\n", numGlobalsOutput, NumGlobals);
 	
 	fwrite(&NumFunctions, sizeof(int), 1, out);	
+	
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
-		if(!decl->isExtern)
+		if(decl->what == DECL_NORMAL || decl->what == DECL_MACRO || decl->what == DECL_OPERATOR || decl->what == DECL_LAMBDA)
 			fwrite(&decl->pc, sizeof(int), 1, out);
 	}
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
-		if(!decl->isExtern)
+		if(decl->what == DECL_NORMAL || decl->what == DECL_MACRO || decl->what == DECL_OPERATOR || decl->what == DECL_LAMBDA)
 			fwrite(&decl->hasEllipsis, sizeof(char), 1, out);
 	}
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
-		if(!decl->isExtern)
+		if(decl->what == DECL_NORMAL || decl->what == DECL_MACRO || decl->what == DECL_OPERATOR || decl->what == DECL_LAMBDA)
 			fwrite(&decl->numArgs, sizeof(Word), 1, out);
 	}
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
-		if(!decl->isExtern)
+		if(decl->what == DECL_NORMAL || decl->what == DECL_MACRO || decl->what == DECL_OPERATOR || decl->what == DECL_LAMBDA)
 		{
 			int len = strlen(decl->name);
 			fwrite(&len, sizeof(int), 1, out);
@@ -128,7 +148,7 @@ void OutputCode(FILE* out)
 	fwrite(&NumExterns, sizeof(int), 1, out);	
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
-		if(decl->isExtern)
+		if(decl->what == DECL_EXTERN || decl->what == DECL_EXTERN_ALIASED)
 		{
 			int len = strlen(decl->name);
 			fwrite(&len, sizeof(int), 1, out);

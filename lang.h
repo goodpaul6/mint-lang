@@ -2,6 +2,8 @@
 #ifndef MINT_LANG_H
 #define MINT_LANG_H
 
+// TODO: maybe actually free memory sometimes
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +14,6 @@
 #include "vm.h"
 
 #define MAX_ID_NAME_LENGTH 64
-#define MAX_SCOPES 32
 #define MAX_ARGS 64
 #define MAX_STRUCT_ELEMENTS 64
 
@@ -21,6 +22,7 @@ extern char ProduceDebugInfo;
 void ErrorExit(const char* format, ...);
 void Warn(const char* format, ...);
 
+void ClearCode();
 void AppendCode(Word code);
 void AppendInt(int value);
 void AllocatePatch(int length);
@@ -113,13 +115,21 @@ typedef struct _Upvalue
 	VarDecl* decl;
 } Upvalue;
 
+typedef enum
+{
+	DECL_NORMAL,
+	DECL_LAMBDA,
+	DECL_EXTERN,
+	DECL_EXTERN_ALIASED,
+	DECL_MACRO,
+	DECL_OPERATOR
+} FuncDeclType;
+
 typedef struct _FuncDecl
 {	
 	struct _FuncDecl* next;
 	
-	char inlined;
-	char isAliased;
-	char isExtern;
+	FuncDeclType what;
 	
 	char alias[MAX_ID_NAME_LENGTH];
 	char name[MAX_ID_NAME_LENGTH];
@@ -136,7 +146,8 @@ typedef struct _FuncDecl
 	// -1 = unknown, 0 = no return, 1 = returns value
 	char hasReturn;
 	
-	char isLambda;
+	// for DECL_OPERATOR
+	int op;
 	
 	// function which encloses the lambda
 	struct _FuncDecl* prevDecl;
@@ -163,11 +174,14 @@ FuncDecl* EnterFunction(const char* name);
 void ExitFunction();
 
 FuncDecl* ReferenceFunction(const char* name);
+FuncDecl* ReferenceExternRaw(const char* name);
 
-VarDecl* RegisterVariable(const char* name);
-VarDecl* RegisterArgument(const char* name);
+VarDecl* DeclareVariable(const char* name);
+VarDecl* DeclareArgument(const char* name);
 
 VarDecl* ReferenceVariable(const char* name);
+
+FuncDecl* GetOperatorOverload(const TypeHint* a, const TypeHint* b, int op);
 
 enum
 {
@@ -209,7 +223,9 @@ enum
 	TOK_THEN = -36,
 	TOK_TYPE = -37,
 	TOK_HAS = -38,
-	TOK_CAT = -39
+	TOK_CAT = -39,
+	TOK_MACRO = -40,
+	TOK_OPERATOR = -41
 };
 
 extern size_t LexemeCapacity;
@@ -226,6 +242,7 @@ typedef enum
 	EXP_STRING,
 	EXP_IDENT,
 	EXP_CALL,
+	EXP_MACRO_CALL,
 	EXP_VAR,
 	EXP_BIN,
 	EXP_PAREN,
@@ -248,6 +265,7 @@ typedef enum
 	//EXP_LINKED_BINARY_CODE
 	EXP_TYPE_DECL,
 	EXP_TYPE_CAST,
+	EXP_MULTI,
 	NUM_EXPR_TYPES
 } ExprType;
 
@@ -258,6 +276,13 @@ typedef struct _Expr
 	const char* file;
 	int line;
 	FuncDecl* curFunc;
+	int varScope;
+	
+	// NOTE: this only has a valid value after compilation
+	unsigned int pc;
+	
+	// NOTE: this is set if the expression has been compiled for compile time execution
+	char compiled;
 	
 	union
 	{
@@ -282,6 +307,7 @@ typedef struct _Expr
 		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl;} lamx;
 		//struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
 		struct { struct _Expr* expr; TypeHint* newType; } castx;
+		struct _Expr* multiHead;
 	};
 } Expr;
 
@@ -305,6 +331,8 @@ TypeHint* GetUserTypeElement(const TypeHint* type, const char* name);
 int GetUserTypeElementIndex(const TypeHint* type, const char* name);
 int GetUserTypeNumElements(const TypeHint* type);
 
+void ExecuteMacros(Expr** head);
+
 typedef enum 
 {
 	PATCH_BREAK,
@@ -316,6 +344,7 @@ typedef struct _Patch
 	struct _Patch* next;
 	PatchType type;
 	int loc;
+	int scope;
 } Patch;
 
 void CompileExprList(Expr* head);
@@ -343,7 +372,10 @@ extern FuncDecl* CurFunc;
 extern FuncDecl* Functions;
 extern FuncDecl* FunctionsCurrent;
 
-extern VarDecl* VarStack[MAX_SCOPES];
-extern int VarStackDepth;
+extern VarDecl* VarList;
+extern int VarScope;
+extern int DeepestScope;
+
+extern char CompilingMacros;
 
 #endif

@@ -11,6 +11,7 @@ const char* ExprNames[] = {
 	"EXP_STRING",
 	"EXP_IDENT",
 	"EXP_CALL",
+	"EXP_MACRO_CALL",
 	"EXP_VAR",
 	"EXP_BIN",
 	"EXP_PAREN",
@@ -30,20 +31,24 @@ const char* ExprNames[] = {
 	"EXP_BREAK",
 	"EXP_COLON",
 	"EXP_LAMBDA",
-	"EXP_FORWARD",
-	"EXP_TYPE_DECL"
+	"EXP_TYPE_DECL",
+	"EXP_TYPE_CAST",
+	"EXP_MULTI"
 };
 
 Expr* CreateExpr(ExprType type)
 {
 	Expr* exp = malloc(sizeof(Expr));
 	assert(exp);
-	
+
+	exp->compiled = 0;
 	exp->next = NULL;
 	exp->type = type;
 	exp->file = FileName;
 	exp->line = LineNumber;
 	exp->curFunc = CurFunc;
+	exp->varScope = VarScope;
+	exp->pc = -1;
 
 	return exp;
 }
@@ -305,7 +310,7 @@ Expr* ParseFactor(FILE* in)
 			
 			sprintf(nameBuf, "__dl%i__", nameIndex++);
 			
-			exp->dictx.decl = RegisterVariable(nameBuf);
+			exp->dictx.decl = DeclareVariable(nameBuf);
 			
 			return exp;
 		} break;
@@ -322,7 +327,7 @@ Expr* ParseFactor(FILE* in)
 			if(CurFunc)
 			{
 				VarDecl* decl = ReferenceVariable(name);
-				if(CurFunc->isLambda)
+				if(CurFunc->what == DECL_LAMBDA)
 				{
 					if(decl && !decl->isGlobal && decl->scope <= CurFunc->scope)
 					{
@@ -339,7 +344,7 @@ Expr* ParseFactor(FILE* in)
 						
 						funcDecl = funcDecl->prevDecl;
 						
-						while(funcDecl && funcDecl->isLambda && decl->scope <= funcDecl->scope)
+						while(funcDecl && funcDecl->what == DECL_LAMBDA && decl->scope <= funcDecl->scope)
 						{	
 							Expr* acc = CreateExpr(EXP_DOT);
 							acc->dotx.dict = dict;
@@ -379,7 +384,7 @@ Expr* ParseFactor(FILE* in)
 			if(CurTok != TOK_IDENT)
 				ErrorExit("Expected ident after 'var' but received something else\n");
 			
-			exp->varx.varDecl = RegisterVariable(Lexeme);
+			exp->varx.varDecl = DeclareVariable(Lexeme);
 			strcpy(exp->varx.name, Lexeme);
 			
 			GetNextToken(in);
@@ -448,12 +453,11 @@ Expr* ParseFactor(FILE* in)
 			Expr* exp = CreateExpr(EXP_FOR);
 			GetNextToken(in);
 			
-
 			static int comIndex = 0;
 			static char buf[256];
 
 			sprintf(buf, "__ac%i__", comIndex++);
-			exp->forx.comDecl = RegisterVariable(buf);
+			exp->forx.comDecl = DeclareVariable(buf);
 
 			PushScope();
 			exp->forx.init = ParseExpr(in);
@@ -498,6 +502,120 @@ Expr* ParseFactor(FILE* in)
 			return exp;
 		} break;
 		
+		case TOK_OPERATOR:
+		{
+			Expr* exp = CreateExpr(EXP_FUNC);
+			GetNextToken(in);
+
+			// TODO: check if valid operator token
+			
+			FuncDecl* prevDecl = CurFunc;
+			FuncDecl* decl = EnterFunction("");
+			decl->what = DECL_OPERATOR;
+			decl->op = CurTok;
+			
+			GetNextToken(in);
+			
+			if(CurTok != '(')
+				ErrorExit("Expected '(' after 'operator ...'\n");
+			GetNextToken(in);
+			
+			PushScope();
+
+			decl->type = GetBroadTypeHint(FUNC);
+			
+			int nargs = 0;
+			while(CurTok != ')')
+			{
+				if(CurTok == TOK_ELLIPSIS)
+				{
+					decl->hasEllipsis = 1;
+					GetNextToken(in);
+					if(CurTok != ')')
+						ErrorExit("Attempted to place ellipsis in the middle of an argument list\n");
+					break;
+				}
+				
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier/ellipsis in argument list for operator but received something else\n");
+				
+				VarDecl* argDecl = DeclareArgument(Lexeme);
+				
+				GetNextToken(in);
+				
+				if(nargs >= MAX_ARGS)
+					ErrorExit("Exceeded maximum number of arguments in operator declaration\n");
+
+				if(CurTok == ':')
+				{
+					// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
+					// so they must be set to 0 when they're about to be determined
+					if(decl->type->func.numArgs < 0)
+						decl->type->func.numArgs = 0;
+
+					GetNextToken(in);
+					TypeHint* type = ParseTypeHint(in);
+					
+					decl->type->func.args[decl->type->func.numArgs++] = type;
+					
+					argDecl->type = type;
+				}
+			
+				nargs += 1;
+
+				if(CurTok == ',') GetNextToken(in);
+				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in operator argument list\n");
+			}
+			
+			if(decl->type->func.numArgs != 2)
+				ErrorExit("Operator declaration must have 2 arguments\n");
+			
+			GetNextToken(in);
+			
+			if(CurTok == ':')
+			{
+				GetNextToken(in);
+				decl->type->func.ret = ParseTypeHint(in);
+			}
+			
+			Expr* exprHead = NULL;
+			Expr* exprCurrent = NULL;
+			
+			while(CurTok != TOK_END)
+			{
+				if(!exprHead)
+				{
+					exprHead = ParseExpr(in);
+					exprCurrent = exprHead;
+				}
+				else
+				{
+					exprCurrent->next = ParseExpr(in);
+					exprCurrent = exprCurrent->next;
+				}
+			}
+			
+			GetNextToken(in);
+			PopScope();
+			
+			decl->bodyHead = exprHead;
+			CurFunc = prevDecl;
+			
+			if(decl->hasReturn == -1 || decl->hasReturn == 0)
+			{	
+				decl->hasReturn = 0;
+				if(!CompareTypes(decl->type->func.ret, GetBroadTypeHint(VOID)))
+					Warn("Reached end of non-void hinted operator overload without a value returned\n");
+				else
+					decl->type->func.ret = GetBroadTypeHint(VOID);
+			}
+			
+			exp->funcx.decl = decl;
+			exp->funcx.bodyHead = exprHead;
+			
+			return exp;
+		} break;
+		
 		case TOK_FUNC:
 		{
 			Expr* exp = CreateExpr(EXP_FUNC);
@@ -511,8 +629,7 @@ Expr* ParseFactor(FILE* in)
 				else
 				{
 					// anon function
-					static int numAnon = 0;
-					sprintf(name, "__af%d__", numAnon++);
+					name[0] = '\0';
 				}
 			}
 			else
@@ -529,7 +646,7 @@ Expr* ParseFactor(FILE* in)
 			FuncDecl* decl = ReferenceFunction(name);
 			if(decl)
 			{
-				if(decl->isExtern)
+				if(decl->what == DECL_EXTERN)
 					ErrorExit("Function '%s' has the same name as an extern\n", name);
 				else
 					ErrorExit("Function '%s' has the same name as another function\n", name);
@@ -556,7 +673,7 @@ Expr* ParseFactor(FILE* in)
 				if(CurTok != TOK_IDENT)
 					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else (%c, %i)\n", name, CurTok, CurTok);
 				
-				VarDecl* argDecl = RegisterArgument(Lexeme);
+				VarDecl* argDecl = DeclareArgument(Lexeme);
 				
 				GetNextToken(in);
 				
@@ -608,6 +725,7 @@ Expr* ParseFactor(FILE* in)
 					exprCurrent = exprCurrent->next;
 				}
 			}
+			
 			GetNextToken(in);
 			PopScope();
 			
@@ -618,7 +736,125 @@ Expr* ParseFactor(FILE* in)
 			{	
 				decl->hasReturn = 0;
 				if(!CompareTypes(decl->type->func.ret, GetBroadTypeHint(VOID)))
-					Warn("Reached end of non-void hinted function '%s' without a value returned\n", decl->name);
+					Warn("Reached end of non-void hinted function '%s' without a value returned\n", name);
+				else
+					decl->type->func.ret = GetBroadTypeHint(VOID);
+			}
+
+			exp->funcx.decl = decl;
+			exp->funcx.bodyHead = exprHead;
+			
+			return exp;
+		} break;
+		
+		case TOK_MACRO:
+		{
+			Expr* exp = CreateExpr(EXP_FUNC);
+			GetNextToken(in);
+			
+			char name[MAX_ID_NAME_LENGTH];
+			if(CurTok != TOK_IDENT)
+				ErrorExit("Expected identifier after 'macro'\n");			
+		
+			strcpy(name, Lexeme);
+			GetNextToken(in);
+			
+			if(CurTok != '(')
+				ErrorExit("Expected '(' after 'func' %s\n", name);
+			GetNextToken(in);
+			
+			FuncDecl* prevDecl = CurFunc;
+			FuncDecl* decl = ReferenceFunction(name);
+			if(decl)
+				ErrorExit("Macro '%s' has the same name as another function/macro/extern\n", name);
+			else
+				decl = EnterFunction(name);
+				
+			decl->what = DECL_MACRO;
+						
+			PushScope();
+
+			decl->type = GetBroadTypeHint(FUNC);
+			
+			int nargs = 0;
+			while(CurTok != ')')
+			{
+				if(CurTok == TOK_ELLIPSIS)
+				{
+					decl->hasEllipsis = 1;
+					GetNextToken(in);
+					if(CurTok != ')')
+						ErrorExit("Attempted to place ellipsis in the middle of an argument list\n");
+					break;
+				}
+				
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identifier/ellipsis in argument list for function '%s' but received something else (%c, %i)\n", name, CurTok, CurTok);
+				
+				VarDecl* argDecl = DeclareArgument(Lexeme);
+				
+				GetNextToken(in);
+				
+				if(nargs >= MAX_ARGS)
+					ErrorExit("Exceeded maximum number of arguments in function '%s' declaration\n", name);
+
+				if(CurTok == ':')
+				{
+					// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
+					// so they must be set to 0 when they're about to be determined
+					if(decl->type->func.numArgs < 0)
+						decl->type->func.numArgs = 0;
+
+					GetNextToken(in);
+					TypeHint* type = ParseTypeHint(in);
+					
+					decl->type->func.args[decl->type->func.numArgs++] = type;
+					
+					argDecl->type = type;
+				}
+			
+				nargs += 1;
+
+				if(CurTok == ',') GetNextToken(in);
+				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in function '%s' argument list\n", name);
+			}
+			
+			GetNextToken(in);
+			
+			if(CurTok == ':')
+			{
+				GetNextToken(in);
+				decl->type->func.ret = ParseTypeHint(in);
+			}
+			
+			Expr* exprHead = NULL;
+			Expr* exprCurrent = NULL;
+			
+			while(CurTok != TOK_END)
+			{
+				if(!exprHead)
+				{
+					exprHead = ParseExpr(in);
+					exprCurrent = exprHead;
+				}
+				else
+				{
+					exprCurrent->next = ParseExpr(in);
+					exprCurrent = exprCurrent->next;
+				}
+			}
+			
+			GetNextToken(in);
+			PopScope();
+			
+			decl->bodyHead = exprHead;
+			CurFunc = prevDecl;
+			
+			if(decl->hasReturn == -1 || decl->hasReturn == 0)
+			{	
+				decl->hasReturn = 0;
+				if(!CompareTypes(decl->type->func.ret, GetBroadTypeHint(VOID)))
+					Warn("Reached end of non-void hinted function '%s' without a value returned\n", name);
 				else
 					decl->type->func.ret = GetBroadTypeHint(VOID);
 			}
@@ -686,8 +922,14 @@ Expr* ParseFactor(FILE* in)
 
 			GetNextToken(in);
 
-			// TODO: check for multiply defined externs
-			exp->extDecl = DeclareExtern(name);
+			FuncDecl* extDecl = ReferenceExternRaw(name);
+			
+			// TODO: Check for multiple definitions with same name
+			if(extDecl)
+				exp->extDecl = extDecl;
+			else
+				exp->extDecl = DeclareExtern(name);
+			
 			exp->extDecl->type = GetBroadTypeHint(FUNC);
 
 			if(CurTok == '(')
@@ -714,17 +956,15 @@ Expr* ParseFactor(FILE* in)
 			
 			if(CurTok == TOK_AS)
 			{
-				// TODO: GET ALIASING WORKING WHY ISN'T IT WORKING
-				ErrorExit("aliasing not supported\n");
+				GetNextToken(in);
 				
-				/*GetNextToken(in);
+				if(CurTok != TOK_IDENT)
+					ErrorExit("Expected identitifer after 'as'\n");
 				
-				if(CurTok != TOK_IDENT) ErrorExit("Expected identifier after 'as'\n");
-				exp->extDecl = RegisterExternAs(name, Lexeme);
+				exp->extDecl->what = DECL_EXTERN_ALIASED;
+				strcpy(exp->extDecl->alias, Lexeme);
 				
-				printf("registering extern %s as %s\n", name, Lexeme);
-				
-				GetNextToken(in);*/
+				GetNextToken(in);
 			}
 			else
 			{	
@@ -742,8 +982,8 @@ Expr* ParseFactor(FILE* in)
 		{
 			Expr* exp = CreateExpr(EXP_LAMBDA);
 			
-			if(VarStackDepth <= 0 || !CurFunc)
-				ErrorExit("Lambdas cannot be declared at global scope (use a func and get a pointer to it instead)\n");
+			if(!CurFunc)
+				ErrorExit("Lambdas cannot be declared at global scope (use an anonymous function instead)\n");
 			
 			GetNextToken(in);
 			
@@ -752,25 +992,21 @@ Expr* ParseFactor(FILE* in)
 				
 			GetNextToken(in);
 			
-			static int lambdaIndex = 0;
-			static char buf[MAX_ID_NAME_LENGTH];
-			
-			sprintf(buf, "__ld%i__", lambdaIndex++);
-			exp->lamx.dictDecl = RegisterVariable(buf);
+			exp->lamx.dictDecl = DeclareVariable("");
 			
 			// NOTE: this must be done after the internal dist reg to make sure that we declare the lambda's internal
 			// dict in the upvalue scope (i.e in the function where it's declared, not in the lambda function decl itself)
-			sprintf(buf, "__l%i__", lambdaIndex);
 			FuncDecl* prevDecl = CurFunc;
-			FuncDecl* decl = EnterFunction(buf);
+			FuncDecl* decl = EnterFunction("");
 			
-			decl->isLambda = 1;
+			decl->what = DECL_LAMBDA;
 			
 			decl->prevDecl = prevDecl;
 			
 			PushScope();
 			
-			decl->envDecl = RegisterArgument("env");
+			// NOTE: Is this okay?
+			decl->envDecl = DeclareArgument("");
 			
 			decl->type = GetBroadTypeHint(FUNC);
 			
@@ -789,7 +1025,7 @@ Expr* ParseFactor(FILE* in)
 				if(CurTok != TOK_IDENT)
 					ErrorExit("Expected identifier/ellipsis in argument list for lambda but received something else (%c, %i)\n", CurTok, CurTok);
 				
-				VarDecl* argDecl = RegisterArgument(Lexeme);
+				VarDecl* argDecl = DeclareArgument(Lexeme);
 				
 				GetNextToken(in);
 				
@@ -871,7 +1107,7 @@ char IsPostOperator()
 {
 	switch(CurTok)
 	{
-		case '[': case '.':  case '(': case ':': case '{': case TOK_AS:
+		case '[': case '.':  case '(': case ':': case '{': case '!': case TOK_AS:
 			return 1;
 	}
 	return 0;
@@ -945,6 +1181,35 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			if(pre->type == EXP_COLON)
 				exp = ConvertColonCall(exp);
 
+			while(CurTok != ')')
+			{
+				if(exp->callx.numArgs >= MAX_ARGS) ErrorExit("Exceeded maximum argument amount");
+				exp->callx.args[exp->callx.numArgs++] = ParseExpr(in);
+				if(CurTok == ',') GetNextToken(in);
+			}
+				
+			GetNextToken(in);
+			
+			if(!IsPostOperator()) return exp;
+			else return ParsePost(in, exp);
+		} break;
+		
+		case '!':
+		{
+			if(pre->type != EXP_IDENT)
+				ErrorExit("Invalid use of macro call operator '!'\n");
+				
+			// TODO: This code is pretty much a duplicate of the code above
+			GetNextToken(in);
+			if(CurTok != '(')
+				ErrorExit("Expected '(' after '!'\n");
+			GetNextToken(in);
+			
+			Expr* exp = CreateExpr(EXP_MACRO_CALL);
+			
+			exp->callx.numArgs = 0;
+			exp->callx.func = pre;
+			
 			while(CurTok != ')')
 			{
 				if(exp->callx.numArgs >= MAX_ARGS) ErrorExit("Exceeded maximum argument amount");
