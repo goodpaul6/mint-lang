@@ -1,6 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO
+ * - Fix lambdas
  * - DECL_LAMBDA unnecessary (just use DECL_NORMAL or create a DECL_ANON or something)
  * - token names in error messages
  * - store function names as indices into the stringConstants array in the vm

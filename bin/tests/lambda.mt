@@ -5,9 +5,9 @@ func run()
 	var f = lam ()
 		return x * x
 	end
-	
 	for var i = -3, i <= 3, i = i + 1 do
-		write(f(i))
+		x = i
+		write(f())
 	end
 end
 

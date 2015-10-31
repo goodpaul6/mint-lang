@@ -1019,15 +1019,6 @@ void CompileValueExpr(Expr* exp)
 		
 		case EXP_LAMBDA:
 		{
-			/*Upvalue* upvalue = NULL;
-			
-			Expr** rnode = &exp->lamx.bodyHead;
-			while(*rnode)
-			{
-				ResolveLambdaReferences(rnode, &upvalue, exp->lamx.decl->envDecl);
-				rnode = &(*rnode)->next;
-			}*/
-			
 			AppendCode(OP_GOTO);
 			int emplaceLoc = CodeLength;
 			AllocatePatch(sizeof(int) / sizeof(Word));
@@ -1085,12 +1076,9 @@ void CompileValueExpr(Expr* exp)
 
 			static int nlambdas = 0;
 
-			char buf[256];
-			sprintf(buf, "__lmt%i__", nlambdas++);
-
 			// TODO: Should lambda metadicts be global like this (probably not)
 			// Metadicts are declared at global scope
-			VarDecl* metaDecl = DeclareVariable(buf);
+			VarDecl* metaDecl = DeclareVariable("");
 
 			AppendCode(OP_PUSH_DICT);
 			SetVar(metaDecl);
@@ -1109,12 +1097,12 @@ void CompileValueExpr(Expr* exp)
 
 			AppendCode(OP_DICT_SET_RAW);
 
-			// setmeta(__ld%i__, __lmt%i__)
+			// setmeta(lambda dict, lambda meta dict)
 			GetVar(metaDecl);
 			GetVar(decl);
 			AppendCode(OP_SET_META);
 
-			// __ld%i__
+			// lambda dict decl
 			GetVar(decl);
 		} break;
 		
