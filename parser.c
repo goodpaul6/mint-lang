@@ -520,7 +520,23 @@ Expr* ParseFactor(FILE* in)
 			FuncDecl* prevDecl = CurFunc;
 			FuncDecl* decl = EnterFunction("");
 			decl->what = DECL_OPERATOR;
-			decl->op = CurTok;
+			
+			if(CurTok == '(')
+			{
+				GetNextToken(in);
+				if(CurTok != ')')
+					ErrorExit("Invalid operator '('\n");
+				decl->op = OVERLOAD_CALL;
+			}
+			else if(CurTok == '[')
+			{
+				GetNextToken(in);
+				if(CurTok != ']')
+					ErrorExit("Invalid operator '['\n");
+				decl->op = OVERLOAD_INDEX;
+			}
+			else
+				decl->op = CurTok;
 			
 			GetNextToken(in);
 			
@@ -575,8 +591,8 @@ Expr* ParseFactor(FILE* in)
 				else if(CurTok != ')') ErrorExit("Expected ',' or ')' in operator argument list\n");
 			}
 			
-			if(decl->type->func.numArgs != 2)
-				ErrorExit("Operator declaration must have 2 arguments\n");
+			if(decl->type->func.numArgs < 1)
+				ErrorExit("Operator declaration must have at least 1 typed argument\n");
 			
 			GetNextToken(in);
 			

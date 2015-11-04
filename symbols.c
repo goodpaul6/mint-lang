@@ -316,13 +316,42 @@ VarDecl* ReferenceVariable(const char* name)
 	return NULL;
 }
 
-FuncDecl* GetOperatorOverload(const TypeHint* a, const TypeHint* b, int op)
+// TODO: Idk man, this code looks pretty repetitive
+FuncDecl* GetBinaryOverload(const TypeHint* a, const TypeHint* b, int op)
 {
 	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
 	{
 		if(decl->what == DECL_OPERATOR)
 		{
-			if(decl->op == op && CompareTypes(decl->type->func.args[0], a) && CompareTypes(decl->type->func.args[1], b))
+			if(decl->op == op && decl->type->func.numArgs == 2 && CompareTypes(decl->type->func.args[0], a) && CompareTypes(decl->type->func.args[1], b))
+				return decl;
+		}
+	}
+	
+	return NULL;
+}
+
+FuncDecl* GetUnaryOverload(const TypeHint* a, int op)
+{
+	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
+	{
+		if(decl->what == DECL_OPERATOR)
+		{
+			if(decl->op == op && decl->type->func.numArgs == 1 && CompareTypes(decl->type->func.args[0], a))
+				return decl;
+		}
+	}
+	
+	return NULL;
+}
+
+FuncDecl* GetSpecialOverload(const TypeHint* a, const TypeHint* b, int op)
+{
+	for(FuncDecl* decl = Functions; decl != NULL; decl = decl->next)
+	{
+		if(decl->what == DECL_OPERATOR)
+		{
+			if(decl->op == op && CompareTypes(decl->type->func.args[0], a) && (!b || CompareTypes(decl->type->func.args[1], b))) 
 				return decl;
 		}
 	}

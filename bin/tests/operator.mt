@@ -7,6 +7,10 @@ struct char
 	code : number
 end
 
+operator !(c : char)
+	return joinchars([c.code, 0])
+end
+
 struct stream
 	buffer : array-number
 	to_string : function(stream)-string
@@ -39,10 +43,24 @@ operator <<(a : stream, b : string)
 	return a
 end
 
+operator [](a : stream, b : number)
+	return char(a.buffer[b])
+end
+
+operator [](a : stream, b : string)
+	write("indexing stream by string: " .. b)
+	return "nothing"
+end
+
 func run()
 	var s = stream()
 	s << "hello world" << char('!')
+	
 	write(s:to_string())
+	
+	# calls [] operator on stream with number as argument, and then calls the ! unary operator on char to get the string
+	write(!s[0])
+	write(s["hello world"])
 end
 
 run()

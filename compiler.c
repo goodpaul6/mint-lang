@@ -614,10 +614,86 @@ void CheckArgumentTypes(const TypeHint* type, Expr* exp, FuncDecl* decl)
 }
 
 void CompileValueExpr(Expr* exp);
-void CompileCallExpr(Expr* exp, char expectReturn)
+
+// NOTE: Used when the function being called is resolved at compile time
+static void CompileStaticCallExpr(Expr* exp, FuncDecl* decl, char expectReturn, int numExpansions)
+{	
+	assert(decl);
+	
+	if(decl->type)
+		CheckArgumentTypes(decl->type, exp, decl);
+	
+	for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+		CompileValueExpr(exp->callx.args[i]);
+		
+	if(decl->what == DECL_EXTERN || decl->what == DECL_EXTERN_ALIASED)
+	{
+		AppendCode(OP_CALLF);
+		AppendInt(decl->index);
+	}
+	else
+	{
+		if(expectReturn)
+		{
+			if(decl->hasReturn == 0) 
+				ErrorExitE(exp, "Expected a function which had a return value in this context (function '%s' does not return a value)\n", decl->name);
+		}
+			
+		if(numExpansions == 0)
+		{
+			if(!decl->hasEllipsis)
+			{
+				if(exp->callx.numArgs != decl->numArgs)
+					ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+			}
+			else
+			{
+				if(exp->callx.numArgs < decl->numArgs)
+					ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
+			}
+		}
+		
+		AppendCode(OP_CALL);
+		AppendCode(exp->callx.numArgs - numExpansions);
+		AppendInt(decl->index);						
+	}
+	
+	if(expectReturn)
+		AppendCode(OP_GET_RETVAL);
+}
+
+// NOTE: Used when the function being called cannot be resolved at compile time
+static void CompileDynamicCallExpr(Expr* exp, char expectReturn, int numExpansions)
+{
+	const TypeHint* type = InferTypeFromExpr(exp->callx.func);
+	FuncDecl* decl = type ? GetSpecialOverload(type, NULL, OVERLOAD_CALL) : NULL;
+	
+	// overloaded call operator
+	if(decl)
+	{
+		CompileStaticCallExpr(exp, decl, expectReturn, numExpansions);
+		return;
+	}
+	
+	if(type)
+		CheckArgumentTypes(type, exp, NULL);
+
+	for(int i = exp->callx.numArgs - 1; i >= 0; --i)
+		CompileValueExpr(exp->callx.args[i]);
+	
+	CompileValueExpr(exp->callx.func);
+
+	AppendCode(OP_CALLP);
+	AppendCode(exp->callx.numArgs - numExpansions);
+
+	if(expectReturn)
+		AppendCode(OP_GET_RETVAL);
+}
+
+static void CompileCallExpr(Expr* exp, char expectReturn)
 {
 	assert((exp->type == EXP_CALL || exp->type == EXP_MACRO_CALL));
-	
+
 	Word numExpansions = 0;
 	// TODO(optimization): do not iterate over the args more than once
 	for(int i = 0; i < exp->callx.numArgs; ++i)
@@ -633,91 +709,24 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		}
 	}
 	
+	// TODO: This isn't really structured properly (like the dynamic call expression checks for overloads, etc)
+	// see what you can do about this
+	
 	if(exp->callx.func->type == EXP_IDENT)
 	{
 		FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+		
 		if(decl)
-		{
-			if(decl->type)
-				CheckArgumentTypes(decl->type, exp, decl);
-			
-			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-				CompileValueExpr(exp->callx.args[i]);
-				
-			if(decl->what == DECL_EXTERN || decl->what == DECL_EXTERN_ALIASED)
-			{
-				AppendCode(OP_CALLF);
-				AppendInt(decl->index);
-			}
-			else
-			{
-				if(expectReturn)
-				{
-					if(decl->hasReturn == 0) 
-						ErrorExitE(exp, "Expected a function which had a return value in this context (function '%s' does not return a value)\n", decl->name);
-				}
-					
-				if(numExpansions == 0)
-				{
-					if(!decl->hasEllipsis)
-					{
-						if(exp->callx.numArgs != decl->numArgs)
-							ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-					}
-					else
-					{
-						if(exp->callx.numArgs < decl->numArgs)
-							ErrorExitE(exp, "Attempted to pass %i arguments to function '%s' which takes at least %i arguments\n", exp->callx.numArgs, decl->name, decl->numArgs);
-					}
-				}
-				
-				AppendCode(OP_CALL);
-				AppendCode(exp->callx.numArgs - numExpansions);
-				AppendInt(decl->index);						
-			}
-			
-			if(expectReturn)
-				AppendCode(OP_GET_RETVAL);
-		}
+			CompileStaticCallExpr(exp, decl, expectReturn, numExpansions);
 		else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
-		{
-			const TypeHint* type = InferTypeFromExpr(exp->callx.func);
-			if(type)
-				CheckArgumentTypes(type, exp, NULL);
-
-			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-				CompileValueExpr(exp->callx.args[i]);
-				
-			CompileValueExpr(exp->callx.func);
-			
-			AppendCode(OP_CALLP);
-			AppendCode(exp->callx.numArgs - numExpansions);
-			
-			if(expectReturn)
-				AppendCode(OP_GET_RETVAL);
-		}
+			CompileDynamicCallExpr(exp, expectReturn, numExpansions);
 	}
 	else
-	{			
-		const TypeHint* type = InferTypeFromExpr(exp->callx.func);
-		if(type)
-			CheckArgumentTypes(type, exp, NULL);
-
-		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
-			CompileValueExpr(exp->callx.args[i]);
-		
-		CompileValueExpr(exp->callx.func);
-	
-		AppendCode(OP_CALLP);
-		AppendCode(exp->callx.numArgs - numExpansions);
-	
-		if(expectReturn)
-			AppendCode(OP_GET_RETVAL);
-	}
+		CompileDynamicCallExpr(exp, expectReturn, numExpansions);
 }
 
-// sets variable to top of stack
-void _SetVar(Expr* exp, VarDecl* decl)
+// NOTE: sets variable to top of stack
+void SetVar(VarDecl* decl)
 {
 	assert(decl);
 
@@ -733,7 +742,7 @@ void _SetVar(Expr* exp, VarDecl* decl)
 	}
 }
 
-void _GetVar(Expr* exp, VarDecl* decl)
+void GetVar(VarDecl* decl)
 {
 	assert(decl);
 
@@ -749,8 +758,6 @@ void _GetVar(Expr* exp, VarDecl* decl)
 	}
 }
 
-#define SetVar(decl) _SetVar(exp, decl)
-#define GetVar(decl) _GetVar(exp, decl)
 
 static void CheckMacroCall(Expr* exp)
 {
@@ -799,32 +806,25 @@ void CompileValueExpr(Expr* exp)
 
 		case EXP_UNARY:
 		{
-			switch(exp->unaryx.op)
+			const TypeHint* type = InferTypeFromExpr(exp->unaryx.expr);
+			FuncDecl* overload = type ? GetUnaryOverload(type, exp->unaryx.op) : NULL;
+			
+			CompileValueExpr(exp->unaryx.expr);
+			if(overload)
 			{
-				case '-': CompileValueExpr(exp->unaryx.expr); AppendCode(OP_NEG); break;
-				case '!': CompileValueExpr(exp->unaryx.expr); AppendCode(OP_LOGICAL_NOT); break;
-				case '$':
+				AppendCode(OP_CALL);
+				AppendCode(1); 	// 1 argument
+				AppendInt(overload->index);
+				
+				AppendCode(OP_GET_RETVAL);
+			}
+			else
+			{
+				switch(exp->unaryx.op)
 				{
-					FuncDecl* meta = ReferenceFunction("__meta_mt");
-					
-					if(!meta)
-						ErrorExitE(exp, "the unary operator '$' requires the 'meta.mt' library");
-					
-					static char init = 0;
-					if(!init)
-					{
-						init = 1;
-						AppendCode(OP_CALL);
-						AppendCode(0);
-						AppendInt(meta->index);
-					}
-					
-					Expr* tree = exp->unaryx.expr;
-					if(tree->type == EXP_PAREN)	
-						tree = tree->parenExpr;
-						
-					ExposeExpr(tree);
-				} break;
+					case '-': AppendCode(OP_NEG); break;
+					case '!': AppendCode(OP_LOGICAL_NOT); break;
+				}
 			}
 		} break;
 		
@@ -871,10 +871,22 @@ void CompileValueExpr(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
+			const TypeHint* a = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			const TypeHint* b = InferTypeFromExpr(exp->arrayIndex.indexExpr);
+			FuncDecl* overload = a && b ? GetSpecialOverload(a, b, OVERLOAD_INDEX) : NULL;
+		
 			CompileValueExpr(exp->arrayIndex.indexExpr);
 			CompileValueExpr(exp->arrayIndex.arrExpr);
-
-			AppendCode(OP_GETINDEX);
+			if(overload)
+			{
+				AppendCode(OP_CALL);
+				AppendCode(2);
+				AppendInt(overload->index);
+				
+				AppendCode(OP_GET_RETVAL);
+			}
+			else
+				AppendCode(OP_GETINDEX);
 		} break;
 		
 		case EXP_BIN:
@@ -886,7 +898,7 @@ void CompileValueExpr(Expr* exp)
 				const TypeHint* a = InferTypeFromExpr(exp->binx.lhs);
 				const TypeHint* b = InferTypeFromExpr(exp->binx.rhs);
 				
-				FuncDecl* overload = GetOperatorOverload(a, b, exp->binx.op);
+				FuncDecl* overload = GetBinaryOverload(a, b, exp->binx.op);
 				
 				if(overload)
 				{
@@ -1244,6 +1256,24 @@ void CompileExpr(Expr* exp)
 	{	
 		case EXP_EXTERN: case EXP_VAR: case EXP_TYPE_DECL: break;
 		
+		case EXP_UNARY:
+		{
+			const TypeHint* type = InferTypeFromExpr(exp->unaryx.expr);
+			FuncDecl* overload = type ? GetUnaryOverload(type, exp->unaryx.op) : NULL;
+			
+			if(overload)
+			{
+				CompileValueExpr(exp->unaryx.expr);
+				AppendCode(OP_CALL);
+				AppendCode(1); 	// 1 argument
+				AppendInt(overload->index);
+				
+				AppendCode(OP_GET_RETVAL);
+			}
+			else
+				ErrorExitE(exp, "Invalid top level unary expression with no overload\n");
+		} break;
+		
 		case EXP_BIN:
 		{	
 			if(exp->binx.op == '=')
@@ -1313,7 +1343,7 @@ void CompileExpr(Expr* exp)
 				const TypeHint* a = InferTypeFromExpr(exp->binx.lhs);
 				const TypeHint* b = InferTypeFromExpr(exp->binx.rhs);
 			
-				FuncDecl* decl = GetOperatorOverload(a, b, exp->binx.op);
+				FuncDecl* decl = GetBinaryOverload(a, b, exp->binx.op);
 					
 				if(decl)
 				{

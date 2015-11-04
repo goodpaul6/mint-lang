@@ -1,7 +1,10 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO
- * - Fix lambdas
+ * - function overloading:
+ * 		- syntax for function pointers:
+ * 			function_name with number, string # NOTE: the amount of type parameters parsed is = the number of typed arguments to the function
+ * 
  * - any setting operations on numbers should be copying (i.e obj->number = newObj->number) not assigning (obj = newObj)
  * - DECL_LAMBDA unnecessary (just use DECL_NORMAL or create a DECL_ANON or something)
  * - token names in error messages

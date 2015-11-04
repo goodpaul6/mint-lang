@@ -181,7 +181,16 @@ VarDecl* DeclareArgument(const char* name);
 
 VarDecl* ReferenceVariable(const char* name);
 
-FuncDecl* GetOperatorOverload(const TypeHint* a, const TypeHint* b, int op);
+// NOTE: special overload ops
+enum
+{
+	OVERLOAD_CALL, // overload call operator
+	OVERLOAD_INDEX,	// overload index operator
+};
+
+FuncDecl* GetBinaryOverload(const TypeHint* a, const TypeHint* b, int op);
+FuncDecl* GetUnaryOverload(const TypeHint* a, int op);
+FuncDecl* GetSpecialOverload(const TypeHint* a, const TypeHint* b, int op);
 
 enum
 {

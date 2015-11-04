@@ -380,7 +380,7 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 			
 			if(exp->binx.op != '=')
 			{
-				FuncDecl* overload = GetOperatorOverload(a, b, exp->binx.op);
+				FuncDecl* overload = GetBinaryOverload(a, b, exp->binx.op);
 				
 				if(CompareTypes(a, b))
 				{
@@ -395,7 +395,12 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 					}
 				}
 				else if(overload)
-					return overload->type->func.ret;
+				{
+					if(overload->type->func.ret)
+						return overload->type->func.ret;
+					else
+						return GetBroadTypeHint(DYNAMIC);
+				}
 				else if(a && a->hint == DICT) // possibly dynamic overloaded operation (metadict)
 					return GetBroadTypeHint(DYNAMIC);
 			}
@@ -446,25 +451,20 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
-			const TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
-			if(inf && inf->subType)
-				return inf->subType;
-			return GetBroadTypeHint(DYNAMIC);
+			const TypeHint* a = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			const TypeHint* b = InferTypeFromExpr(exp->arrayIndex.indexExpr);
+			FuncDecl* overload = a && b ? GetSpecialOverload(a, b, OVERLOAD_INDEX) : NULL;
 			
-			/*if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
+			if(overload)
 			{
-				Expr* id = exp->arrayIndex.arrExpr;
-				if(id->varx.varDecl)
-				{
-					if(id->varx.varDecl->type)
-					{
-						if(id->varx.varDecl->type->subType)
-							return id->varx.varDecl->type->subType;
-					}
-				}
+				if(overload->type->func.ret)
+					return overload->type->func.ret;
+				else
+					return GetBroadTypeHint(DYNAMIC);
 			}
-			
-			return GetBroadTypeHint(DYNAMIC);*/
+			else if(a && (a->hint == ARRAY || a->hint == DICT) && a->subType)
+				return a->subType;
+			return GetBroadTypeHint(DYNAMIC);
 		} break;
 		
 		case EXP_DOT:
@@ -623,7 +623,10 @@ void ResolveTypes(Expr* exp)
 				
 				if(a && b)
 				{
-					if(!CompareTypes(a, b) && a->hint != DICT && !GetOperatorOverload(a, b, exp->binx.op))
+					FuncDecl* overload = GetBinaryOverload(a, b, exp->binx.op);
+					if(overload)
+						ResolveTypesExprList(overload->bodyHead);
+					else if(!CompareTypes(a, b) && a->hint != DICT)
 						WarnE(exp, "Invalid binary operation %i (%c) between '%s' and '%s'\n", exp->binx.op, exp->binx.op, HintString(a), HintString(b));
 				}
 			}
@@ -688,8 +691,11 @@ void ResolveTypes(Expr* exp)
 		{
 			ResolveTypes(exp->unaryx.expr);
 			const TypeHint* inf = InferTypeFromExpr(exp->unaryx.expr);
+			FuncDecl* overload = inf ? GetUnaryOverload(inf, exp->unaryx.op) : NULL;
 			
-			if(!CompareTypes(GetBroadTypeHint(NUMBER), inf))
+			if(overload)
+				ResolveTypesExprList(overload->bodyHead);
+			else if(!CompareTypes(GetBroadTypeHint(NUMBER), inf))
 				WarnE(exp, "Applying unary operator to non-numerical value of type '%s'\n", HintString(inf));
 		} break;
 		
@@ -704,17 +710,6 @@ void ResolveTypes(Expr* exp)
 		case EXP_DOT:
 		{
 			TypeHint* inf = InferTypeFromExpr(exp->dotx.dict);
-			/*if(exp->dotx.dict->type == EXP_IDENT)
-			{
-				if(!exp->dotx.dict->varx.varDecl)
-					exp->dotx.dict->varx.varDecl = ReferenceVariable(exp->dotx.dict->varx.name);
-				
-				if(exp->dotx.dict->varx.varDecl)
-				{
-					if(!CompareTypes(exp->dotx.dict->varx.varDecl->type, GetBroadTypeHint(DICT)))
-						WarnE(exp, "Attempted to use dot '.' operator on value of type '%s'\n", HintString(exp->dotx.dict->varx.varDecl->type));
-				}
-			}*/
 			if(inf)
 			{
 				if(inf->hint != USERTYPE)
@@ -730,17 +725,6 @@ void ResolveTypes(Expr* exp)
 		case EXP_COLON:
 		{
 			TypeHint* inf = InferTypeFromExpr(exp->dotx.dict);
-			/*if(exp->colonx.dict->type == EXP_IDENT)
-			{
-				if(!exp->colonx.dict->varx.varDecl)
-					exp->colonx.dict->varx.varDecl = ReferenceVariable(exp->colonx.dict->varx.name);
-					
-				if(exp->colonx.dict->varx.varDecl)
-				{
-					if(!CompareTypes(exp->colonx.dict->varx.varDecl->type, GetBroadTypeHint(DICT)))
-						WarnE(exp, "Attempted to use dot '.' operator on value of type '%s'\n", HintString(exp->colonx.dict->varx.varDecl->type));
-				}
-			}*/
 			if(inf)
 			{
 				if(inf->hint != USERTYPE)
@@ -759,31 +743,28 @@ void ResolveTypes(Expr* exp)
 				ResolveTypes(exp->callx.args[i]);
 				
 			TypeHint* inf = InferTypeFromExpr(exp->callx.func);
-			/*if(exp->callx.func->type == EXP_IDENT)
-			{
-				if(!exp->callx.func->varx.varDecl)
-						exp->callx.func->varx.varDecl = ReferenceVariable(exp->callx.func->varx.name);
-					
-				if(exp->callx.func->varx.varDecl)
-				{
-					if(!CompareTypes(exp->callx.func->varx.varDecl->type, GetBroadTypeHint(FUNC)) &&
-						!CompareTypes(exp->callx.func->varx.varDecl->type, GetBroadTypeHint(DICT)))
-						WarnE(exp, "Attempted to call variable of type '%s'\n", HintString(exp->callx.func->varx.varDecl->type));
-				}
-			}*/
 			if(inf)
 			{
-				if(!CompareTypes(inf, GetBroadTypeHint(FUNC)) &&
-					!CompareTypes(inf, GetBroadTypeHint(DICT)))
-					WarnE(exp, "Attempted to call variable of type '%s'\n", HintString(inf));
-
-				if(inf->hint == FUNC && !inf->func.ret)
+				FuncDecl* overload = GetSpecialOverload(inf, NULL, OVERLOAD_CALL);
+				if(overload)
 				{
-					if(exp->callx.func->type == EXP_IDENT)
+					// NOTE: must resolve types of overloaded operators as well
+					ResolveTypesExprList(overload->bodyHead);
+				}
+				else
+				{				
+					if(!CompareTypes(inf, GetBroadTypeHint(FUNC)) &&
+						!CompareTypes(inf, GetBroadTypeHint(DICT)))
+						WarnE(exp, "Attempted to call variable of type '%s'\n", HintString(inf));
+
+					if(inf->hint == FUNC && !inf->func.ret)
 					{
-						FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
-						if(decl)
-							ResolveTypesExprList(decl->bodyHead);
+						if(exp->callx.func->type == EXP_IDENT)
+						{
+							FuncDecl* decl = ReferenceFunction(exp->callx.func->varx.name);
+							if(decl)
+								ResolveTypesExprList(decl->bodyHead);
+						}
 					}
 				}
 			}
@@ -793,27 +774,20 @@ void ResolveTypes(Expr* exp)
 		
 		case EXP_ARRAY_INDEX:
 		{
-			TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
-			/*if(exp->arrayIndex.arrExpr->type == EXP_IDENT)
-			{
-				if(!exp->arrayIndex.arrExpr->varx.varDecl)
-						exp->arrayIndex.arrExpr->varx.varDecl = ReferenceVariable(exp->arrayIndex.arrExpr->varx.name);
-					
-				if(exp->arrayIndex.arrExpr->varx.varDecl)
-				{
-					if(!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(ARRAY)) &&
-						!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(DICT)) &&
-						!CompareTypes(exp->arrayIndex.arrExpr->varx.varDecl->type, GetBroadTypeHint(STRING)))
-						WarnE(exp, "Attempted to index variable of type '%s'\n", HintString(exp->arrayIndex.arrExpr->varx.varDecl->type));
-				}
-				else if
-			}*/
+			const TypeHint* inf = InferTypeFromExpr(exp->arrayIndex.arrExpr);
+			const TypeHint* b = InferTypeFromExpr(exp->arrayIndex.indexExpr);
 			if(inf)
 			{
-				if(!CompareTypes(inf, GetBroadTypeHint(ARRAY)) &&
-			   	   !CompareTypes(inf, GetBroadTypeHint(DICT)) &&
-			   	   !CompareTypes(inf, GetBroadTypeHint(STRING)))
-					WarnE(exp, "Attempted to index variable of type '%s'\n", HintString(inf));
+				FuncDecl* overload = GetSpecialOverload(inf, b, OVERLOAD_INDEX);
+				if(overload)
+					ResolveTypesExprList(overload->bodyHead);
+				else
+				{
+					if(!CompareTypes(inf, GetBroadTypeHint(ARRAY)) &&
+					!CompareTypes(inf, GetBroadTypeHint(DICT)) &&
+					!CompareTypes(inf, GetBroadTypeHint(STRING)))
+						WarnE(exp, "Attempted to index variable of type '%s'\n", HintString(inf));
+				}
 			}
 			else
 				ResolveTypes(exp->arrayIndex.arrExpr);
