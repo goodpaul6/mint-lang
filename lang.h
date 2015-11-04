@@ -304,7 +304,7 @@ typedef struct _Expr
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; char isColon; } dotx;
 		struct { struct _Expr* pairsHead; int length; VarDecl* decl; } dictx;
 		struct { struct _Expr* dict; char name[MAX_ID_NAME_LENGTH]; } colonx;
-		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl;} lamx;
+		struct { FuncDecl* decl; struct _Expr* bodyHead; VarDecl* dictDecl; } lamx;
 		//struct { Word* bytes; int length; FuncDecl** toBeRetargeted; int* pcFileTable; int* pcLineTable; int numFunctions; } code;
 		struct { struct _Expr* expr; TypeHint* newType; } castx;
 		struct _Expr* multiHead;

@@ -578,16 +578,28 @@ void ClearPatches()
 	}
 }
 
-void CheckArgumentTypes(const TypeHint* type, Expr* exp)
+void CheckArgumentTypes(const TypeHint* type, Expr* exp, FuncDecl* decl)
 {
 	assert(type);
 	assert((exp->type == EXP_CALL || exp->type == EXP_MACRO_CALL));
-	assert(CompareTypes(type, GetBroadTypeHint(FUNC)));
-
+	
+	if(type->hint != FUNC) return;
+	
 	if(type->func.numArgs >= 0)
 	{
-		if(exp->callx.numArgs != type->func.numArgs)
-			WarnE(exp, "The number of types specified for the function being called (%i) exceed the number of arguments passed in (%i)\n", type->func.numArgs, exp->callx.numArgs);
+		if(decl)
+		{
+			if(decl->hasEllipsis)
+			{
+				if(exp->callx.numArgs < type->func.numArgs)
+					WarnE(exp, "The number of types specified for the function being called (%i) is greater than the number of arguments passed in (%i)\n", type->func.numArgs, exp->callx.numArgs);
+			}
+			else
+			{	
+				if(exp->callx.numArgs != type->func.numArgs)
+					WarnE(exp, "The number of types specified for the function being called (%i) is not equal to the number of arguments passed in (%i)\n", type->func.numArgs, exp->callx.numArgs);
+			}
+		}
 	}
 	
 	if(type && type->hint == FUNC)
@@ -627,7 +639,7 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		if(decl)
 		{
 			if(decl->type)
-				CheckArgumentTypes(decl->type, exp);
+				CheckArgumentTypes(decl->type, exp, decl);
 			
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
@@ -671,7 +683,7 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 		{
 			const TypeHint* type = InferTypeFromExpr(exp->callx.func);
 			if(type)
-				CheckArgumentTypes(type, exp);
+				CheckArgumentTypes(type, exp, NULL);
 
 			for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 				CompileValueExpr(exp->callx.args[i]);
@@ -688,7 +700,8 @@ void CompileCallExpr(Expr* exp, char expectReturn)
 	else
 	{			
 		const TypeHint* type = InferTypeFromExpr(exp->callx.func);
-		CheckArgumentTypes(type, exp);
+		if(type)
+			CheckArgumentTypes(type, exp, NULL);
 
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
@@ -848,9 +861,8 @@ void CompileValueExpr(Expr* exp)
 					ErrorExitE(exp, "Attempted to reference undeclared identifier '%s'\n", exp->varx.name);
 				
 				AppendCode(OP_PUSH_FUNC);
-				AppendCode(decl->hasEllipsis);
+				AppendCode(MINT_FALSE);
 				AppendCode(decl->what == DECL_EXTERN || decl->what == DECL_EXTERN_ALIASED);
-				AppendCode(decl->numArgs);
 				AppendInt(decl->index);
 			}
 			else
@@ -1047,11 +1059,11 @@ void CompileValueExpr(Expr* exp)
 				CompileValueExpr(prevEnv);
 				
 				AppendCode(OP_PUSH_STRING);
-				AppendInt(RegisterString(exp->lamx.decl->prevDecl->envDecl->name)->index);
+				AppendInt(RegisterString("env")->index);
 					
 				GetVar(decl);
 
-				AppendCode(OP_DICT_SET);
+				AppendCode(OP_DICT_SET_RAW);
 			}
 			
 			Upvalue* upvalue = exp->lamx.decl->upvalues;
@@ -1073,37 +1085,12 @@ void CompileValueExpr(Expr* exp)
 				
 				upvalue = upvalue->next;
 			}
-
-			static int nlambdas = 0;
-
-			// TODO: Should lambda metadicts be global like this (probably not)
-			// Metadicts are declared at global scope
-			VarDecl* metaDecl = DeclareVariable("");
-
-			AppendCode(OP_PUSH_DICT);
-			SetVar(metaDecl);
-
-			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
+		
+			GetVar(decl);
 			AppendCode(OP_PUSH_FUNC);
-			AppendCode(exp->lamx.decl->hasEllipsis);
-			AppendCode(0);
-			AppendCode(exp->lamx.decl->numArgs);
+			AppendCode(MINT_TRUE);
+			AppendCode(MINT_FALSE);
 			AppendInt(exp->lamx.decl->index);
-
-			AppendCode(OP_PUSH_STRING);
-			AppendInt(RegisterString("CALL")->index);			
-
-			GetVar(metaDecl);
-
-			AppendCode(OP_DICT_SET_RAW);
-
-			// setmeta(lambda dict, lambda meta dict)
-			GetVar(metaDecl);
-			GetVar(decl);
-			AppendCode(OP_SET_META);
-
-			// lambda dict decl
-			GetVar(decl);
 		} break;
 		
 		// when used as a value, it becomes a function pointer
@@ -1124,11 +1111,9 @@ void CompileValueExpr(Expr* exp)
 			
 			EmplaceInt(emplaceLoc, CodeLength);
 			
-			// TODO: The OP_PUSH_FUNC should only take whether the function is an extern or not, the rest can be determined by the vm tables
 			AppendCode(OP_PUSH_FUNC);
-			AppendCode(exp->funcx.decl->hasEllipsis);
-			AppendCode(exp->funcx.decl->what == DECL_EXTERN || exp->funcx.decl->what == DECL_EXTERN_ALIASED);
-			AppendCode(exp->funcx.decl->numArgs);
+			AppendCode(MINT_FALSE);
+			AppendCode(MINT_FALSE);
 			AppendInt(exp->funcx.decl->index);
 		} break;
 

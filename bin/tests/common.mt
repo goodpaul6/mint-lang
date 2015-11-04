@@ -126,3 +126,24 @@ func _list_copy(self)
 	
 	return list_from_raw(copied)
 end
+
+
+func bind(f : function, ...)
+	var args = getargs(f)
+	
+	var mt = {
+		CALL = func (self, ...)
+			var args = getargs(self)
+			return self.fp(expand(self.args, len(self.args)), expand(args, len(args)))
+		end
+	}
+	
+	var bound = {
+		args = args,
+		fp = f
+	}
+	
+	setmeta(bound, mt)
+	
+	return bound
+end

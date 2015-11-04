@@ -12,12 +12,12 @@ macro fact(n)
 end
 
 macro enum(...)
-	write("creating enum")
 	var args = getargs()
-	write(args)
+	
 	var gen = []
 	for var i = 0, i < len(args), i = i + 1 do
 		var decl = macro_declare_variable(args[i])
+		write(i)
 		push(gen, macro_bin_expr("=", macro_ident_expr(decl), macro_num_expr(i)))
 	end
 	
@@ -28,5 +28,5 @@ macro test()
 	return macro_bin_expr("=", macro_ident_expr(macro_declare_variable("x")), macro_num_expr(1))
 end
 
-write(fact!(5))
-write(fact!(100))
+enum!("hello", "world", "good")
+write(good)

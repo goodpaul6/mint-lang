@@ -578,11 +578,14 @@ void Std_GetFuncByName(VM* vm)
 	for(int i = 0; i < vm->numFunctions; ++i)
 	{
 		if(strcmp(vm->functionNames[i], name) == 0)
+		{	
 			index = i;
+			break;
+		}
 	}
 	
 	if(index >= 0)
-		PushFunc(vm, index, vm->functionHasEllipsis[index], 0, vm->functionNumArgs[index]);
+		PushFunc(vm, index, MINT_FALSE, NULL);
 	else
 		PushObject(vm, &NullObject);
 	ReturnTop(vm);
@@ -604,7 +607,7 @@ void Std_GetNumArgs(VM* vm)
 	if(obj->type != OBJ_FUNC)
 		ErrorExitVM(vm, "extern 'getnumargs' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
 	
-	PushNumber(vm, (int)obj->func.numArgs);
+	PushNumber(vm, vm->functionNumArgs[obj->func.index]);
 	ReturnTop(vm);
 }
 
@@ -614,7 +617,7 @@ void Std_HasEllipsis(VM* vm)
 	if(obj->type != OBJ_FUNC)
 		ErrorExitVM(vm, "extern 'hasellipsis' expected a function pointer as its argument but received a %s\n", ObjectTypeNames[obj->type]);
 		
-	PushNumber(vm, (Word)obj->func.hasEllipsis);
+	PushNumber(vm, vm->functionHasEllipsis[obj->func.index]);
 	ReturnTop(vm);
 }
 
@@ -1237,7 +1240,7 @@ void Std_Thread(VM* vm)
 	VM* thread = emalloc(sizeof(VM));
 	memcpy(thread, vm, sizeof(VM));
 
-	thread->isActive = 0;
+	thread->isActive = MINT_FALSE;
 
 	thread->numGlobals = 0;
 	thread->stackSize = 0;
@@ -1252,7 +1255,7 @@ void Std_Thread(VM* vm)
 	thread->fp = 0;
 	thread->pc = -1;
 
-	thread->inExternBody = 0;
+	thread->inExternBody = MINT_FALSE;
 	thread->retVal = NULL;
 
 	// thread native pointer
@@ -1270,30 +1273,23 @@ void Std_StartThread(VM* vm)
 		if(obj->func.isExtern)
 			ErrorExitVM(vm, "Thread function cannot be an extern\n");
 	}
-	else if(obj->type != OBJ_DICT)
+	else
 		ErrorExitVM(vm, "Invalid thread function: expected function or lambda but received %s\n", ObjectTypeNames[obj->type]);
 		
 	Object* data = PopObject(vm);
 	
-	thread->isActive = 1;
+	thread->isActive = MINT_TRUE;
 	if(obj->type == OBJ_FUNC)
 	{
 		thread->pc = vm->functionPcs[obj->func.index];			
-					
+		
 		PushObject(thread, data);
 		thread->fp = 1;
-	}
-	else if(obj->meta)
-	{
-		// NOTE: CALL operators must be function pointers since they take the dict as
-		// their first argument
-		Object* fobj = DictGet(&obj->meta->dict, "CALL");
-		if(!fobj || fobj->type != OBJ_FUNC)
-			ErrorExitVM(vm, "Thread function dictionary does not have valid CALL overload\n");
-		thread->pc = vm->functionPcs[fobj->func.index];
-		PushObject(thread, data);
-		PushObject(thread, obj);
-		thread->fp = 2;
+		if(obj->func.env)
+		{
+			thread->fp += 1;
+			PushObject(thread, obj->func.env);
+		}
 	}
 	else
 		ErrorExitVM(vm, "Invalid thread function\n");
@@ -1302,7 +1298,7 @@ void Std_StartThread(VM* vm)
 	while(thread->isActive)
 	{
 		if(thread->pc < 0)
-			thread->isActive = 0; // stop the thread: it's complete
+			thread->isActive = MINT_FALSE; // stop the thread: it's complete
 		else
 			ExecuteCycle(thread);
 	}
@@ -1312,7 +1308,7 @@ void Std_ResumeThread(VM* vm)
 {
 	VM* thread = PopNative(vm);
 	
-	thread->isActive = 1;
+	thread->isActive = MINT_TRUE;
 	while(thread->isActive)
 	{	
 		if(thread->pc < 0)
@@ -1337,7 +1333,7 @@ void Std_CurrentThread(VM* vm)
 
 void Std_Yield(VM* vm)
 {
-	vm->isActive = 0;
+	vm->isActive = MINT_FALSE;
 	// the value passed in is returned
 	ReturnTop(vm);
 }
@@ -1358,7 +1354,7 @@ void InitVM(VM* vm)
 {
 	NullObject.type = OBJ_NULL;
 	
-	vm->isActive = 0;
+	vm->isActive = MINT_FALSE;
 
 	vm->curFile = "unknown";
 	vm->curLine = -1;
@@ -1611,12 +1607,10 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	}
 	
 	fread(&numStringConstants, sizeof(int), 1, in);
+	vm->numStringConstants = numStringConstants;
 	
 	if(numStringConstants > 0)
-	{
 		vm->stringConstants = emalloc(sizeof(char*) * numStringConstants);
-		vm->numStringConstants = numStringConstants;
-	}
 	
 	for(int i = 0; i < numStringConstants; ++i)
 	{
@@ -1772,7 +1766,7 @@ void MarkObject(VM* vm, Object* obj)
 	if(obj == &NullObject) return;
 	if(obj->marked) return;
 	
-	obj->marked = 1;
+	obj->marked = MINT_TRUE;
 	
 	if(vm->debug)
 		printf("marking %s\n", ObjectTypeNames[obj->type]); 
@@ -1891,7 +1885,7 @@ void Sweep(VM* vm)
 		}
 		else 
 		{
-			(*obj)->marked = 0;
+			(*obj)->marked = MINT_FALSE;
 			obj = &(*obj)->next;
 		}
 	}
@@ -1935,7 +1929,7 @@ Object* NewObject(VM* vm, ObjectType type)
 	}
 	
 	obj->type = type;
-	obj->marked = 0;
+	obj->marked = MINT_FALSE;
 	
 	obj->next = vm->gcHead;
 	vm->gcHead = obj;
@@ -1973,14 +1967,13 @@ void PushString(VM* vm, const char* string)
 	PushObject(vm, obj);
 }
 
-Object* PushFunc(VM* vm, int id, Word hasEllipsis, Word isExtern, Word numArgs)
+Object* PushFunc(VM* vm, int id, Word isExtern, Object* env)
 {
 	Object* obj = NewObject(vm, OBJ_FUNC);
 	
 	obj->func.index = id;
 	obj->func.isExtern = isExtern;
-	obj->func.hasEllipsis = hasEllipsis;
-	obj->func.numArgs = numArgs;
+	obj->func.env = env;
 	
 	PushObject(vm, obj);
 	
@@ -2045,19 +2038,6 @@ Object* PopStringObject(VM* vm)
 	Object* obj = PopObject(vm);
 	if(obj->type != OBJ_STRING) ErrorExitVM(vm, "Expected string but received '%s'\n", ObjectTypeNames[obj->type]);
 	return obj;
-}
-
-int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs)
-{
-	Object* obj = PopObject(vm);
-	if(obj->type != OBJ_FUNC) ErrorExitVM(vm, "Expected function but received %s\n", ObjectTypeNames[obj->type]);
-	if(isExtern)
-		*isExtern = obj->func.isExtern;
-	if(hasEllipsis)
-		*hasEllipsis = obj->func.hasEllipsis;
-	if(numArgs)
-		*numArgs = obj->func.numArgs;
-	return obj->func.index;
 }
 
 Object* PopFuncObject(VM* vm)
@@ -2264,7 +2244,7 @@ void CallOverloadedOperator(VM* vm, const char* name, Object* val1, Object* val2
 		ErrorExitVM(vm, "Attempted to perform binary operation with dictionary as lhs (and no operator overload) for op '%s'\n", name);
 	if(binFunc->type != OBJ_FUNC)																													
 		ErrorExitVM(vm, "Expected member '%s' in dictionary to be a function\n", name);									
-	if(binFunc->func.numArgs != 2) ErrorExitVM(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
+	if(vm->functionNumArgs[binFunc->func.index] != 2) ErrorExitVM(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
 	vm->lastFunctionName = name;																	
 	PushObject(vm, val2);			
 	PushObject(vm, val1);
@@ -2279,19 +2259,19 @@ char CallOverloadedOperatorIf(VM* vm, const char* name, Object* val1, Object* va
 	if(val1->type != OBJ_DICT)																														
 		ErrorExitVM(vm, "Invalid binary operation\n");																								
 	if(!val1->meta)
-		return 0;
+		return MINT_FALSE;
 
 	Object* binFunc = DictGet(&val1->meta->dict, name);
 	if(!binFunc)
 		return 0;
 	if(binFunc->type != OBJ_FUNC)																													
 		ErrorExitVM(vm, "Expected member '%s' in dictionary to be a function\n", name);									
-	if(binFunc->func.numArgs != 2) ErrorExitVM(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
+	if(vm->functionNumArgs[binFunc->func.index] != 2) ErrorExitVM(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
 	vm->lastFunctionName = name;																	
 	PushObject(vm, val2);			
 	PushObject(vm, val1);
 	CallFunction(vm, binFunc->func.index, 2);
-	return 1;
+	return MINT_TRUE;
 }
 
 char CallOverloadedOperatorEx(VM* vm, const char* name, Object* val1, Object* val2, Object* val3)
@@ -2301,19 +2281,19 @@ char CallOverloadedOperatorEx(VM* vm, const char* name, Object* val1, Object* va
 	if(val1->type != OBJ_DICT)																														
 		ErrorExitVM(vm, "Invalid binary operation\n");																								
 	if(!val1->meta)
-		return 0;
+		return MINT_FALSE;
 	Object* binFunc = DictGet(&val1->meta->dict, name);
 	if(!binFunc)
-		return 0;
+		return MINT_FALSE;
 	if(binFunc->type != OBJ_FUNC)																													
 		ErrorExitVM(vm, "Expected member '%s' in dictionary to be a function\n", name);									
-	if(binFunc->func.numArgs != 3) ErrorExitVM(vm, "Expected member function '%s' in dictionary to take 3 arguments\n", name);
+	if(vm->functionNumArgs[binFunc->func.index] != 3) ErrorExitVM(vm, "Expected member function '%s' in dictionary to take 2 arguments\n", name);
 	vm->lastFunctionName = name;
 	PushObject(vm, val3);
 	PushObject(vm, val2);			
 	PushObject(vm, val1);
 	CallFunction(vm, binFunc->func.index, 3);
-	return 1;
+	return MINT_TRUE;
 }
 /* END OF HORRIBLENESS; FOR NOW :P
    VALVE PLS FIX */
@@ -2354,7 +2334,7 @@ void ExecuteCycle(VM* vm)
 			int index = ReadInteger(vm);
 			
 			if(vm->debug)
-				printf("push_number %g\n", vm->numberConstants[index]);
+				printf("push_number %g (%d)\n", vm->numberConstants[index], index);
 			PushNumber(vm, vm->numberConstants[index]);
 		} break;
 		
@@ -2363,7 +2343,7 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			int index = ReadInteger(vm);
 			if(vm->debug)
-				printf("push_string %s\n", vm->stringConstants[index]);
+				printf("push_string %s (%d)\n", vm->stringConstants[index], index);
 			PushString(vm, vm->stringConstants[index]);
 		} break;
 		
@@ -2371,13 +2351,15 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("push_func\n");
-			Word hasEllipsis = vm->program[++vm->pc];
+			Word hasEnv = vm->program[++vm->pc];
 			Word isExtern = vm->program[++vm->pc];
-			Word numArgs = vm->program[++vm->pc];
 			++vm->pc;
 			int index = ReadInteger(vm);
 			
-			PushFunc(vm, index, hasEllipsis, isExtern, numArgs);
+			Object* env = NULL;
+			if(hasEnv)
+				env = PopObject(vm);
+			PushFunc(vm, index, isExtern, env);
 		} break;
 		
 		case OP_PUSH_DICT:
@@ -3015,42 +2997,56 @@ void ExecuteCycle(VM* vm)
 			++vm->pc;
 			
 			Object* obj = PopObject(vm);
+			Object* env = NULL;
 			
-			if(obj->type == OBJ_DICT && obj->meta)
+			if(obj->type == OBJ_FUNC)
 			{
-				// NOTE: CALL operators must be function pointers since they take the dict as
-				// their first argument
-				Object* fobj = DictGet(&obj->meta->dict, "CALL");
-				if(!fobj || fobj->type != OBJ_FUNC)
-					ErrorExitVM(vm, "Attempted to call dictionary object without valid CALL overload\n");
-				id = fobj->func.index;
-				hasEllipsis = fobj->func.hasEllipsis;
-				isExtern = fobj->func.isExtern;
-				numArgs = fobj->func.numArgs;
-				PushObject(vm, obj);
-				nargs += 1;
+				id = obj->func.index;
+				isExtern = obj->func.isExtern;
+				if(!isExtern)
+				{
+					numArgs = vm->functionNumArgs[id];
+					hasEllipsis = vm->functionHasEllipsis[id];	
+				}
+				
+				env = obj->func.env;
 			}
-			else if(obj->type == OBJ_FUNC)
+			else if(obj->type == OBJ_DICT)
 			{
-				// TODO: this could be done better?
-				PushObject(vm, obj);
-				id = PopFunc(vm, &hasEllipsis, &isExtern, &numArgs);
+				Object* meta = obj->meta;
+				Object* callFn = NULL; 
+				if(meta && (callFn = DictGet(&meta->dict, "CALL")) && callFn->type == OBJ_FUNC)
+				{
+					if(callFn->func.env)
+						ErrorExitVM(vm, "Dictionary CALL overload has enclosing environment (i.e closure); This is not a valid overload\n");
+					
+					id = callFn->func.index;
+					isExtern = callFn->func.isExtern;
+					numArgs = vm->functionNumArgs[id];
+					hasEllipsis = vm->functionHasEllipsis[id];
+					env = obj;
+				}
+				else
+					ErrorExitVM(vm, "Attempted to call pure dict (no CALL meta overload found)\n");
 			}
-			else 
-				ErrorExitVM(vm, "Expected function but received %s\n", ObjectTypeNames[obj->type]);
-			
+			else
+				ErrorExitVM(vm, "Expected func or dict but received '%s'\n", ObjectTypeNames[obj->type]);
+
 			if(vm->debug)
 				printf("callp %s%s\n", isExtern ? "extern " : "", isExtern ? vm->externNames[id] : vm->functionNames[id]);
+				
 			vm->lastFunctionName = isExtern ? vm->externNames[id] : vm->functionNames[id];
 			vm->lastFunctionIndex = id;
 			
 			nargs += vm->numExpandedArgs;
+			if(env)
+				nargs += 1;
 			
 			if(isExtern)
 			{
-				vm->inExternBody = 1;
+				vm->inExternBody = MINT_TRUE;
 				vm->externs[id](vm);
-				vm->inExternBody = 0;
+				vm->inExternBody = MINT_FALSE;
 			}
 			else
 			{
@@ -3065,6 +3061,8 @@ void ExecuteCycle(VM* vm)
 						ErrorExitVM(vm, "Function '%s' expected at least %i args but recieved %i args\n", vm->functionNames[id], numArgs, nargs);
 				}
 				
+				if(env)
+					PushObject(vm, env);
 				PushIndir(vm, nargs);
 				vm->pc = vm->functionPcs[id];
 			}
@@ -3095,9 +3093,9 @@ void ExecuteCycle(VM* vm)
 				printf("callf %s\n", vm->externNames[index]);
 			vm->lastFunctionIndex = index;
 			
-			vm->inExternBody = 1;
+			vm->inExternBody = MINT_TRUE;
 			vm->externs[index](vm);
-			vm->inExternBody = 0;
+			vm->inExternBody = MINT_FALSE;
 		} break;
 
 		case OP_GETLOCAL:

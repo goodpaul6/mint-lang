@@ -12,8 +12,6 @@ struct baz
 	quack : array
 end
 
-var x : foo
-write(typename(x))
 write(typemembers(foo))
 
 check_safe_cast(foo, bar)

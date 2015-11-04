@@ -2,6 +2,7 @@
 /* 
  * TODO
  * - Fix lambdas
+ * - any setting operations on numbers should be copying (i.e obj->number = newObj->number) not assigning (obj = newObj)
  * - DECL_LAMBDA unnecessary (just use DECL_NORMAL or create a DECL_ANON or something)
  * - token names in error messages
  * - store function names as indices into the stringConstants array in the vm
@@ -126,6 +127,12 @@ int main(int argc, char* argv[])
 		out = fopen("out.mb", "wb");
 	else
 		out = fopen(outPath, "wb");
+		
+	if(!out)
+	{
+		fprintf(stderr, "Failed to open '%s' for writing\n", outPath);
+		exit(1);
+	}
 	
 	OutputCode(out);
 	

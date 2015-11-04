@@ -244,43 +244,6 @@ int GetUserTypeNumElements(const TypeHint* type)
 
 TypeHint* ParseTypeHint(FILE* in)
 {
-	// multi-type hint is bad
-	/*if(CurTok == '(')
-	{
-		GetNextToken(in);
-		
-		TypeHint* types = NULL;
-		TypeHint* currentType = NULL;
-		
-		while(CurTok != ')')
-		{
-			if(CurTok != TOK_IDENT)
-				ErrorExit("Expected identifier in type declaration\n");
-			
-			TypeHint* type = CreateTypeHint(GetTypeHintFromString(Lexeme)->hint);
-			
-			if(!types)
-			{
-				types = type;
-				currentType = type;
-			}
-			else
-			{
-				currentType->next = type;
-				currentType = type;
-			}
-			
-			GetNextToken(in);
-			
-			if(CurTok == ',') GetNextToken(in);
-			else if(CurTok != ')') ErrorExit("Expected ')' or ',' in type declaration list\n");
-		}
-		
-		GetNextToken(in);
-		return types;
-	}
-	else 
-	*/
 	if(CurTok == TOK_IDENT)
 	{
 		TypeHint* userType = NULL;
@@ -338,12 +301,17 @@ TypeHint* ParseTypeHint(FILE* in)
 				else
 					ErrorExit("Attempted to declare argument types for non-function type\n");
 			}
+			else if(type->hint == FUNC)
+				type->func.numArgs = -1;
 			
 			if(CurTok == '-')
 			{
 				GetNextToken(in);
 				TypeHint* subType = ParseTypeHint(in);
-				type->subType = subType;
+				if(type->hint == FUNC)
+					type->func.ret = subType;
+				else
+					type->subType = subType;
 			}
 			return type;
 		}

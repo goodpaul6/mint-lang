@@ -1,14 +1,14 @@
 # lambda.mt -- lambdas!
 
 func run()
-	var x = 10
-	var f = lam ()
-		return x * x
+	var values = [0, 1, 2]
+	var f = lam (i)
+		write(values[i])
 	end
-	for var i = -3, i <= 3, i = i + 1 do
-		x = i
-		write(f())
-	end
+	
+	f(0)
+	f(1)
+	f(2)
 end
 
 run()

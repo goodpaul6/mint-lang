@@ -13,6 +13,9 @@ struct
 	FuncDecl* funcDecl;
 } Context;
 
+// TODO: This shouldn't be global
+static Expr* NextExpr;
+
 LinkedList MacroList;
 
 static void RecordMacro(Expr** pExp)
@@ -187,6 +190,9 @@ static void Macro_MultiExpr(VM* vm)
 		}
 	}
 	
+	PushNative(vm, exp, NULL, NULL);
+	ReturnTop(vm);
+	
 	UNSET_CONTEXT
 }
 
@@ -348,6 +354,7 @@ void ExecuteMacros(Expr** exp)
 		{
 			Expr** pNodeExp = node->data;
 			Expr* nodeExp = *pNodeExp;
+			NextExpr = nodeExp->next;
 			
 			// NOTE: This assumes that exp->callx.func is an EXP_IDENT
 			FuncDecl* decl = ReferenceFunction(nodeExp->callx.func->varx.name);
@@ -371,6 +378,8 @@ void ExecuteMacros(Expr** exp)
 					ErrorExitE(nodeExp, "Compile-time function '%s' has invalid resulting value\n", nodeExp->callx.func->varx.name);
 				
 				Expr* exp = vm->retVal->native.value;
+				
+				exp->next = NextExpr;
 				*pNodeExp = exp;
 				printf("'%s' generated expression of type: %s\n", decl->name, ExprNames[exp->type]); 
 				if(exp->type == EXP_BIN)

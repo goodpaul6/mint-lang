@@ -2,8 +2,8 @@
 
 func run()
 	var x = 10
-	var count10 = coroutine(func (data)
-		for var i = 0, i < 10, i = i + 1 do
+	var count10 = coroutine(lam (data)
+		for var i = 0, i < x, i = i + 1 do
 			yield(i)
 		end
 

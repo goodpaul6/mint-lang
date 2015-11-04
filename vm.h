@@ -9,6 +9,9 @@
 #include <ffi.h>
 #endif
 
+#define MINT_FALSE 0
+#define MINT_TRUE 1
+
 struct _VM;
 typedef void (*ExternFunction)(struct _VM*);
 typedef unsigned char Word;
@@ -120,7 +123,7 @@ typedef enum
 	OBJ_ARRAY,
 	OBJ_NATIVE,
 	OBJ_FUNC,
-	OBJ_DICT,
+	OBJ_DICT
 } ObjectType;
 
 typedef struct _Object
@@ -149,8 +152,8 @@ typedef struct _Object
 			void (*onMark)(void*);
 		} native;
 		
-		struct { int index; Word hasEllipsis; Word isExtern; Word numArgs; } func;
-		
+		struct { struct _Object* env; int index; Word isExtern; } func;
+		 
 		// TODO: change this so it doesn't use anon structs
 		struct { Dict dict; struct _Object* meta; };
 	};
@@ -262,7 +265,7 @@ void SetGlobal(VM* vm, int id);	// set global to object on top of stack
 void PushObject(VM* vm, Object* obj);
 void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
-Object* PushFunc(VM* vm, int id, Word hasEllipsis, Word isExtern, Word numArgs);
+Object* PushFunc(VM* vm, int id, Word isExtern, Object* env);
 Object* PushArray(VM* vm, int length);
 Object* PushDict(VM* vm);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
@@ -272,7 +275,6 @@ Object* PopObject(VM* vm);
 double PopNumber(VM* vm);
 const char* PopString(VM* vm);
 Object* PopStringObject(VM* vm);
-int PopFunc(VM* vm, Word* hasEllipsis, Word* isExtern, Word* numArgs);
 Object* PopFuncObject(VM* vm);
 Object** PopArray(VM* vm, int* length);
 Object* PopArrayObject(VM* vm);

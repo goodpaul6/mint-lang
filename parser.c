@@ -333,6 +333,7 @@ Expr* ParseFactor(FILE* in)
 					{
 						FuncDecl* funcDecl = CurFunc;
 						
+						// the environment dictionary
 						Expr* dict = CreateExpr(EXP_IDENT);
 						dict->varx.varDecl = funcDecl->envDecl;
 						strcpy(dict->varx.name, funcDecl->envDecl->name);
@@ -344,11 +345,18 @@ Expr* ParseFactor(FILE* in)
 						
 						funcDecl = funcDecl->prevDecl;
 						
+						// basically, reach up to the highest lambda
+						// and retrieve its env. For instance, if the env
+						// was a lambda up:
+						// (anonymous env decl).env.(variable name)
 						while(funcDecl && funcDecl->what == DECL_LAMBDA && decl->scope <= funcDecl->scope)
 						{	
 							Expr* acc = CreateExpr(EXP_DOT);
 							acc->dotx.dict = dict;
-							strcpy(acc->dotx.name, funcDecl->envDecl->name);
+							// NOTE: Cannot index dictionaries with empty strings so all
+							// nested environments store a reference to the previous
+							// environment under the name "env"
+							strcpy(acc->dotx.name, "env");
 							dict = acc;
 							
 							highestDecl = funcDecl;
@@ -644,7 +652,7 @@ Expr* ParseFactor(FILE* in)
 			
 			FuncDecl* prevDecl = CurFunc;
 			FuncDecl* decl = ReferenceFunction(name);
-			if(decl)
+			if(strlen(name) > 0 && decl)
 			{
 				if(decl->what == DECL_EXTERN)
 					ErrorExit("Function '%s' has the same name as an extern\n", name);
