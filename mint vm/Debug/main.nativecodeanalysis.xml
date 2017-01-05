@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DEFECTS>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>main.c</FILENAME>
+      <LINE>135</LINE>
+      <COLUMN>13</COLUMN>
+    </SFA>
+    <DEFECTCODE>6246</DEFECTCODE>
+    <DESCRIPTION>Local declaration of 'i' hides declaration of the same name in outer scope. For additional information, see previous declaration at line '50' of 'c:\users\apaar\dropbox\c utilities\mint vm\mint vm\main.c'.</DESCRIPTION>
+    <FUNCTION>main</FUNCTION>
+    <DECORATED>main</DECORATED>
+    <FUNCLINE>39</FUNCLINE>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>main.c</FILENAME>
+        <LINE>50</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+    </PATH>
+  </DEFECT>
+</DEFECTS>

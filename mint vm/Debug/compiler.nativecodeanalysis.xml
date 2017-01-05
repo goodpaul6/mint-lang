@@ -1,0 +1,1694 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DEFECTS>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>438</LINE>
+      <COLUMN>7</COLUMN>
+    </SFA>
+    <DEFECTCODE>6387</DEFECTCODE>
+    <DESCRIPTION>'file' could be '0':  this does not adhere to the specification for the function 'fseek'. </DESCRIPTION>
+    <FUNCTION>CompileIntrinsic</FUNCTION>
+    <DECORATED>CompileIntrinsic</DECORATED>
+    <FUNCLINE>215</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>217</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>225</LINE>
+        <COLUMN>34</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>236</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>247</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>254</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>263</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>271</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>279</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>295</LINE>
+        <COLUMN>44</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>311</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>323</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>330</LINE>
+        <COLUMN>35</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>337</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>347</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>357</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>367</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>387</LINE>
+        <COLUMN>39</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>395</LINE>
+        <COLUMN>41</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>403</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>426</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>428</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>431</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>434</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>435</LINE>
+        <COLUMN>5</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>436</LINE>
+        <COLUMN>13</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>438</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fseek' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:262)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>438</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'file' should not be NULL, because this is not consistent with the SAL annotation on 'fseek'</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>439</LINE>
+      <COLUMN>7</COLUMN>
+    </SFA>
+    <DEFECTCODE>6387</DEFECTCODE>
+    <DESCRIPTION>'file' could be '0':  this does not adhere to the specification for the function 'ftell'. See line 438 for an earlier location where this can occur</DESCRIPTION>
+    <FUNCTION>CompileIntrinsic</FUNCTION>
+    <DECORATED>CompileIntrinsic</DECORATED>
+    <FUNCLINE>215</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>217</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>225</LINE>
+        <COLUMN>34</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>236</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>247</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>254</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>263</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>271</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>279</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>295</LINE>
+        <COLUMN>44</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>311</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>323</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>330</LINE>
+        <COLUMN>35</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>337</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>347</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>357</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>367</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>387</LINE>
+        <COLUMN>39</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>395</LINE>
+        <COLUMN>41</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>403</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>426</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>428</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>431</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>434</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>435</LINE>
+        <COLUMN>5</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>436</LINE>
+        <COLUMN>13</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>438</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fseek' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:262)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>439</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'ftell' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:278)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>439</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>4</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'file' should not be NULL, because this is not consistent with the SAL annotation on 'ftell'</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>444</LINE>
+      <COLUMN>7</COLUMN>
+    </SFA>
+    <DEFECTCODE>6387</DEFECTCODE>
+    <DESCRIPTION>'file' could be '0':  this does not adhere to the specification for the function 'fread'. See line 438 for an earlier location where this can occur</DESCRIPTION>
+    <FUNCTION>CompileIntrinsic</FUNCTION>
+    <DECORATED>CompileIntrinsic</DECORATED>
+    <FUNCLINE>215</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>217</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>225</LINE>
+        <COLUMN>34</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>236</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>247</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>254</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>263</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>271</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>279</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>295</LINE>
+        <COLUMN>44</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>311</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>323</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>330</LINE>
+        <COLUMN>35</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>337</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>347</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>357</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>367</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>387</LINE>
+        <COLUMN>39</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>395</LINE>
+        <COLUMN>41</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>403</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>426</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>428</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>431</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>434</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>435</LINE>
+        <COLUMN>5</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>436</LINE>
+        <COLUMN>13</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>438</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fseek' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:262)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>439</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'ftell' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:278)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>440</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>4</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fseek' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:262)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>442</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>443</LINE>
+        <COLUMN>2</COLUMN>
+        <KEYEVENT>
+          <ID>5</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Enter this loop, (assume '!!((string))')</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>444</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>6</ID>
+          <KIND>declaration</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an In/Out argument to 'fread' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:231)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>444</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>7</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'file' should not be NULL, because this is not consistent with the SAL annotation on 'fread'</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>445</LINE>
+      <COLUMN>8</COLUMN>
+    </SFA>
+    <DEFECTCODE>6387</DEFECTCODE>
+    <DESCRIPTION>'file' could be '0':  this does not adhere to the specification for the function 'fclose'. See line 438 for an earlier location where this can occur</DESCRIPTION>
+    <FUNCTION>CompileIntrinsic</FUNCTION>
+    <DECORATED>CompileIntrinsic</DECORATED>
+    <FUNCLINE>215</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>217</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>225</LINE>
+        <COLUMN>34</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>236</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>247</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>254</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>263</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>271</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>279</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>295</LINE>
+        <COLUMN>44</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>311</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>323</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>330</LINE>
+        <COLUMN>35</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>337</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>347</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>357</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>367</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>387</LINE>
+        <COLUMN>39</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>395</LINE>
+        <COLUMN>41</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>403</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>426</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>428</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>431</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>434</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>435</LINE>
+        <COLUMN>5</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>436</LINE>
+        <COLUMN>13</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>438</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fseek' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:262)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>439</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'ftell' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:278)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>440</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>4</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fseek' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:262)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>442</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>443</LINE>
+        <COLUMN>2</COLUMN>
+        <KEYEVENT>
+          <ID>5</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Enter this loop, (assume '!!((string))')</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>444</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>6</ID>
+          <KIND>declaration</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an In/Out argument to 'fread' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:231)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>445</LINE>
+        <COLUMN>8</COLUMN>
+        <KEYEVENT>
+          <ID>7</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'file' is an Input to 'fclose' (declared at c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h:144)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>445</LINE>
+        <COLUMN>8</COLUMN>
+        <KEYEVENT>
+          <ID>8</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'file' should not be NULL, because this is not consistent with the SAL annotation on 'fclose'</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>487</LINE>
+      <COLUMN>19</COLUMN>
+    </SFA>
+    <DEFECTCODE>6011</DEFECTCODE>
+    <DESCRIPTION>Dereferencing NULL pointer 'type'. </DESCRIPTION>
+    <FUNCTION>CompileIntrinsic</FUNCTION>
+    <DECORATED>CompileIntrinsic</DECORATED>
+    <FUNCLINE>215</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>217</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>225</LINE>
+        <COLUMN>34</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>236</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>247</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>254</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>263</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>271</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>279</LINE>
+        <COLUMN>31</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>295</LINE>
+        <COLUMN>44</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>311</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>323</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>330</LINE>
+        <COLUMN>35</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>337</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>347</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>357</LINE>
+        <COLUMN>32</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>367</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>387</LINE>
+        <COLUMN>39</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>395</LINE>
+        <COLUMN>41</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>403</LINE>
+        <COLUMN>29</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>426</LINE>
+        <COLUMN>36</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>454</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>465</LINE>
+        <COLUMN>33</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>475</LINE>
+        <COLUMN>37</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>477</LINE>
+        <COLUMN>24</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>480</LINE>
+        <COLUMN>30</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>483</LINE>
+        <COLUMN>12</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>484</LINE>
+        <COLUMN>11</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'type' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>485</LINE>
+        <COLUMN>13</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>487</LINE>
+        <COLUMN>10</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>487</LINE>
+        <COLUMN>19</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Skip this loop, (assume 'i&lt;type-&gt;user.numElements' is false)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>487</LINE>
+        <COLUMN>19</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'type' is dereferenced, but may still be NULL</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>537</LINE>
+      <COLUMN>6</COLUMN>
+    </SFA>
+    <DEFECTCODE>6001</DEFECTCODE>
+    <DESCRIPTION>Using uninitialized memory '**p'.</DESCRIPTION>
+    <FUNCTION>ClearPatches</FUNCTION>
+    <DECORATED>ClearPatches</DECORATED>
+    <FUNCLINE>528</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>3</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>530</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>532</LINE>
+        <COLUMN>7</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>534</LINE>
+        <COLUMN>17</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>536</LINE>
+        <COLUMN>10</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>537</LINE>
+        <COLUMN>6</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>538</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>declaration</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'**p' is not initialized</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>530</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>532</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Continue this loop, (assume '*p')</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>534</LINE>
+        <COLUMN>17</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Enter this branch, (assume '&lt;branch condition&gt;')</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>536</LINE>
+        <COLUMN>10</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>537</LINE>
+        <COLUMN>6</COLUMN>
+        <KEYEVENT>
+          <ID>4</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'**p' is used, but may not have been initialized</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>534</LINE>
+      <COLUMN>17</COLUMN>
+    </SFA>
+    <DEFECTCODE>6001</DEFECTCODE>
+    <DESCRIPTION>Using uninitialized memory '**p'.</DESCRIPTION>
+    <FUNCTION>ClearPatches</FUNCTION>
+    <DECORATED>ClearPatches</DECORATED>
+    <FUNCLINE>528</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>3</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>530</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>532</LINE>
+        <COLUMN>7</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>534</LINE>
+        <COLUMN>17</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>536</LINE>
+        <COLUMN>10</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>537</LINE>
+        <COLUMN>6</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>538</LINE>
+        <COLUMN>7</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>530</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>532</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'**p' may be NULL (Continue this loop)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>534</LINE>
+        <COLUMN>17</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Enter this branch, (assume '&lt;branch condition&gt;')</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>534</LINE>
+        <COLUMN>17</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'**p' is used, but may not have been initialized</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>734</LINE>
+      <COLUMN>15</COLUMN>
+    </SFA>
+    <DEFECTCODE>6011</DEFECTCODE>
+    <DESCRIPTION>Dereferencing NULL pointer 'decl'. </DESCRIPTION>
+    <FUNCTION>CheckMacroCall</FUNCTION>
+    <DECORATED>CheckMacroCall</DECORATED>
+    <FUNCLINE>726</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>728</LINE>
+        <COLUMN>1</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>730</LINE>
+        <COLUMN>11</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>731</LINE>
+        <COLUMN>4</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'decl' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>732</LINE>
+        <COLUMN>12</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>734</LINE>
+        <COLUMN>15</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Skip this branch, (assume 'decl-&gt;what!=DECL_MACRO' is false)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>734</LINE>
+        <COLUMN>15</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'decl' is dereferenced, but may still be NULL</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>1122</LINE>
+      <COLUMN>11</COLUMN>
+    </SFA>
+    <DEFECTCODE>6246</DEFECTCODE>
+    <DESCRIPTION>Local declaration of 'node' hides declaration of the same name in outer scope. For additional information, see previous declaration at line '1103' of 'c:\users\apaar\dropbox\c utilities\mint vm\mint vm\compiler.c'.</DESCRIPTION>
+    <FUNCTION>CompileValueExpr</FUNCTION>
+    <DECORATED>CompileValueExpr</DECORATED>
+    <FUNCLINE>740</FUNCLINE>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1103</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>829</LINE>
+      <COLUMN>14</COLUMN>
+    </SFA>
+    <DEFECTCODE>6011</DEFECTCODE>
+    <DESCRIPTION>Dereferencing NULL pointer 'decl'. </DESCRIPTION>
+    <FUNCTION>CompileValueExpr</FUNCTION>
+    <DECORATED>CompileValueExpr</DECORATED>
+    <FUNCLINE>740</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>742</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>744</LINE>
+        <COLUMN>4</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>753</LINE>
+        <COLUMN>11</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>808</LINE>
+        <COLUMN>2</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>811</LINE>
+        <COLUMN>22</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>818</LINE>
+        <COLUMN>6</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>819</LINE>
+        <COLUMN>22</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>821</LINE>
+        <COLUMN>6</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>823</LINE>
+        <COLUMN>14</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>824</LINE>
+        <COLUMN>7</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'decl' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>825</LINE>
+        <COLUMN>15</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>827</LINE>
+        <COLUMN>14</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>828</LINE>
+        <COLUMN>14</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>829</LINE>
+        <COLUMN>14</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'decl' is dereferenced, but may still be NULL</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+  <DEFECT>
+    <SFA>
+      <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+      <FILENAME>compiler.c</FILENAME>
+      <LINE>1256</LINE>
+      <COLUMN>35</COLUMN>
+    </SFA>
+    <DEFECTCODE>6011</DEFECTCODE>
+    <DESCRIPTION>Dereferencing NULL pointer 'exp-&gt;binx.lhs-&gt;varx.varDecl'. </DESCRIPTION>
+    <FUNCTION>CompileExpr</FUNCTION>
+    <DECORATED>CompileExpr</DECORATED>
+    <FUNCLINE>1205</FUNCLINE>
+    <PROBABILITY>1</PROBABILITY>
+    <RANK>4</RANK>
+    <CATEGORY>
+      <RULECATEGORY>mspft</RULECATEGORY>
+    </CATEGORY>
+    <PATH>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1207</LINE>
+        <COLUMN>9</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1210</LINE>
+        <COLUMN>4</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1219</LINE>
+        <COLUMN>11</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1241</LINE>
+        <COLUMN>2</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1243</LINE>
+        <COLUMN>19</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1245</LINE>
+        <COLUMN>20</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1247</LINE>
+        <COLUMN>38</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1249</LINE>
+        <COLUMN>8</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1251</LINE>
+        <COLUMN>34</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1252</LINE>
+        <COLUMN>9</COLUMN>
+        <KEYEVENT>
+          <ID>1</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>'exp-&gt;binx.lhs-&gt;varx.varDecl' may be NULL (Enter this branch)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1253</LINE>
+        <COLUMN>17</COLUMN>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1256</LINE>
+        <COLUMN>35</COLUMN>
+        <KEYEVENT>
+          <ID>2</ID>
+          <KIND>branch</KIND>
+          <IMPORTANCE>Full</IMPORTANCE>
+          <MESSAGE>Skip this branch, (assume '&lt;branch condition&gt;' is false)</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+      <SFA>
+        <FILEPATH>c:\users\apaar\dropbox\c utilities\mint vm\mint vm\</FILEPATH>
+        <FILENAME>compiler.c</FILENAME>
+        <LINE>1256</LINE>
+        <COLUMN>35</COLUMN>
+        <KEYEVENT>
+          <ID>3</ID>
+          <KIND>usage</KIND>
+          <IMPORTANCE>Essential</IMPORTANCE>
+          <MESSAGE>'exp-&gt;binx.lhs-&gt;varx.varDecl' is dereferenced, but may still be NULL</MESSAGE>
+        </KEYEVENT>
+      </SFA>
+    </PATH>
+  </DEFECT>
+</DEFECTS>

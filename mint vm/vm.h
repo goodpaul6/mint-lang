@@ -123,8 +123,11 @@ typedef enum
 	OBJ_ARRAY,
 	OBJ_NATIVE,
 	OBJ_FUNC,
-	OBJ_DICT
+	OBJ_DICT,
+	OBJ_THREAD
 } ObjectType;
+
+struct _VMThread;
 
 typedef struct _Object
 {
@@ -156,6 +159,8 @@ typedef struct _Object
 		 
 		// TODO: change this so it doesn't use anon structs
 		struct { Dict dict; struct _Object* meta; };
+
+		struct _VMThread* thread;
 	};
 } Object;
  
@@ -168,25 +173,34 @@ typedef struct _Object
 #define CIF_STACK_SIZE					4096
 #endif
 #define NATIVE_STACK_SIZE				4096	
+#define VM_BIN_MAGIC					"MINT"
 
-typedef struct
+typedef struct _VMThread
 {
-	char isActive;
+	char inExternBody;
+
+	const char* curFile; // name of the file the produced code is in
+	int curLine;		 // line number in the file from where this code was written
+
+	int indirStack[MAX_INDIR];
+	int indirStackSize;
+
 	Object* stack[MAX_STACK];
-	int pc, fp, stackSize;
+	int stackSize;
+
+	int pc, fp;
 	int numExpandedArgs;
+
 	Object* retVal;
 } VMThread;
 
 typedef struct _VM
 {
-	char isActive;
-	
-	const char* curFile; // name of the file the produced code is in
-	int curLine;		 // line number in the file from where this code was written
+	VMThread mainThread;
 
-	int pc, fp;
-	
+	// NOTE: This is the current thread
+	VMThread* thread;
+
 	Word* program;
 	int programLength;
 	
@@ -214,18 +228,10 @@ typedef struct _VM
 	
 	int numObjects;
 	int maxObjectsUntilGc;
-	
-	Object* retVal;
-	
-	Object* stack[MAX_STACK];
-	int stackSize;
-	
+
 	char** globalNames;
 	int numGlobals;
 	
-	int indirStack[MAX_INDIR];
-	int indirStackSize;
-
 	char** externNames;
 	ExternFunction* externs;
 	int numExterns;

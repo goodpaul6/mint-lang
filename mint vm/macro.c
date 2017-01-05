@@ -361,7 +361,7 @@ void ExecuteMacros(Expr** exp)
 			if(!decl)
 				ErrorExitE(nodeExp, "Attempted to call non-existent function '%s' at compile time\n", nodeExp->callx.func->varx.name); 
 			
-			vm->pc = nodeExp->pc;
+			vm->thread->pc = nodeExp->pc;
 			SetExprContext(vm, nodeExp);
 			
 			printf("ctx line: %i\n", Context.line);
@@ -369,23 +369,21 @@ void ExecuteMacros(Expr** exp)
 			printf("ctx scope: %i\n", Context.varScope);
 			
 			// all macro call code ends in an OP_HALT
-			while(vm->pc >= 0)
+			while(vm->thread->pc >= 0)
 				ExecuteCycle(vm);
 			
 			if(decl->hasReturn > 0)
 			{
-				if(!vm->retVal || vm->retVal->type != OBJ_NATIVE)
+				if(!vm->thread->retVal || vm->thread->retVal->type != OBJ_NATIVE)
 					ErrorExitE(nodeExp, "Compile-time function '%s' has invalid resulting value\n", nodeExp->callx.func->varx.name);
 				
-				Expr* exp = vm->retVal->native.value;
+				Expr* exp = vm->thread->retVal->native.value;
 				
 				exp->next = NextExpr;
 				*pNodeExp = exp;
 				printf("'%s' generated expression of type: %s\n", decl->name, ExprNames[exp->type]); 
 				if(exp->type == EXP_BIN)
-				{
 					printf("'%c'\n", exp->binx.op);
-				}
 			}
 		}
 		

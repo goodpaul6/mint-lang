@@ -72,7 +72,7 @@ void WriteNonVerbose(VM* vm, Object* obj)
 Object* GetLocal(VM* vm, int index);
 void ErrorExitVM(VM* vm, const char* format, ...)
 {
-	fprintf(stderr, "Error (%s:%i:%i) (last function called: %s):\n", vm->curFile, vm->curLine, vm->pc, vm->lastFunctionName);
+	fprintf(stderr, "Error (%s:%i:%i) (last function called: %s):\n", vm->thread->curFile, vm->thread->curLine, vm->thread->pc, vm->lastFunctionName);
 	
 	va_list args;
 	va_start(args, format);
@@ -88,7 +88,7 @@ void ErrorExitVM(VM* vm, const char* format, ...)
 	}
 #endif
 	
-	printf("pc: %i, fp: %i, stackSize: %i\n", vm->pc, vm->fp, vm->stackSize);
+	printf("pc: %i, fp: %i, stackSize: %i\n", vm->thread->pc, vm->thread->fp, vm->thread->stackSize);
 
 	exit(1);
 }
@@ -410,7 +410,7 @@ void Std_Clockspersec(VM* vm)
 
 void Std_Halt(VM* vm)
 {
-	vm->pc = -1;
+	vm->thread->pc = -1;
 	ReturnNullObject(vm);
 }
 
@@ -1167,7 +1167,7 @@ int Std_ArraySortCmp(VM* vm, Object* a, Object* b, int cmpIdx, Object* arg)
 	}
 	else
 		CallFunction(vm, cmpIdx, 2);
-	int result = (int)vm->retVal->number;
+	int result = (int)vm->thread->retVal->number;
 	return result;
 }
 
@@ -1233,6 +1233,8 @@ void Std_ArrayFill(VM* vm)
 		obj->array.members[i] = filler;
 }
 
+// TODO: Need to redo this to support the new threading architecture
+#if 0
 void Std_FreeThread(void* pThread)
 {
 	VM* thread = pThread;
@@ -1357,18 +1359,14 @@ void Std_GetThreadResult(VM* vm)
 		PushObject(vm, &NullObject);
 	ReturnTop(vm);
 }
+#endif
 
 /* END OF STANDARD LIBRARY */
 
 void InitVM(VM* vm)
 {
 	NullObject.type = OBJ_NULL;
-	
-	vm->isActive = MINT_FALSE;
 
-	vm->curFile = "unknown";
-	vm->curLine = -1;
-	
 	vm->program = NULL;
 	vm->programLength = 0;
 	
@@ -1403,22 +1401,29 @@ void InitVM(VM* vm)
 	vm->maxObjectsUntilGc = INIT_GC_THRESH;
 	
 	vm->numGlobals = 0;
-	vm->stackSize = 0;
 	
-	vm->indirStackSize = 0;
-	
-	vm->pc = -1;
-	vm->fp = 0;
+	VMThread* thread = &vm->mainThread;
+	vm->thread = thread;
+
+	thread->curLine = -1;
+	thread->curFile = NULL;
+
+	thread->inExternBody = MINT_FALSE;
+	thread->stackSize = 0;
+	thread->indirStackSize = 0;
+	thread->pc = -1;
+	thread->fp = 0;
+	thread->numExpandedArgs = 0;
+	thread->retVal = NULL;
+
+	memset(thread->stack, 0, sizeof(thread->stack));
 
 	vm->numExterns = 0;
 	vm->externs = NULL;
-
-	vm->inExternBody = 0;
+	
 	vm->debug = 0;
 
 	vm->nativeStackSize = 0;
-
-	memset(vm->stack, 0, sizeof(vm->stack));
 }
 
 VM* NewVM()
@@ -1430,7 +1435,9 @@ VM* NewVM()
 
 void ResetVM(VM* vm)
 {
-	if(vm->pc != -1) ErrorExitVM(vm, "Attempted to reset a running virtual machine\n");
+	assert(vm->thread);
+
+	if(vm->thread->pc != -1) ErrorExitVM(vm, "Attempted to reset a running virtual machine\n");
 	
 	if(vm->program)
 		free(vm->program);
@@ -1478,7 +1485,7 @@ void ResetVM(VM* vm)
 	if(vm->externs)
 		free(vm->externs);
 	
-	vm->stackSize = 0;
+	vm->thread->stackSize = 0;
 	CollectGarbage(vm);
 	
 	Object* obj = vm->freeHead;
@@ -1495,6 +1502,8 @@ void ResetVM(VM* vm)
 }
 
 /* BINARY FORMAT:
+VM_BIN_MAGIC, see vm.h
+
 entry point as integer
 
 program length (in words) as integer
@@ -1521,6 +1530,15 @@ string length followed by string as chars
 
 void LoadBinaryFile(VM* vm, FILE* in)
 {
+	const char expectedMagic[] = VM_BIN_MAGIC;
+	char magic[5];
+
+	fread(magic, 1, sizeof(expectedMagic) - 1, in);
+	magic[4] = '\0';
+
+	if (strcmp(magic, expectedMagic) != 0)
+		ErrorExitVM(vm, "Invalid binary file.\n");
+
 	int entryPoint;
 	fread(&entryPoint, sizeof(int), 1, in);
 	
@@ -1555,8 +1573,10 @@ void LoadBinaryFile(VM* vm, FILE* in)
 		}
 	}
 	
+	assert(vm->thread);
+
 	vm->numGlobals = numGlobals;
-	vm->stackSize = numGlobals;
+	vm->thread->stackSize = numGlobals;
 	vm->maxObjectsUntilGc += numGlobals;
 		
 	int numFunctions, numNumberConstants, numStringConstants;
@@ -1703,13 +1723,13 @@ void HookStandardLibrary(VM* vm)
 	HookExternNoWarn(vm, "arraysort", Std_ArraySort);
 	HookExternNoWarn(vm, "arrayfill", Std_ArrayFill);
 
-	HookExternNoWarn(vm, "thread", Std_Thread);
+	/* UNTIL THIS IS FIXED HookExternNoWarn(vm, "thread", Std_Thread);
 	HookExternNoWarn(vm, "start_thread", Std_StartThread);
 	HookExternNoWarn(vm, "resume_thread", Std_ResumeThread);
 	HookExternNoWarn(vm, "is_thread_complete", Std_IsThreadComplete);
 	HookExternNoWarn(vm, "current_thread", Std_CurrentThread);
 	HookExternNoWarn(vm, "yield", Std_Yield);
-	HookExternNoWarn(vm, "get_thread_result", Std_GetThreadResult);
+	HookExternNoWarn(vm, "get_thread_result", Std_GetThreadResult); */
 }
 
 void HookExtern(VM* vm, const char* name, ExternFunction func)
@@ -1820,9 +1840,9 @@ void MarkObject(VM* vm, Object* obj)
 
 void MarkAll(VM* vm)
 {
-	for(int i = 0; i < vm->stackSize; ++i)
+	for(int i = 0; i < vm->thread->stackSize; ++i)
 	{
-		Object* reachable = vm->stack[i];
+		Object* reachable = vm->thread->stack[i];
 		if(reachable)
 			MarkObject(vm, reachable);
 	}
@@ -1953,14 +1973,14 @@ Object* NewObject(VM* vm, ObjectType type)
 
 void PushObject(VM* vm, Object* obj)
 {
-	if(vm->stackSize == MAX_STACK) ErrorExitVM(vm, "Stack overflow!\n");
-	vm->stack[vm->stackSize++] = obj;
+	if(vm->thread->stackSize == MAX_STACK) ErrorExitVM(vm, "Stack overflow!\n");
+	vm->thread->stack[vm->thread->stackSize++] = obj;
 }
 
 Object* PopObject(VM* vm)
 {
-	if(vm->stackSize == vm->numGlobals) ErrorExitVM(vm, "Stack underflow!\n");
-	return vm->stack[--vm->stackSize];
+	if(vm->thread->stackSize == vm->numGlobals) ErrorExitVM(vm, "Stack underflow!\n");
+	return vm->thread->stack[--vm->thread->stackSize];
 }
 
 void PushNumber(VM* vm, double value)
@@ -2017,7 +2037,7 @@ Object* PushDict(VM* vm)
 	return obj;
 }
 
-void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)())
+void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)(void*))
 {
 	Object* obj = NewObject(vm, OBJ_NATIVE);
 	obj->native.value = value;
@@ -2117,12 +2137,12 @@ void* NativeStackAlloc(VM* vm, size_t size)
 void ReturnTop(VM* vm)
 {
 	Object* top = PopObject(vm);
-	vm->retVal = top;
+	vm->thread->retVal = top;
 }
 
 void ReturnNullObject(VM* vm)
 {
-	vm->retVal = &NullObject;
+	vm->thread->retVal = &NullObject;
 }
 
 int ReadInteger(VM* vm)
@@ -2131,19 +2151,19 @@ int ReadInteger(VM* vm)
 	Word* vp = (Word*)(&value);
 	
 	for(int i = 0; i < sizeof(int) / sizeof(Word); ++i)
-		vp[i] = vm->program[vm->pc++];
+		vp[i] = vm->program[vm->thread->pc++];
 	
 	return value;
 }
 
 void SetLocal(VM* vm, int index, Object* value)
 {
-	vm->stack[vm->fp + index + vm->numGlobals] = value;
+	vm->thread->stack[vm->thread->fp + index + vm->numGlobals] = value;
 }
 
 Object* GetLocal(VM* vm, int index)
 {
-	return vm->stack[vm->fp + index + vm->numGlobals];
+	return vm->thread->stack[vm->thread->fp + index + vm->numGlobals];
 }
 
 char* ReadStringFromStdin()
@@ -2170,40 +2190,40 @@ char* ReadStringFromStdin()
 
 void PushIndir(VM* vm, int nargs)
 {
-	if(vm->indirStackSize + 4 >= MAX_INDIR) ErrorExitVM(vm, "Imminent callstack overlflow\n");
+	if(vm->thread->indirStackSize + 4 >= MAX_INDIR) ErrorExitVM(vm, "Imminent callstack overlflow\n");
 
-	vm->indirStack[vm->indirStackSize++] = nargs;
-	vm->indirStack[vm->indirStackSize++] = vm->fp;
-	vm->indirStack[vm->indirStackSize++] = vm->pc;
-	vm->indirStack[vm->indirStackSize++] = vm->nativeStackSize;
+	vm->thread->indirStack[vm->thread->indirStackSize++] = nargs;
+	vm->thread->indirStack[vm->thread->indirStackSize++] = vm->thread->fp;
+	vm->thread->indirStack[vm->thread->indirStackSize++] = vm->thread->pc;
+	vm->thread->indirStack[vm->thread->indirStackSize++] = vm->nativeStackSize;
 	
-	vm->fp = vm->stackSize - vm->numGlobals;
+	vm->thread->fp = vm->thread->stackSize - vm->numGlobals;
 
 	vm->numExpandedArgs = 0;
 }
 
 void PopIndir(VM* vm)
 {
-	if(vm->indirStackSize <= 0)
+	if(vm->thread->indirStackSize <= 0)
 	{
-		vm->pc = -1;
+		vm->thread->pc = -1;
 		return;
 	}
 	
-	if(vm->indirStackSize - 3 < 0) ErrorExitVM(vm, "Imminent callstack underflow\n");
+	if(vm->thread->indirStackSize - 3 < 0) ErrorExitVM(vm, "Imminent callstack underflow\n");
 
 	if(vm->debug)
-		printf("previous fp: %i\n", vm->fp);
+		printf("previous fp: %i\n", vm->thread->fp);
 
-	vm->stackSize = vm->fp + vm->numGlobals;
+	vm->thread->stackSize = vm->thread->fp + vm->numGlobals;
 	
-	vm->nativeStackSize = vm->indirStack[--vm->indirStackSize];
-	vm->pc = vm->indirStack[--vm->indirStackSize];
-	vm->fp = vm->indirStack[--vm->indirStackSize];
-	vm->stackSize -= vm->indirStack[--vm->indirStackSize];
+	vm->nativeStackSize = vm->thread->indirStack[--vm->thread->indirStackSize];
+	vm->thread->pc = vm->thread->indirStack[--vm->thread->indirStackSize];
+	vm->thread->fp = vm->thread->indirStack[--vm->thread->indirStackSize];
+	vm->thread->stackSize -= vm->thread->indirStack[--vm->thread->indirStackSize];
 
 	if(vm->debug)
-		printf("new fp: %i\nnew stack size: %i\n", vm->fp, vm->stackSize);
+		printf("new fp: %i\nnew stack size: %i\n", vm->thread->fp, vm->thread->stackSize);
 }
 
 void ExecuteCycle(VM* vm);
@@ -2211,12 +2231,12 @@ void CallFunction(VM* vm, int id, Word numArgs)
 {
 	if(id < 0) return;
 
-	int startFp = vm->fp;
+	int startFp = vm->thread->fp;
 	PushIndir(vm, numArgs);
 	
-	vm->pc = vm->functionPcs[id];
+	vm->thread->pc = vm->functionPcs[id];
 	
-	while(vm->fp > startFp && vm->pc >= 0)
+	while(vm->thread->fp > startFp && vm->thread->pc >= 0)
 		ExecuteCycle(vm);
 }
 
@@ -2235,13 +2255,13 @@ int GetGlobalId(VM* vm, const char* name)
 Object* GetGlobal(VM* vm, int id)
 {
 	if(id < 0) return NULL;
-	return vm->stack[id];
+	return vm->thread->stack[id];
 }
 
 void SetGlobal(VM* vm, int id)
 {
 	if(id < 0) return;
-	vm->stack[id] = PopObject(vm);
+	vm->thread->stack[id] = PopObject(vm);
 }
 
 /* ALL OF THIS IS TERRIBLE; ABSOLUTELY HORRIBLE */
@@ -2261,7 +2281,7 @@ void CallOverloadedOperator(VM* vm, const char* name, Object* val1, Object* val2
 	PushObject(vm, val2);			
 	PushObject(vm, val1);
 	CallFunction(vm, binFunc->func.index, 2);
-	PushObject(vm, vm->retVal);
+	PushObject(vm, vm->thread->retVal);
 }
 
 char CallOverloadedOperatorIf(VM* vm, const char* name, Object* val1, Object* val2)
@@ -2312,22 +2332,24 @@ char CallOverloadedOperatorEx(VM* vm, const char* name, Object* val1, Object* va
 
 void ExecuteCycle(VM* vm)
 {
-	if(vm->pc == -1) return;
+	VMThread* thread = vm->thread;
+
+	if(thread->pc == -1) return;
 	if(vm->debug)
-		printf("(%s:%i:%i): ", vm->curFile, vm->curLine, vm->pc);
+		printf("(%s:%i:%i): ", vm->thread->curFile, vm->thread->curLine, vm->thread->pc);
 	
-	if(vm->stackSize < vm->numGlobals)
+	if(thread->stackSize < vm->numGlobals)
 		printf("Global(s) were removed from the stack!\n");
 	
-	switch(vm->program[vm->pc])
+	switch(vm->program[thread->pc])
 	{
 		case OP_GET_RETVAL:
 		{
 			if(vm->debug)
 				printf("get_retval\n");
-			++vm->pc;
-			if(vm->retVal != NULL)
-				PushObject(vm, vm->retVal);
+			++thread->pc;
+			if(thread->retVal != NULL)
+				PushObject(vm, thread->retVal);
 			else
 				PushObject(vm, &NullObject);
 		} break;
@@ -2336,13 +2358,13 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("push_null\n");
-			++vm->pc;
+			++thread->pc;
 			PushObject(vm, &NullObject);
 		} break;
 		
 		case OP_PUSH_NUMBER:
 		{
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
 			
 			if(vm->debug)
@@ -2352,7 +2374,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_PUSH_STRING:
 		{
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
 			if(vm->debug)
 				printf("push_string %s (%d)\n", vm->stringConstants[index], index);
@@ -2363,9 +2385,9 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("push_func\n");
-			Word hasEnv = vm->program[++vm->pc];
-			Word isExtern = vm->program[++vm->pc];
-			++vm->pc;
+			Word hasEnv = vm->program[++thread->pc];
+			Word isExtern = vm->program[++thread->pc];
+			++thread->pc;
 			int index = ReadInteger(vm);
 			
 			Object* env = NULL;
@@ -2378,7 +2400,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("push_dict\n");
-			++vm->pc;
+			++thread->pc;
 			PushDict(vm);
 		} break;
 
@@ -2404,7 +2426,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("create_array\n");
-			++vm->pc;
+			++thread->pc;
 			int length = (int)PopNumber(vm);
 			PushArray(vm, length);
 		} break;
@@ -2413,16 +2435,16 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("create_array_block\n");
-			++vm->pc;
+			++thread->pc;
 			int length = ReadInteger(vm);
 			Object* obj = PushArray(vm, length);
 			
 			if(length > 0)
 			{
 				for(int i = 0; i < length; ++i)
-					obj->array.members[length - i - 1] = vm->stack[vm->stackSize - 2 - i];
-				vm->stackSize -= length + 1;
-				vm->stack[vm->stackSize++] = obj;
+					obj->array.members[length - i - 1] = thread->stack[thread->stackSize - 2 - i];
+				thread->stackSize -= length + 1;
+				thread->stack[thread->stackSize++] = obj;
 			}
 		} break;
 
@@ -2430,7 +2452,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("expand_array\n");
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopObject(vm);
 			if(obj->type != OBJ_ARRAY)
 				ErrorExitVM(vm, "Expected array when expanding but received %s\n", ObjectTypeNames[obj->type]);
@@ -2449,23 +2471,23 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("push_stack\n");
-			++vm->pc;
-			vm->indirStack[vm->indirStackSize++] = vm->stackSize;
+			++thread->pc;
+			thread->indirStack[thread->indirStackSize++] = thread->stackSize;
 		} break;
 		
 		case OP_POP_STACK:
 		{
 			if(vm->debug)
 				printf("pop_stack\n");
-			++vm->pc;
-			vm->stackSize = vm->indirStack[--vm->indirStackSize];
+			++thread->pc;
+			thread->stackSize = thread->indirStack[--thread->indirStackSize];
 		} break;
 		
 		case OP_LENGTH:
 		{
 			if(vm->debug)
 				printf("length\n");
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopObject(vm);
 			if(obj->type == OBJ_STRING)
 				PushNumber(vm, strlen(obj->string.raw));
@@ -2479,7 +2501,7 @@ void ExecuteCycle(VM* vm)
 
 				PushObject(vm, obj);
 				CallFunction(vm, lenFunc->func.index, 1);
-				PushObject(vm, vm->retVal);
+				PushObject(vm, thread->retVal);
 			}
 			else
 				ErrorExitVM(vm, "Attempted to get length of %s\n", ObjectTypeNames[obj->type]);
@@ -2489,7 +2511,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("array_push\n");
-			++vm->pc;
+			++thread->pc;
 			
 			Object* obj = PopArrayObject(vm);
 			Object* value = PopObject(vm);
@@ -2507,7 +2529,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("array_pop\n");
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopArrayObject(vm);
 			if(obj->array.length <= 0)
 				ErrorExitVM(vm, "Cannot pop from empty array\n");
@@ -2519,7 +2541,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("array_clear\n");
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopArrayObject(vm);
 			obj->array.length = 0;
 		} break;
@@ -2528,7 +2550,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("set_meta\n");
-			++vm->pc;
+			++thread->pc;
 
 			Object* obj = PopDict(vm);
 			Object* meta = PopDict(vm);
@@ -2540,7 +2562,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("get_meta\n");
-			++vm->pc;
+			++thread->pc;
 
 			Object* obj = PopDict(vm);
 			if(obj->meta)
@@ -2551,7 +2573,7 @@ void ExecuteCycle(VM* vm)
 
 		case OP_DICT_SET:
 		{
-			++vm->pc;
+			++thread->pc;
 			if(vm->debug)
 				printf("dict_set");
 
@@ -2570,14 +2592,14 @@ void ExecuteCycle(VM* vm)
 			if(val)
 				DictPut(&obj->dict, index->string.raw, value);
 			else if(CallOverloadedOperatorEx(vm, "SETINDEX", obj, index, value))
-				PushObject(vm, vm->retVal);
+				PushObject(vm, thread->retVal);
 			else
 				DictPut(&obj->dict, index->string.raw, value);
 		} break;
 		
 		case OP_DICT_GET:
 		{
-			++vm->pc;
+			++thread->pc;
 			if(vm->debug)
 				printf("dict_get");
 				
@@ -2594,12 +2616,12 @@ void ExecuteCycle(VM* vm)
 			else if(!CallOverloadedOperatorIf(vm, "GETINDEX", obj, index))
 				PushObject(vm, &NullObject);
 			else
-				PushObject(vm, vm->retVal);
+				PushObject(vm, thread->retVal);
 		} break;
 		
 		case OP_DICT_SET_RAW:
 		{
-			++vm->pc;
+			++thread->pc;
 			
 			Object* obj = PopDict(vm);
 			const char* index = PopString(vm);
@@ -2610,7 +2632,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_DICT_GET_RAW:
 		{
-			++vm->pc;
+			++thread->pc;
 			
 			Object* obj = PopDict(vm);
 			const char* index = PopString(vm);
@@ -2626,7 +2648,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("dict_pairs\n");
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopDict(vm);
 			Object* aobj = PushArray(vm, obj->dict.numEntries);
 			
@@ -2653,7 +2675,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_CAT:
 		{
-			++vm->pc;
+			++thread->pc;
 			if(vm->debug)
 				printf("cat\n");
 
@@ -2673,7 +2695,7 @@ void ExecuteCycle(VM* vm)
 			free(cat);
 		} break;
 
-		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++vm->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExitVM(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
+		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++thread->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExitVM(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
 		BIN_OP(ADD, +)
@@ -2694,7 +2716,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_EQU:
 		{
-			++vm->pc;
+			++thread->pc;
 			Object* o2 = PopObject(vm);
 			Object* o1 = PopObject(vm);
 			if(vm->debug)
@@ -2705,7 +2727,7 @@ void ExecuteCycle(VM* vm)
 			{
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number == o2->number); }
-				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { PushObject(vm, vm->retVal); }
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { PushObject(vm, thread->retVal); }
 				else if(o1->type == OBJ_NULL) PushNumber(vm, 1);
 				else PushNumber(vm, o1 == o2);
 			}
@@ -2713,7 +2735,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_NEQU:
 		{
-			++vm->pc;
+			++thread->pc;
 			Object* o2 = PopObject(vm);
 			Object* o1 = PopObject(vm);
 			
@@ -2725,7 +2747,7 @@ void ExecuteCycle(VM* vm)
 			{
 				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) != 0); }
 				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number != o2->number); }
-				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)vm->retVal->number; PushNumber(vm, !result); }
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)thread->retVal->number; PushNumber(vm, !result); }
 				else PushNumber(vm, o1 != o2);
 			}
 		} break;
@@ -2735,7 +2757,7 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("neg\n");
 			
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopObject(vm);
 
 			if(obj->type == OBJ_DICT)
@@ -2747,7 +2769,7 @@ void ExecuteCycle(VM* vm)
 					{
 						PushObject(vm, obj);
 						CallFunction(vm, negFunc->func.index, 1);
-						PushObject(vm, vm->retVal);
+						PushObject(vm, thread->retVal);
 					}
 					else
 						ErrorExitVM(vm, "Invalid negation of dictionary\n");
@@ -2761,7 +2783,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_LOGICAL_NOT:
 		{	
-			++vm->pc;
+			++thread->pc;
 			Object* obj = PopObject(vm);
 			if(obj->type == OBJ_DICT)
 			{
@@ -2775,7 +2797,7 @@ void ExecuteCycle(VM* vm)
 					{
 						PushObject(vm, obj);
 						CallFunction(vm, notFunc->func.index, 1);
-						PushObject(vm, vm->retVal);
+						PushObject(vm, thread->retVal);
 					}
 					else
 						ErrorExitVM(vm, "Invalid logical not-ing of dictionary\n");
@@ -2793,7 +2815,7 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_SETINDEX:
 		{
-			++vm->pc;
+			++thread->pc;
 
 			Object* obj = PopObject(vm);
 			Object* indexObj = PopObject(vm);
@@ -2832,7 +2854,7 @@ void ExecuteCycle(VM* vm)
 				if(val)
 					DictPut(&obj->dict, indexObj->string.raw, value);
 				else if(CallOverloadedOperatorEx(vm, "SETINDEX", obj, indexObj, value))
-					PushObject(vm, vm->retVal);
+					PushObject(vm, thread->retVal);
 				else
 					DictPut(&obj->dict, indexObj->string.raw, value);
 			}
@@ -2842,7 +2864,7 @@ void ExecuteCycle(VM* vm)
 
 		case OP_GETINDEX:
 		{
-			++vm->pc;
+			++thread->pc;
 
 			Object* obj = PopObject(vm);
 			Object* indexObj = PopObject(vm);
@@ -2885,7 +2907,7 @@ void ExecuteCycle(VM* vm)
 				else if(!CallOverloadedOperatorIf(vm, "GETINDEX", obj, indexObj))
 					PushObject(vm, &NullObject);
 				else
-					PushObject(vm, vm->retVal);
+					PushObject(vm, thread->retVal);
 			}
 			else 
 				ErrorExitVM(vm, "Attempted to index a %s\n", ObjectTypeNames[obj->type]);
@@ -2896,11 +2918,11 @@ void ExecuteCycle(VM* vm)
 			if(vm->numGlobals == 0)
 				ErrorExitVM(vm, "Invalid access to global variables\n");
 
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
 			
 			Object* top = PopObject(vm);
-			vm->stack[index] = top;
+			thread->stack[index] = top;
 			
 			if(vm->debug)
 			{
@@ -2915,10 +2937,10 @@ void ExecuteCycle(VM* vm)
 			if(vm->numGlobals == 0)
 				ErrorExitVM(vm, "Invalid access to global variables\n");
 
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
-			if(vm->stack[index])
-				PushObject(vm, (vm->stack[index]));
+			if(thread->stack[index])
+				PushObject(vm, (thread->stack[index]));
 			else
 				PushObject(vm, &NullObject);
 				
@@ -2933,7 +2955,7 @@ void ExecuteCycle(VM* vm)
 			Object* top = PopObject(vm);
 			WriteObject(vm, top);
 			printf("\n");
-			++vm->pc;
+			++thread->pc;
 		} break;
 		
 		case OP_READ:
@@ -2943,37 +2965,37 @@ void ExecuteCycle(VM* vm)
 			char* string = ReadStringFromStdin();
 			PushString(vm, string);
 			free(string);
-			++vm->pc;
+			++thread->pc;
 		} break;
 		
 		case OP_GOTO:
 		{
-			++vm->pc;
+			++thread->pc;
 			int pc = ReadInteger(vm);
-			vm->pc = pc;
+			thread->pc = pc;
 		
 			if(vm->debug)
-				printf("goto %i\n", vm->pc);
+				printf("goto %i\n", thread->pc);
 		} break;
 		
 		case OP_GOTOZ:
 		{
-			++vm->pc;
+			++thread->pc;
 			int pc = ReadInteger(vm);
 			
 			Object* top = PopObject(vm);
 			if(top->type == OBJ_NUMBER ? top->number == 0 : top == &NullObject)
 			{
-				vm->pc = pc;
+				thread->pc = pc;
 				if(vm->debug)
-					printf("gotoz %i\n", vm->pc);
+					printf("gotoz %i\n", thread->pc);
 			}
 		} break;
 		
 		case OP_CALL:
 		{
-			Word nargs = vm->program[++vm->pc];
-			++vm->pc;
+			Word nargs = vm->program[++thread->pc];
+			++thread->pc;
 			int index = ReadInteger(vm);
 
 			if(vm->debug)
@@ -2983,27 +3005,27 @@ void ExecuteCycle(VM* vm)
 			
 			if(!vm->functionHasEllipsis[index])
 			{
-				if(vm->functionNumArgs[index] != nargs + vm->numExpandedArgs)
-					ErrorExitVM(vm, "Invalid number of arguments (%i) to function '%s' which expects %i arguments\n", nargs + vm->numExpandedArgs, vm->functionNames[index], vm->functionNumArgs[index]);
+				if(vm->functionNumArgs[index] != nargs + thread->numExpandedArgs)
+					ErrorExitVM(vm, "Invalid number of arguments (%i) to function '%s' which expects %i arguments\n", nargs + thread->numExpandedArgs, vm->functionNames[index], vm->functionNumArgs[index]);
 			}
 			else
 			{
-				if(vm->functionNumArgs[index] > nargs + vm->numExpandedArgs)
-					ErrorExitVM(vm, "Invalid number of arguments (%i) to function '%s' which expects at least %i arguments\n", nargs + vm->numExpandedArgs, vm->functionNames[index], vm->functionNumArgs[index]);
+				if(vm->functionNumArgs[index] > nargs + thread->numExpandedArgs)
+					ErrorExitVM(vm, "Invalid number of arguments (%i) to function '%s' which expects at least %i arguments\n", nargs + thread->numExpandedArgs, vm->functionNames[index], vm->functionNumArgs[index]);
 			}
 			
-			PushIndir(vm, nargs + vm->numExpandedArgs);
+			PushIndir(vm, nargs + thread->numExpandedArgs);
 
-			vm->pc = vm->functionPcs[index];
+			thread->pc = vm->functionPcs[index];
 		} break;
 		
 		case OP_CALLP:
 		{
 			int id;
 			Word hasEllipsis, isExtern, numArgs;
-			Word nargs = vm->program[++vm->pc];
+			Word nargs = vm->program[++thread->pc];
 			
-			++vm->pc;
+			++thread->pc;
 			
 			Object* obj = PopObject(vm);
 			Object* env = NULL;
@@ -3073,7 +3095,7 @@ void ExecuteCycle(VM* vm)
 				if(env)
 					PushObject(vm, env);
 				PushIndir(vm, nargs);
-				vm->pc = vm->functionPcs[id];
+				thread->pc = vm->functionPcs[id];
 			}
 		} break;
 		
@@ -3082,7 +3104,7 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("ret\n");
 			PopIndir(vm);
-			vm->retVal = NULL;
+			thread->retVal = NULL;
 		} break;
 		
 		case OP_RETURN_VALUE:
@@ -3091,12 +3113,12 @@ void ExecuteCycle(VM* vm)
 				printf("retval\n");
 			Object* returnValue = PopObject(vm);
 			PopIndir(vm);
-			vm->retVal = returnValue;
+			thread->retVal = returnValue;
 		} break;
 		
 		case OP_CALLF:
 		{
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
 			if(vm->debug)
 				printf("callf %s\n", vm->externNames[index]);
@@ -3109,16 +3131,16 @@ void ExecuteCycle(VM* vm)
 
 		case OP_GETLOCAL:
 		{
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
 			PushObject(vm, GetLocal(vm, index));
 			if(vm->debug)
-				printf("getlocal %i (fp: %i, stack size: %i)\n", index, vm->fp, vm->stackSize);
+				printf("getlocal %i (fp: %i, stack size: %i)\n", index, thread->fp, thread->stackSize);
 		} break;
 		
 		case OP_SETLOCAL:
 		{
-			++vm->pc;
+			++thread->pc;
 			int index = ReadInteger(vm);
 			if(vm->debug)
 				printf("setlocal %i\n", index);
@@ -3129,27 +3151,27 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("halt\n");
-			vm->pc = -1;
+			thread->pc = -1;
 		} break;
 		
 		case OP_SETVMDEBUG:
 		{
 			if(vm->debug)
 				printf("setvmdebug\n");
-			char debug = vm->program[++vm->pc];
-			++vm->pc;
+			char debug = vm->program[++thread->pc];
+			++thread->pc;
 			vm->debug = debug;
 		} break;
 		
 		case OP_GETARGS:
 		{
-			++vm->pc;
+			++thread->pc;
 			int startArgIndex = -ReadInteger(vm) - 1;
 			
 			if(vm->debug)
 				printf("getargs %i\n", -startArgIndex + 1);
 			
-			Word nargs = vm->indirStack[vm->indirStackSize - 4]; // number of arguments passed to the function
+			Word nargs = thread->indirStack[thread->indirStackSize - 4]; // number of arguments passed to the function
 			
 			if(nargs == 0) PushArray(vm, 0);
 			else
@@ -3163,23 +3185,23 @@ void ExecuteCycle(VM* vm)
 		
 		case OP_FILE:
 		{
-			++vm->pc;
+			++thread->pc;
 			int fileIndex = ReadInteger(vm);
 			if(vm->debug)
 				printf("\r\n");
-			vm->curFile = vm->stringConstants[fileIndex];
+			thread->curFile = vm->stringConstants[fileIndex];
 		} break;
 		
 		case OP_LINE:
 		{
-			++vm->pc;
-			vm->curLine = ReadInteger(vm);
+			++thread->pc;
+			thread->curLine = ReadInteger(vm);
 			if(vm->debug)
 				printf("\r\n");
 		} break;
 		
 		default:
-			printf("(%s:%i:%i): Invalid instruction\n", vm->curFile, vm->curLine, vm->pc);
+			printf("(%s:%i:%i): Invalid instruction\n", thread->curFile, thread->curLine, thread->pc);
 			break;
 	}
 }
@@ -3192,14 +3214,14 @@ void RunVM(VM* vm)
 			printf("Unhooked external function '%s'\n", vm->externNames[i]);
 	}
 	
-	vm->pc = vm->entryPoint;
-	while(vm->pc != -1)
+	vm->thread->pc = vm->entryPoint;
+	while(vm->thread->pc != -1)
 		ExecuteCycle(vm);
 }
 
 void DeleteVM(VM* vm)
 {
-	if(vm->pc != -1) ErrorExitVM(vm, "Attempted to delete a running virtual machine\n");
+	if(vm->thread->pc != -1) ErrorExitVM(vm, "Attempted to delete a running virtual machine\n");
 	ResetVM(vm);
 	free(vm);	
 }

@@ -1,25 +1,19 @@
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\vc140.pdb
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\vc140.idb
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\codegen.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\hash.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\linkedlist.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\linker.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\utils.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\compiler.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\dict.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\lang.obj
+c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\hash.obj
+c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\main.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\lexer.obj
+c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\linkedlist.obj
+c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\linker.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\macro.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\parser.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\stdvm.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\symbols.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\typer.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\asm.obj
+c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\utils.obj
 c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\vm.obj
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\debug\main.obj
-c:\users\apaar\dropbox\c utilities\mint vm\debug\mint vm.ilk
-c:\users\apaar\dropbox\c utilities\mint vm\debug\mint vm.exe
-c:\users\apaar\dropbox\c utilities\mint vm\debug\mint vm.pdb
 c:\users\apaar\dropbox\c utilities\mint vm\debug\mint.ilk
 c:\users\apaar\dropbox\c utilities\mint vm\debug\mint.exe
 c:\users\apaar\dropbox\c utilities\mint vm\debug\mint.pdb

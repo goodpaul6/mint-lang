@@ -52,6 +52,8 @@ void EmplaceInt(int loc, int value)
 }
 
 /* BINARY FORMAT:
+VM_BIN_MAGIC, see vm.h
+
 entry point as integer
 
 program length (in words) as integer
@@ -93,6 +95,9 @@ void OutputCode(FILE* out)
 	printf("Number of strings: %i\n", NumStrings);
 	printf("=================================\n");
 	
+	const char magic[] = VM_BIN_MAGIC;
+	fwrite(magic, 1, sizeof(magic) - 1, out);
+
 	fwrite(&EntryPoint, sizeof(int), 1, out);
 	
 	fwrite(&CodeLength, sizeof(int), 1, out);

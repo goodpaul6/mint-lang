@@ -40,6 +40,7 @@ char** ReadStringArrayFromBinaryFile(FILE* in, int amount)
 		int length;
 		fread(&length, sizeof(int), 1, in);
 		char* str = malloc(length + 1);
+		assert(str);
 		fread(str, sizeof(char), length, in);
 		str[length] = '\0';
 		strings[i] = str;
