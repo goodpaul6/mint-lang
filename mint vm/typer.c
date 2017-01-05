@@ -324,6 +324,34 @@ TypeHint* ParseTypeHint(FILE* in)
 	return NULL;
 }
 
+static char IsSafeCast(const TypeHint* a, const TypeHint* b)
+{
+	assert(a->hint == USERTYPE && b->hint == USERTYPE);
+
+	for (int i = 0; i < b->user.numElements; ++i)
+	{
+		char found = 0;
+
+		for (int j = 0; j < a->user.numElements; ++j)
+		{
+			if (strcmp(b->user.names[i], a->user.names[j]) == 0 ||
+				CompareTypes(a->user.elements[i], b->user.elements[j]))
+			{
+				found = 1;
+				break;
+			}
+		}
+
+		if (!found)
+		{
+			return 0;
+			break;
+		}
+	}
+
+	return 1;
+}
+
 TypeHint* InferTypeFromExpr(Expr* exp)
 {
 	switch(exp->type)
@@ -335,7 +363,24 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		
 		case EXP_STRING: return GetBroadTypeHint(STRING); break;
 		
-		case EXP_TYPE_CAST: return exp->castx.newType; break;
+		case EXP_TYPE_CAST: 
+		{
+			const TypeHint* a = InferTypeFromExpr(exp->castx.expr);
+
+			if (exp->castx.newType->hint != USERTYPE)
+			{
+				// TODO: Better message?
+				ErrorExitE(exp, "Invalid target type %s in cast.\n", HintString(exp->castx.newType));
+			}
+
+			if (a->hint != USERTYPE && a->hint != DICT)
+				ErrorExitE(exp, "Invalid source type %s in cast.\n", HintString(a));
+			
+			if (a->hint == USERTYPE && !IsSafeCast(a, exp->castx.newType))
+				ErrorExitE(exp, "Invalid cast from %s to %s.\n", a->user.name, exp->castx.newType->user.name);
+
+			return exp->castx.newType;
+		} break;
 		
 		case EXP_IDENT:
 		{

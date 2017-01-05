@@ -1302,6 +1302,8 @@ void Std_StartThread(VM* vm)
 	else
 		ErrorExitVM(vm, "Invalid thread function\n");
 	
+	sizeof(Object);
+
 	// run the code
 	while(thread->isActive)
 	{

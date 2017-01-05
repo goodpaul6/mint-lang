@@ -9,7 +9,7 @@ func run()
 	var amt = tonumber(read())
 	var a = for var i = 0, i < amt, i = i + 1 do rand() end
 	write("sorting...")
-	arraysort(a, func(a, b) return a - b end)
+	arraysort(a, func(a : number, b : number) return a - b end)
 	write("sorted. How many indices should be displayed?")
 	var n = tonumber(read())
 	for var i = 0, i < n, i = i + 1 do write(a[i]) end

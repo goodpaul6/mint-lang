@@ -12,7 +12,5 @@ struct baz
 	quack : array
 end
 
-write(typemembers(foo))
-
-check_safe_cast(foo, bar)
-check_safe_cast(foo, baz)
+var f = 10
+write(f)

@@ -570,20 +570,22 @@ Expr* ParseFactor(FILE* in)
 				if(nargs >= MAX_ARGS)
 					ErrorExit("Exceeded maximum number of arguments in operator declaration\n");
 
-				if(CurTok == ':')
-				{
-					// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
-					// so they must be set to 0 when they're about to be determined
-					if(decl->type->func.numArgs < 0)
-						decl->type->func.numArgs = 0;
+				if (CurTok != ':')
+					ErrorExit("Expected ':' after %s\n", argDecl->name);
 
-					GetNextToken(in);
-					TypeHint* type = ParseTypeHint(in);
+				GetNextToken(in);
+
+				// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
+				// so they must be set to 0 when they're about to be determined
+				if(decl->type->func.numArgs < 0)
+					decl->type->func.numArgs = 0;
+
+				TypeHint* type = ParseTypeHint(in);
 					
-					decl->type->func.args[decl->type->func.numArgs++] = type;
+				decl->type->func.args[decl->type->func.numArgs++] = type;
 					
-					argDecl->type = type;
-				}
+				argDecl->type = type;
+				
 			
 				nargs += 1;
 
@@ -704,21 +706,22 @@ Expr* ParseFactor(FILE* in)
 				if(nargs >= MAX_ARGS)
 					ErrorExit("Exceeded maximum number of arguments in function '%s' declaration\n", name);
 
-				if(CurTok == ':')
-				{
-					// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
-					// so they must be set to 0 when they're about to be determined
-					if(decl->type->func.numArgs < 0)
-						decl->type->func.numArgs = 0;
+				if (CurTok != ':')
+					ErrorExit("Expected ':' after %s\n", argDecl->name);
 
-					GetNextToken(in);
-					TypeHint* type = ParseTypeHint(in);
+				GetNextToken(in);
+
+				// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
+				// so they must be set to 0 when they're about to be determined
+				if(decl->type->func.numArgs < 0)
+					decl->type->func.numArgs = 0;
+
+				TypeHint* type = ParseTypeHint(in);
 					
-					decl->type->func.args[decl->type->func.numArgs++] = type;
+				decl->type->func.args[decl->type->func.numArgs++] = type;
 					
-					argDecl->type = type;
-				}
-			
+				argDecl->type = type;
+				
 				nargs += 1;
 
 				if(CurTok == ',') GetNextToken(in);
@@ -822,20 +825,21 @@ Expr* ParseFactor(FILE* in)
 				if(nargs >= MAX_ARGS)
 					ErrorExit("Exceeded maximum number of arguments in function '%s' declaration\n", name);
 
-				if(CurTok == ':')
-				{
-					// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
-					// so they must be set to 0 when they're about to be determined
-					if(decl->type->func.numArgs < 0)
-						decl->type->func.numArgs = 0;
+				if (CurTok != ':')
+					ErrorExit("Expected ':' after %s\n", argDecl->name);
 
-					GetNextToken(in);
-					TypeHint* type = ParseTypeHint(in);
+				GetNextToken(in);
+
+				// NOTE: broad function types have their argument amount set to -1 to indicate indeterminate argument amounts
+				// so they must be set to 0 when they're about to be determined
+				if(decl->type->func.numArgs < 0)
+					decl->type->func.numArgs = 0;
+
+				TypeHint* type = ParseTypeHint(in);
 					
-					decl->type->func.args[decl->type->func.numArgs++] = type;
+				decl->type->func.args[decl->type->func.numArgs++] = type;
 					
-					argDecl->type = type;
-				}
+				argDecl->type = type;
 			
 				nargs += 1;
 
@@ -1057,19 +1061,20 @@ Expr* ParseFactor(FILE* in)
 				if(nargs >= MAX_ARGS)
 					ErrorExit("Exceeded maximum number of arguments in lambda declaration\n");
 
-				if(CurTok == ':')
-				{
-					// NOTE: see TOK_FUNC note on this 
-					if(decl->type->func.numArgs < 0)
-						decl->type->func.numArgs = 0;
+				if (CurTok != ':')
+					ErrorExit("Expected ':' after %s\n", argDecl->name);
 
-					GetNextToken(in);
-					TypeHint* type = ParseTypeHint(in);
+				GetNextToken(in);
+
+				// NOTE: see TOK_FUNC note on this 
+				if(decl->type->func.numArgs < 0)
+					decl->type->func.numArgs = 0;
+
+				TypeHint* type = ParseTypeHint(in);
+				
+				decl->type->func.args[decl->type->func.numArgs++] = type;
 					
-					decl->type->func.args[decl->type->func.numArgs++] = type;
-					
-					argDecl->type = type;
-				}
+				argDecl->type = type;
 			
 				nargs += 1;
 

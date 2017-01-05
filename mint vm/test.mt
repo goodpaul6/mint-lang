@@ -1,4 +1,3 @@
-
 func runMyFunc(f : function-void)
 	f()
 end

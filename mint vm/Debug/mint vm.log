@@ -1,12 +1,3 @@
-﻿  vm.c
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(496): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(558): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(702): warning C4244: 'initializing': conversion from 'double' to 'std::size_t', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(741): warning C4244: 'initializing': conversion from 'double' to 'std::size_t', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(742): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(791): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(831): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(2019): warning C4028: formal parameter 4 different from declaration
-c:\users\apaar\dropbox\c utilities\mint vm\mint vm\vm.c(2023): warning C4113: 'void (__cdecl *)()' differs in parameter lists from 'void (__cdecl *)(void *)'
+﻿  codegen.c
   mint vm.vcxproj -> C:\Users\Apaar\Dropbox\C utilities\mint vm\Debug\mint.exe
   mint vm.vcxproj -> C:\Users\Apaar\Dropbox\C utilities\mint vm\Debug\mint.pdb (Partial PDB)

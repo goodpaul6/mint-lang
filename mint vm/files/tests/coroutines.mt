@@ -2,7 +2,7 @@
 
 func run()
 	var x = 10
-	var count10 = coroutine(lam (data)
+	var count10 = coroutine(lam (data : dynamic)
 		for var i = 0, i < x, i = i + 1 do
 			yield(i)
 		end

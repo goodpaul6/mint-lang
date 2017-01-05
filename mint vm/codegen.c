@@ -100,20 +100,18 @@ void OutputCode(FILE* out)
 	
 	fwrite(&NumGlobals, sizeof(int), 1, out);
 	int numGlobalsOutput = 0;
-	for(int i = 0; i < DeepestScope; ++i)
+
+	for(VarDecl* decl = VarList; decl != NULL; decl = decl->next)
 	{
-		for(VarDecl* decl = VarList; decl != NULL; decl = decl->next)
+		if(decl->isGlobal)
 		{
-			if(decl->isGlobal)
-			{
-				int len = strlen(decl->name);
-				fwrite(&len, sizeof(int), 1, out);
-				fwrite(decl->name, sizeof(char), len, out);
-				++numGlobalsOutput;
-			}
+			int len = strlen(decl->name);
+			fwrite(&len, sizeof(int), 1, out);
+			fwrite(decl->name, sizeof(char), len, out);
+			++numGlobalsOutput;
 		}
 	}
-
+	
 	if(numGlobalsOutput < NumGlobals)
 		printf("Not all global names were written to the binary file. (%d out of %d)\n", numGlobalsOutput, NumGlobals);
 	

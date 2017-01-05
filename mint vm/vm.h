@@ -169,6 +169,15 @@ typedef struct _Object
 #endif
 #define NATIVE_STACK_SIZE				4096	
 
+typedef struct
+{
+	char isActive;
+	Object* stack[MAX_STACK];
+	int pc, fp, stackSize;
+	int numExpandedArgs;
+	Object* retVal;
+} VMThread;
+
 typedef struct _VM
 {
 	char isActive;

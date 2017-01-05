@@ -495,42 +495,6 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		
 		return 1;
 	}
-	else if(strcmp(name, "check_safe_cast") == 0)
-	{
-		if(exp->callx.numArgs != 2)
-			ErrorExitE(exp, "Intrinsic 'check_safe_cast' takes 2 arguments\n");
-			
-		if(exp->callx.args[0]->type != EXP_IDENT || exp->callx.args[1]->type != EXP_IDENT)
-			ErrorExitE(exp->callx.args[0], "Argument to intrinsic 'check_safe_cast' must be types\n");
-		
-		TypeHint* a = RegisterUserType(exp->callx.args[0]->varx.name);
-		TypeHint* b = RegisterUserType(exp->callx.args[1]->varx.name);
-		
-		if(a->user.numElements == 0 || b->user.numElements == 0)
-			ErrorExitE(exp, "Invalid type(s) passed in to 'check_safe_cast'\n");
-		
-		for(int i = 0; i < b->user.numElements; ++i)
-		{
-			char found = 0;
-			
-			for(int j = 0; j < a->user.numElements; ++j)
-			{
-				if(strcmp(b->user.names[i], a->user.names[j]) == 0)
-				{
-					found = 1;
-					break;
-				}
-			}
-			
-			if(!found)
-			{
-				WarnE(exp, "Cast from type '%s' to '%s' is unsafe: missing member '%s'\n", a->user.name, b->user.name, b->user.names[i]);
-				break;
-			}
-		}
-		
-		return 1;
-	}
 
 	return 0;
 }
