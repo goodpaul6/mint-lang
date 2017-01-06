@@ -24,7 +24,8 @@ static char* ObjectTypeNames[] =
 	"array",
 	"native",
 	"function",
-	"dict"
+	"dict",
+	"thread"
 };
 
 static void* _emalloc(size_t size, int line)
@@ -183,6 +184,8 @@ void WriteObject(VM* vm, Object* top)
 		}
 		printf(" }");
 	}
+	else if(top->type == OBJ_THREAD)
+		printf("thread (0x%x)", (unsigned int)(intptr_t)(top->thread));
 	else if(top->type == OBJ_NULL)
 		printf("null");
 }
@@ -410,7 +413,7 @@ void Std_Clockspersec(VM* vm)
 
 void Std_Halt(VM* vm)
 {
-	vm->thread->pc = -1;
+	vm->thread = NULL;
 	ReturnNullObject(vm);
 }
 
@@ -1402,8 +1405,9 @@ void InitVM(VM* vm)
 	
 	vm->numGlobals = 0;
 	
+	vm->thread = NULL;
+
 	VMThread* thread = &vm->mainThread;
-	vm->thread = thread;
 
 	thread->curLine = -1;
 	thread->curFile = NULL;
@@ -1435,9 +1439,7 @@ VM* NewVM()
 
 void ResetVM(VM* vm)
 {
-	assert(vm->thread);
-
-	if(vm->thread->pc != -1) ErrorExitVM(vm, "Attempted to reset a running virtual machine\n");
+	if(vm->thread) ErrorExitVM(vm, "Attempted to reset a running virtual machine\n");
 	
 	if(vm->program)
 		free(vm->program);
@@ -1572,11 +1574,8 @@ void LoadBinaryFile(VM* vm, FILE* in)
 			vm->globalNames[i] = string;
 		}
 	}
-	
-	assert(vm->thread);
 
 	vm->numGlobals = numGlobals;
-	vm->thread->stackSize = numGlobals;
 	vm->maxObjectsUntilGc += numGlobals;
 		
 	int numFunctions, numNumberConstants, numStringConstants;
@@ -1825,8 +1824,6 @@ void MarkObject(VM* vm, Object* obj)
 			
 			while(node)
 			{
-				if(vm->debug)
-					printf("marking node %s value\n", node->key);
 				if(node->value)
 					MarkObject(vm, node->value);
 				node = node->next;
@@ -1840,11 +1837,18 @@ void MarkObject(VM* vm, Object* obj)
 
 void MarkAll(VM* vm)
 {
-	for(int i = 0; i < vm->thread->stackSize; ++i)
+	VMThread* current = vm->thread;
+
+	while (current)
 	{
-		Object* reachable = vm->thread->stack[i];
-		if(reachable)
-			MarkObject(vm, reachable);
+		for (int i = 0; i < current->stackSize; ++i)
+		{
+			Object* reachable = current->stack[i];
+			if (reachable)
+				MarkObject(vm, reachable);
+		}
+
+		current = current->parent;
 	}
 }
 
@@ -1852,18 +1856,18 @@ void FreeObject(VM* vm, Object* obj)
 {
 	if(obj->type == OBJ_STRING)
 		free(obj->string.raw);
-	if(obj->type == OBJ_NATIVE)
+	else if(obj->type == OBJ_NATIVE)
 	{
 		if(obj->native.onFree)
 			obj->native.onFree(obj->native.value);
 	}
-	if(obj->type == OBJ_ARRAY)
+	else if (obj->type == OBJ_ARRAY)
 	{
 		free(obj->array.members);
 		obj->array.capacity = 0;
 		obj->array.length = 0;
 	}
-	if(obj->type == OBJ_DICT)
+	else if(obj->type == OBJ_DICT)
 	{
 		/*Object* onGc = DictGet(&obj->dict, "DISPOSED");
 		if(onGc)
@@ -1899,7 +1903,7 @@ void FreeObject(VM* vm, Object* obj)
 	}
 }
 
-void Sweep(VM* vm)
+static void Sweep(VM* vm)
 {
 	Object** obj = &vm->gcHead;
 	while(*obj)
@@ -2046,6 +2050,26 @@ void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)(void*
 	PushObject(vm, obj);
 }
 
+void PushThread(VM* vm, int functionIndex, int nargs)
+{
+	Object* obj = NewObject(vm, OBJ_THREAD);
+	
+	VMThread* thread = obj->thread = emalloc(sizeof(VMThread));
+
+	thread->parent = vm->thread;
+	thread->curFile = NULL;
+	thread->curLine = 0;
+	thread->indirStackSize = 0;
+	thread->stackSize = 0;
+	thread->fp = nargs;
+	thread->pc = vm->functionPcs[functionIndex];
+	thread->numExpandedArgs = 0;
+	thread->retVal = NULL;
+	thread->inExternBody = MINT_FALSE;
+
+	PushObject(vm, obj);
+}
+
 void PushNull(VM* vm)
 {
 	PushObject(vm, &NullObject);
@@ -2109,6 +2133,13 @@ Object* PopNativeObject(VM* vm)
 	return obj;
 }
 
+Object * PopThreadObject(VM * vm)
+{
+	Object* obj = PopObject(vm);
+	if (obj->type != OBJ_THREAD) ErrorExitVM(vm, "Expected thread but received %s\n", ObjectTypeNames[obj->type]);
+	return NULL;
+}
+
 void* PopNative(VM* vm)
 {
 	Object* obj = PopObject(vm);
@@ -2122,6 +2153,12 @@ void* PopNativeOrNull(VM* vm)
 	if(obj->type != OBJ_NATIVE && obj->type != OBJ_NULL) ErrorExitVM(vm, "Expected native pointer or null but received %s\n", ObjectTypeNames[obj->type]);
 	if(obj->type == OBJ_NULL) return NULL;
 	return obj->native.value;
+}
+
+VMThread* PopThread(VM * vm)
+{
+	Object* obj = PopThreadObject(vm);
+	return obj->thread;
 }
 
 void* NativeStackAlloc(VM* vm, size_t size)
@@ -2206,7 +2243,7 @@ void PopIndir(VM* vm)
 {
 	if(vm->thread->indirStackSize <= 0)
 	{
-		vm->thread->pc = -1;
+		vm->thread = vm->thread->parent;
 		return;
 	}
 	
@@ -2254,13 +2291,13 @@ int GetGlobalId(VM* vm, const char* name)
 
 Object* GetGlobal(VM* vm, int id)
 {
-	if(id < 0) return NULL;
+	assert(id >= 0 && id < vm->numGlobals);
 	return vm->thread->stack[id];
 }
 
 void SetGlobal(VM* vm, int id)
 {
-	if(id < 0) return;
+	assert(id >= 0 && id < vm->numGlobals);
 	vm->thread->stack[id] = PopObject(vm);
 }
 
@@ -2334,7 +2371,8 @@ void ExecuteCycle(VM* vm)
 {
 	VMThread* thread = vm->thread;
 
-	if(thread->pc == -1) return;
+	if (!thread) return;
+
 	if(vm->debug)
 		printf("(%s:%i:%i): ", vm->thread->curFile, vm->thread->curLine, vm->thread->pc);
 	
@@ -2695,6 +2733,36 @@ void ExecuteCycle(VM* vm)
 			free(cat);
 		} break;
 
+		case OP_THREAD_RUN:
+		{
+			VMThread* thread = PopThread(vm);
+
+			if (!thread) ErrorExitVM(vm, "Attempted to run deleted thread\n");
+
+			if (vm->debug)
+				printf("thread_run");
+
+			vm->thread = thread;
+		} break;
+
+		case OP_THREAD_YIELD:
+		{
+			if (vm->debug)
+				printf("thread_yield");
+			vm->thread = vm->thread->parent;
+		} break;
+
+		case OP_THREAD_DELETE:
+		{
+			Object* obj = PopThreadObject(vm);
+
+			if (vm->debug)
+				printf("thread_delete");
+			
+			free(obj->thread);
+			obj->thread = NULL;
+		} break;
+
 		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++thread->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExitVM(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
@@ -2760,12 +2828,12 @@ void ExecuteCycle(VM* vm)
 			++thread->pc;
 			Object* obj = PopObject(vm);
 
-			if(obj->type == OBJ_DICT)
+			if (obj->type == OBJ_DICT)
 			{
-				if(obj->meta)
+				if (obj->meta)
 				{
 					Object* negFunc = DictGet(&obj->meta->dict, "NEG");
-					if(negFunc && negFunc->type == OBJ_FUNC)
+					if (negFunc && negFunc->type == OBJ_FUNC)
 					{
 						PushObject(vm, obj);
 						CallFunction(vm, negFunc->func.index, 1);
@@ -2777,8 +2845,10 @@ void ExecuteCycle(VM* vm)
 				else
 					ErrorExitVM(vm, "Invalid negation of dictionary\n");
 			}
-			else
+			else if (obj->type == OBJ_NUMBER)
 				PushNumber(vm, -obj->number);
+			else
+				ErrorExitVM(vm, "Attempted to negate object of type %s\n", ObjectTypeNames[obj->type]);
 		} break;
 		
 		case OP_LOGICAL_NOT:
@@ -3151,7 +3221,7 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("halt\n");
-			thread->pc = -1;
+			vm->thread = NULL;
 		} break;
 		
 		case OP_SETVMDEBUG:
@@ -3214,14 +3284,16 @@ void RunVM(VM* vm)
 			printf("Unhooked external function '%s'\n", vm->externNames[i]);
 	}
 	
+	vm->thread = &vm->mainThread;
+
 	vm->thread->pc = vm->entryPoint;
-	while(vm->thread->pc != -1)
+	while(vm->thread)
 		ExecuteCycle(vm);
 }
 
 void DeleteVM(VM* vm)
 {
-	if(vm->thread->pc != -1) ErrorExitVM(vm, "Attempted to delete a running virtual machine\n");
+	if(vm->thread) ErrorExitVM(vm, "Attempted to delete a running virtual machine\n");
 	ResetVM(vm);
 	free(vm);	
 }

@@ -27,7 +27,8 @@ enum
 	OP_CREATE_ARRAY_BLOCK,
 	OP_PUSH_FUNC,
 	OP_PUSH_DICT,
-	
+	OP_PUSH_THREAD,
+
 	// this was removed because dict literals are handled at compile time
 	//OP_CREATE_DICT_BLOCK,
 	
@@ -59,6 +60,13 @@ enum
 	
 	// concatenate strings
 	OP_CAT,
+
+	OP_THREAD_RUN,		// Switches to the thread on the top of the stack
+						// and it will continue to run until it's stopped
+						// or yielded
+
+	OP_THREAD_YIELD,	// Switches to the parent thread (if there isn't any, then it just stops the vm)
+	OP_THREAD_DELETE,	// Destroys the thread for good (sets it to null in the Object)
 
 	OP_ADD,
 	OP_SUB,
@@ -172,11 +180,14 @@ typedef struct _Object
 #define MAX_CIF_ARGS					32
 #define CIF_STACK_SIZE					4096
 #endif
-#define NATIVE_STACK_SIZE				4096	
+#define NATIVE_STACK_SIZE				4096
 #define VM_BIN_MAGIC					"MINT"
 
 typedef struct _VMThread
 {
+	// NOTE: This thread yields to the parent
+	// If this is null then the program is done
+	struct _VMThread* parent;
 	char inExternBody;
 
 	const char* curFile; // name of the file the produced code is in
@@ -187,10 +198,12 @@ typedef struct _VMThread
 
 	Object* stack[MAX_STACK];
 	int stackSize;
-
+	
+	// NOTE: When pc < 0 (i.e the thread is done working) it will automatically yield
 	int pc, fp;
 	int numExpandedArgs;
 
+	// NOTE: Used for when the thread yields as well (the value yielded is stored here)
 	Object* retVal;
 } VMThread;
 
@@ -284,19 +297,23 @@ Object* PushFunc(VM* vm, int id, Word isExtern, Object* env);
 Object* PushArray(VM* vm, int length);
 Object* PushDict(VM* vm);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
+void PushThread(VM* vm, int functionIndex, int nargs);
 void PushNull(VM* vm);
 
 Object* PopObject(VM* vm);
 double PopNumber(VM* vm);
 const char* PopString(VM* vm);
+Object** PopArray(VM* vm, int* length);
+void* PopNative(VM* vm);
+void* PopNativeOrNull(VM* vm);
+VMThread* PopThread(VM* vm);
+
 Object* PopStringObject(VM* vm);
 Object* PopFuncObject(VM* vm);
-Object** PopArray(VM* vm, int* length);
 Object* PopArrayObject(VM* vm);
 Object* PopDict(VM* vm);
 Object* PopNativeObject(VM* vm);
-void* PopNative(VM* vm);
-void* PopNativeOrNull(VM* vm);
+Object* PopThreadObject(VM* vm);
 
 void* NativeStackAlloc(VM* vm, size_t size);
 

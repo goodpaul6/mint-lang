@@ -45,7 +45,7 @@ unsigned long HashFunction(const char* key)
 	return SuperFastHash(key, strlen(key));
 }
 
-void InternalInitDict(Dict* dict, int capacity)
+static void InternalInitDict(Dict* dict, int capacity)
 {
 	dict->buckets = ecalloc(sizeof(DictNode*), capacity);
 	dict->capacity = capacity;
