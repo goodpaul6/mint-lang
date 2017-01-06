@@ -272,7 +272,7 @@ void Std_Tonumber(VM* vm)
 void Std_Tostring(VM* vm)
 {
 	Object* obj = PopObject(vm);
-	char buf[128];
+	char buf[128] = { 0 };
 	switch(obj->type)
 	{
 		case OBJ_NULL: sprintf(buf, "null"); break;
@@ -282,6 +282,7 @@ void Std_Tostring(VM* vm)
 		case OBJ_FUNC: sprintf(buf, "func %s", obj->func.isExtern ? vm->externNames[obj->func.index] : vm->functionNames[obj->func.index]); break;
 		case OBJ_DICT: sprintf(buf, "dict(%i)", obj->dict.numEntries); break; 
 		case OBJ_NATIVE: sprintf(buf, "native(%x)", (unsigned int)(intptr_t)(obj->native.value)); break;
+		case OBJ_THREAD: sprintf(buf, "thread(%x)", (unsigned int)(intptr_t)(obj->thread)); break;
 	}
 	
 	PushString(vm, buf);
@@ -1366,17 +1367,33 @@ void Std_GetThreadResult(VM* vm)
 
 /* END OF STANDARD LIBRARY */
 
+static void InitThread(VMThread* thread)
+{
+	thread->curLine = -1;
+	thread->curFile = NULL;
+
+	thread->stackSize = 0;
+	thread->indirStackSize = 0;
+	thread->pc = 0;
+	thread->fp = 0;
+	thread->numExpandedArgs = 0;
+	thread->retVal = NULL;
+	thread->parent = NULL;
+
+	memset(thread->stack, 0, sizeof(thread->stack));
+}
+
 void InitVM(VM* vm)
 {
 	NullObject.type = OBJ_NULL;
+
+	vm->inExternBody = MINT_FALSE;
 
 	vm->program = NULL;
 	vm->programLength = 0;
 	
 	vm->entryPoint = 0;
 	
-	vm->globalNames = NULL;
-
 	vm->numFunctions = 0;
 	vm->functionNames = NULL;
 	vm->functionHasEllipsis = NULL;
@@ -1404,23 +1421,14 @@ void InitVM(VM* vm)
 	vm->maxObjectsUntilGc = INIT_GC_THRESH;
 	
 	vm->numGlobals = 0;
-	
+	vm->globalNames = NULL;
+	vm->globals = NULL;
+
 	vm->thread = NULL;
 
 	VMThread* thread = &vm->mainThread;
 
-	thread->curLine = -1;
-	thread->curFile = NULL;
-
-	thread->inExternBody = MINT_FALSE;
-	thread->stackSize = 0;
-	thread->indirStackSize = 0;
-	thread->pc = -1;
-	thread->fp = 0;
-	thread->numExpandedArgs = 0;
-	thread->retVal = NULL;
-
-	memset(thread->stack, 0, sizeof(thread->stack));
+	InitThread(thread);
 
 	vm->numExterns = 0;
 	vm->externs = NULL;
@@ -1437,6 +1445,7 @@ VM* NewVM()
 	return vm;
 }
 
+static void FreeObject(VM* vm, Object* obj);
 void ResetVM(VM* vm)
 {
 	if(vm->thread) ErrorExitVM(vm, "Attempted to reset a running virtual machine\n");
@@ -1487,16 +1496,28 @@ void ResetVM(VM* vm)
 	if(vm->externs)
 		free(vm->externs);
 	
-	vm->thread->stackSize = 0;
-	CollectGarbage(vm);
-	
+	if (vm->globals)
+		free(vm->globals);
+
 	Object* obj = vm->freeHead;
 	Object* next = NULL;
 	
 	while(obj)
 	{
 		next = obj->next;
+		FreeObject(vm, obj);
 		if(obj != &NullObject) free(obj);
+		obj = next;
+	}
+
+	obj = vm->gcHead;
+	next = NULL;
+
+	while (obj)
+	{
+		next = obj->next;
+		FreeObject(vm, obj);
+		if (obj != &NullObject) free(obj);
 		obj = next;
 	}
 	
@@ -1540,7 +1561,7 @@ void LoadBinaryFile(VM* vm, FILE* in)
 
 	if (strcmp(magic, expectedMagic) != 0)
 		ErrorExitVM(vm, "Invalid binary file.\n");
-
+	
 	int entryPoint;
 	fread(&entryPoint, sizeof(int), 1, in);
 	
@@ -1562,6 +1583,9 @@ void LoadBinaryFile(VM* vm, FILE* in)
 	
 	if (numGlobals > 0)
 	{
+		vm->globals = emalloc(sizeof(Object*) * numGlobals);
+		memset(vm->globals, 0, sizeof(Object*) * numGlobals);
+
 		vm->globalNames = emalloc(sizeof(char*) * numGlobals);
 
 		for (int i = 0; i < numGlobals; ++i)
@@ -1837,6 +1861,9 @@ void MarkObject(VM* vm, Object* obj)
 
 void MarkAll(VM* vm)
 {
+	for (int i = 0; i < vm->numGlobals; ++i)
+		MarkObject(vm, vm->globals[i]);
+
 	VMThread* current = vm->thread;
 
 	while (current)
@@ -1844,16 +1871,17 @@ void MarkAll(VM* vm)
 		for (int i = 0; i < current->stackSize; ++i)
 		{
 			Object* reachable = current->stack[i];
-			if (reachable)
-				MarkObject(vm, reachable);
+			MarkObject(vm, reachable);
 		}
 
 		current = current->parent;
 	}
 }
 
-void FreeObject(VM* vm, Object* obj)
+static void FreeObject(VM* vm, Object* obj)
 {
+	assert(obj);
+
 	if(obj->type == OBJ_STRING)
 		free(obj->string.raw);
 	else if(obj->type == OBJ_NATIVE)
@@ -2056,16 +2084,9 @@ void PushThread(VM* vm, int functionIndex, int nargs)
 	
 	VMThread* thread = obj->thread = emalloc(sizeof(VMThread));
 
+	InitThread(thread);
+
 	thread->parent = vm->thread;
-	thread->curFile = NULL;
-	thread->curLine = 0;
-	thread->indirStackSize = 0;
-	thread->stackSize = 0;
-	thread->fp = nargs;
-	thread->pc = vm->functionPcs[functionIndex];
-	thread->numExpandedArgs = 0;
-	thread->retVal = NULL;
-	thread->inExternBody = MINT_FALSE;
 
 	PushObject(vm, obj);
 }
@@ -2195,12 +2216,12 @@ int ReadInteger(VM* vm)
 
 void SetLocal(VM* vm, int index, Object* value)
 {
-	vm->thread->stack[vm->thread->fp + index + vm->numGlobals] = value;
+	vm->thread->stack[vm->thread->fp + index] = value;
 }
 
 Object* GetLocal(VM* vm, int index)
 {
-	return vm->thread->stack[vm->thread->fp + index + vm->numGlobals];
+	return vm->thread->stack[vm->thread->fp + index];
 }
 
 char* ReadStringFromStdin()
@@ -2234,7 +2255,7 @@ void PushIndir(VM* vm, int nargs)
 	vm->thread->indirStack[vm->thread->indirStackSize++] = vm->thread->pc;
 	vm->thread->indirStack[vm->thread->indirStackSize++] = vm->nativeStackSize;
 	
-	vm->thread->fp = vm->thread->stackSize - vm->numGlobals;
+	vm->thread->fp = vm->thread->stackSize;
 
 	vm->numExpandedArgs = 0;
 }
@@ -2252,7 +2273,7 @@ void PopIndir(VM* vm)
 	if(vm->debug)
 		printf("previous fp: %i\n", vm->thread->fp);
 
-	vm->thread->stackSize = vm->thread->fp + vm->numGlobals;
+	vm->thread->stackSize = vm->thread->fp;
 	
 	vm->nativeStackSize = vm->thread->indirStack[--vm->thread->indirStackSize];
 	vm->thread->pc = vm->thread->indirStack[--vm->thread->indirStackSize];
@@ -2292,13 +2313,13 @@ int GetGlobalId(VM* vm, const char* name)
 Object* GetGlobal(VM* vm, int id)
 {
 	assert(id >= 0 && id < vm->numGlobals);
-	return vm->thread->stack[id];
+	return vm->globals[id];
 }
 
 void SetGlobal(VM* vm, int id)
 {
 	assert(id >= 0 && id < vm->numGlobals);
-	vm->thread->stack[id] = PopObject(vm);
+	vm->globals[id] = PopObject(vm);
 }
 
 /* ALL OF THIS IS TERRIBLE; ABSOLUTELY HORRIBLE */
@@ -2375,9 +2396,6 @@ void ExecuteCycle(VM* vm)
 
 	if(vm->debug)
 		printf("(%s:%i:%i): ", vm->thread->curFile, vm->thread->curLine, vm->thread->pc);
-	
-	if(thread->stackSize < vm->numGlobals)
-		printf("Global(s) were removed from the stack!\n");
 	
 	switch(vm->program[thread->pc])
 	{

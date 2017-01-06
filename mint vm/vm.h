@@ -188,7 +188,6 @@ typedef struct _VMThread
 	// NOTE: This thread yields to the parent
 	// If this is null then the program is done
 	struct _VMThread* parent;
-	char inExternBody;
 
 	const char* curFile; // name of the file the produced code is in
 	int curLine;		 // line number in the file from where this code was written
@@ -244,7 +243,8 @@ typedef struct _VM
 
 	char** globalNames;
 	int numGlobals;
-	
+	Object** globals;
+
 	char** externNames;
 	ExternFunction* externs;
 	int numExterns;
