@@ -2,7 +2,7 @@
 
 func run()
 	var values = [0, 1, 2]
-	var f = lam (i)
+	var f = lam (i : number)
 		write(values[i])
 	end
 	

@@ -35,6 +35,7 @@ struct _Expr;
 
 typedef enum
 {
+	BOOL,
 	NUMBER,
 	STRING,
 	ARRAY,
@@ -234,7 +235,9 @@ enum
 	TOK_HAS = -38,
 	TOK_CAT = -39,
 	TOK_MACRO = -40,
-	TOK_OPERATOR = -41
+	TOK_OPERATOR = -41,
+	TOK_TRUE = -42,
+	TOK_FALSE = -43
 };
 
 extern size_t LexemeCapacity;
@@ -247,6 +250,7 @@ int GetToken(FILE* in);
 
 typedef enum
 {
+	EXP_BOOL,
 	EXP_NUMBER,
 	EXP_STRING,
 	EXP_IDENT,
@@ -295,6 +299,7 @@ typedef struct _Expr
 	
 	union
 	{
+		char boolean;
 		ConstDecl* constDecl; // NOTE: for both EXP_NUMBER and EXP_STRING
 		struct { VarDecl* varDecl; char name[MAX_ID_NAME_LENGTH]; } varx; // NOTE: for both EXP_IDENT and EXP_VAR
 		struct { struct _Expr* args[MAX_ARGS]; int numArgs; struct _Expr* func; } callx;

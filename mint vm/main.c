@@ -1,6 +1,7 @@
 // lang.c -- a language which compiles to mint vm bytecode
 /* 
  * TODO
+ * - Allow for arguments to be passed to thread functions
  * - window
  * - multiple stacks:
  * 		- have a stack for storing numerical values
@@ -49,94 +50,120 @@ int main(int argc, char* argv[])
 
 	for(int i = 1; i < argc; ++i)
 	{
-		if (strcmp(argv[i], "-o") == 0)
-			outPath = argv[++i];
-		else if (strcmp(argv[i], "-c") == 0)
-			compile = 1;
-		else if(strcmp(argv[i], "-g") == 0)
-			ProduceDebugInfo = 1;
-		else if(strcmp(argv[i], "-l") == 0)
-		{		
-			/*FILE* in = fopen(argv[++i], "rb");
-			if(!in)
-			{
-				char buf[256];
-				strcpy(buf, StandardLibSearchPath);
-				strcat(buf, argv[i]);
-				in = fopen(buf, "rb");
-				if(!in)
-					ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
-			}
-			
-			if(!exprHead)
-			{
-				exprHead = ParseBinaryFile(in, argv[i]);
-				exprCurrent = exprHead;
-			}
-			else
-			{
-				exprCurrent->next = ParseBinaryFile(in, argv[i]);
-				exprCurrent = exprCurrent->next;
-			}
-			
-			fclose(in);*/
-			
-			// alright, deprecating binary file linking for now
-			printf("cannot link binary files...\n");
-		}
-		else if(compile)
+		if (strcmp(argv[i], "-c") == 0)
 		{
-			FILE* in = fopen(argv[i], "r");
-			if(!in)
-			{
-				char buf[256];
-				strcpy(buf, StandardSourceSearchPath);
-				strcat(buf, argv[i]);
-				in = fopen(buf, "r");
-				
-				if(!in)
-					ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
-			}
+			compile = 1;
+			continue;
+		}
 
-			LineNumber = 1;
-			FileName = argv[i];
-			
-			GetNextToken(in);
-			
-			while(CurTok != TOK_EOF)
+		if (compile)
+		{
+			if (strcmp(argv[i], "-o") == 0)
+				outPath = argv[++i];
+			else if (strcmp(argv[i], "-g") == 0)
+				ProduceDebugInfo = 1;
+			else if (strcmp(argv[i], "-l") == 0)
 			{
+				/*FILE* in = fopen(argv[++i], "rb");
+				if(!in)
+				{
+					char buf[256];
+					strcpy(buf, StandardLibSearchPath);
+					strcat(buf, argv[i]);
+					in = fopen(buf, "rb");
+					if(!in)
+						ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+				}
+
 				if(!exprHead)
 				{
-					exprHead = ParseExpr(in);
+					exprHead = ParseBinaryFile(in, argv[i]);
 					exprCurrent = exprHead;
 				}
 				else
 				{
-					exprCurrent->next = ParseExpr(in);
+					exprCurrent->next = ParseBinaryFile(in, argv[i]);
 					exprCurrent = exprCurrent->next;
 				}
+
+				fclose(in);*/
+
+				// alright, deprecating binary file linking for now
+				printf("cannot link binary files...\n");
 			}
-			
-			ResetLex = 1;
-			fclose(in);
+			else
+			{
+				FILE* in = fopen(argv[i], "r");
+				if (!in)
+				{
+					char buf[256];
+					strcpy(buf, StandardSourceSearchPath);
+					strcat(buf, argv[i]);
+					in = fopen(buf, "r");
+
+					if (!in)
+						ErrorExit("Cannot open file '%s' for reading\n", argv[i]);
+				}
+
+				LineNumber = 1;
+				FileName = argv[i];
+
+				GetNextToken(in);
+
+				while (CurTok != TOK_EOF)
+				{
+					if (!exprHead)
+					{
+						exprHead = ParseExpr(in);
+						exprCurrent = exprHead;
+					}
+					else
+					{
+						exprCurrent->next = ParseExpr(in);
+						exprCurrent = exprCurrent->next;
+					}
+				}
+
+				ResetLex = 1;
+				fclose(in);
+			}
 		}
 		else
 		{
 			if (argc >= 2)
 			{
-				FILE* bin = fopen(argv[1], "rb");
+				const char* binName = NULL;
+
+				char debugFlag = 0;
+				for (int i = 1; i < argc; ++i)
+				{
+					if (strcmp(argv[i], "-g") == 0)
+						debugFlag = 1;
+					else
+					{
+						if (binName)
+						{
+							fprintf(stderr, "You supplied an extra binary file argument '%s'. Only specify one binary file to execute.\n", argv[i]);
+							return 1;
+						}
+
+						binName = argv[i];
+					}
+				}
+
+				if (!binName)
+				{
+					fprintf(stderr, "No binary file supplied.\n");
+					return 1;
+				}
+
+				FILE* bin = fopen(binName, "rb");
 				if (!bin)
 				{
 					fprintf(stderr, "Failed to open file '%s' for execution\n", argv[1]);
 					return 1;
 				}
 
-				char debugFlag = 0;
-				for (int i = 2; i < argc; ++i)
-				{
-					if (strcmp(argv[i], "-g") == 0)
-						debugFlag = 1;
-				}
 				VM* vm = NewVM();
 
 				vm->debug = debugFlag;
@@ -166,7 +193,7 @@ int main(int argc, char* argv[])
 
 		ResolveTypesExprList(exprHead);
 
-		ExecuteMacros(&exprHead);
+		//ExecuteMacros(&exprHead);
 
 		CompileExprList(exprHead);
 		AppendCode(OP_HALT);

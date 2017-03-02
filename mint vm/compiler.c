@@ -5,6 +5,11 @@ void DebugExpr(Expr* exp)
 {
 	switch(exp->type)
 	{
+		case EXP_BOOL:
+		{
+			printf("%s", exp->boolean ? "true" : "false");
+		} break;
+
 		case EXP_NUMBER:
 		{
 			printf("%g", exp->constDecl->number);
@@ -219,7 +224,10 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		if(exp->callx.numArgs != 1)
 			ErrorExitE(exp, "Intrinsic 'len' only takes 1 argument\n");
 		CompileValueExpr(exp->callx.args[0]);
+		
 		AppendCode(OP_LENGTH);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "typename") == 0)
@@ -228,8 +236,10 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			ErrorExitE(exp, "Intrinsic 'typename' only takes 1 argument\n");
 		
 		const TypeHint* type = InferTypeFromExpr(exp->callx.args[0]);
+
 		AppendCode(OP_PUSH_STRING);
 		AppendInt(RegisterString(HintString(type))->index);
+		AppendCode(OP_SET_RETVAL);
 		
 		return 1;
 	}
@@ -248,24 +258,32 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	{
 		if(exp->callx.numArgs != 0)
 			ErrorExitE(exp, "Intrinsic 'read' takes no arguments\n");
+
 		AppendCode(OP_READ);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "push") == 0)
 	{
 		if(exp->callx.numArgs != 2)
 			ErrorExitE(exp, "Intrinsic 'push' only takes 2 arguments\n");
+
 		CompileValueExpr(exp->callx.args[1]);
 		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_PUSH);
+
 		return 1;
 	}
 	else if(strcmp(name, "pop") == 0)
 	{
 		if(exp->callx.numArgs != 1)
-			ErrorExitE(exp, "Intrinsic 'push' only takes 1 argument\n");
+			ErrorExitE(exp, "Intrinsic 'pop' only takes 1 argument\n");
+		
 		CompileValueExpr(exp->callx.args[0]);
 		AppendCode(OP_ARRAY_POP);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "clear") == 0)
@@ -290,6 +308,8 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		}
 	
 		AppendCode(OP_CREATE_ARRAY);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "assert_func_exists") == 0)
@@ -337,21 +357,25 @@ char CompileIntrinsic(Expr* exp, const char* name)
 	else if(strcmp(name, "rawget") == 0)
 	{
 		if(exp->callx.numArgs != 2)
-			ErrorExitE(exp, "Intrinsic 'dict_get' takes 2 arguments\n");
+			ErrorExitE(exp, "Intrinsic 'rawget' takes 2 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
 		AppendCode(OP_DICT_GET_RAW);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "rawset") == 0)
 	{
 		if(exp->callx.numArgs != 3)
-			ErrorExitE(exp, "Intrinsic 'dict_set' takes 3 arguments\n");
+			ErrorExitE(exp, "Intrinsic 'rawset' takes 3 arguments\n");
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
+
 		AppendCode(OP_DICT_SET_RAW);
+		
 		return 1;
 	}
 	else if(strcmp(name, "expand") == 0)
@@ -361,7 +385,9 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		
 		for(int i = exp->callx.numArgs - 1; i >= 0; --i)
 			CompileValueExpr(exp->callx.args[i]);
+
 		AppendCode(OP_EXPAND_ARRAY);
+		
 		return 1;
 	}
 	else if(strcmp(name, "getargs") == 0)
@@ -382,22 +408,30 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			if(!arg->varx.varDecl) ErrorExitE(arg, "Undeclared identifier as argument to 'getargs'\n");
 			AppendInt(arg->varx.varDecl->index - 1);
 		}
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
-	else if(strcmp(name, "get_file_name") == 0)
+	else if(strcmp(name, "_file_name") == 0)
 	{
 		if(exp->callx.numArgs != 0)
-			ErrorExitE(exp, "Intrinsic 'getfilename' takes no arguments\n");
+			ErrorExitE(exp, "Intrinsic '_file_name' takes no arguments\n");
+
 		AppendCode(OP_PUSH_STRING);
 		AppendInt(RegisterString(exp->file)->index);
+		AppendCode(OP_SET_RETVAL); 
+		
 		return 1;
 	}
-	else if(strcmp(name, "get_line_number") == 0)
+	else if(strcmp(name, "_line_number") == 0)
 	{
 		if(exp->callx.numArgs != 0)
-			ErrorExitE(exp, "Intrinsic 'getlinenumber' takes no arguments\n");
+			ErrorExitE(exp, "Intrinsic '_line_number' takes no arguments\n");
+		
 		AppendCode(OP_PUSH_NUMBER);
 		AppendInt(RegisterNumber(exp->line)->index);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "exp") == 0)
@@ -421,6 +455,9 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		
 		Expr* tree = exp->callx.args[0];
 		ExposeExpr(tree);
+
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "filestring") == 0)
@@ -448,6 +485,7 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		
 		AppendCode(OP_PUSH_STRING);
 		AppendInt(RegisterString(string)->index);
+		AppendCode(OP_SET_RETVAL);
 		
 		return 1;
 	}
@@ -460,6 +498,8 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			CompileValueExpr(exp->callx.args[i]);
 
 		AppendCode(OP_SET_META);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "getmeta") == 0)
@@ -470,6 +510,8 @@ char CompileIntrinsic(Expr* exp, const char* name)
 		CompileValueExpr(exp->callx.args[0]);
 
 		AppendCode(OP_GET_META);
+		AppendCode(OP_SET_RETVAL);
+
 		return 1;
 	}
 	else if(strcmp(name, "typemembers") == 0)
@@ -492,6 +534,66 @@ char CompileIntrinsic(Expr* exp, const char* name)
 			
 		AppendCode(OP_CREATE_ARRAY_BLOCK);
 		AppendInt(type->user.numElements);
+		AppendCode(OP_SET_RETVAL);
+		
+		return 1;
+	}
+	else if (strcmp(name, "thread") == 0)
+	{
+		if (exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'thread' takes 1 argument.\n");
+		
+		TypeHint* type = InferTypeFromExpr(exp->callx.args[0]);
+
+		if (type->hint != FUNC)
+			ErrorExitE(exp->callx.args[0], "Expected function as first argument to 'create_thread' but received", HintString(type));
+
+		CompileValueExpr(exp->callx.args[0]);
+		AppendCode(OP_PUSH_THREAD);
+		AppendCode(OP_SET_RETVAL);
+
+		return 1;
+	}
+	else if (strcmp(name, "delete_thread") == 0)
+	{
+		if (exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'delete_thread' takes 1 argument.\n");
+
+		CompileValueExpr(exp->callx.args[0]);
+		AppendCode(OP_THREAD_DELETE);
+
+		return 1;
+	}
+	else if (strcmp(name, "run_thread") == 0)
+	{
+		if (exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'run_thread' takes 1 argument.\n");
+
+		CompileValueExpr(exp->callx.args[0]);
+		AppendCode(OP_THREAD_RUN);
+		// When the thread yields, the owner thread will automatically assume control and the retval would be set
+		// to the yielded value
+
+		return 1;
+	}
+	else if (strcmp(name, "yield") == 0)
+	{
+		if (exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'yield' takes 1 argument.\n");
+		
+		CompileValueExpr(exp->callx.args[0]);
+		AppendCode(OP_THREAD_YIELD);
+		
+		return 1;
+	}
+	else if(strcmp(name, "is_thread_done") == 0)
+	{
+		if(exp->callx.numArgs != 1)
+			ErrorExitE(exp, "Intrinsic 'is_thread_done' takes 1 argument.\n");
+
+		CompileValueExpr(exp->callx.args[0]);
+		AppendCode(OP_THREAD_DONE);
+		AppendCode(OP_SET_RETVAL);
 		
 		return 1;
 	}
@@ -682,8 +784,14 @@ static void CompileCallExpr(Expr* exp, char expectReturn)
 		
 		if(decl)
 			CompileStaticCallExpr(exp, decl, expectReturn, numExpansions);
-		else if(!CompileIntrinsic(exp, exp->callx.func->varx.name))
-			CompileDynamicCallExpr(exp, expectReturn, numExpansions);
+		else
+		{
+			char res = CompileIntrinsic(exp, exp->callx.func->varx.name);
+			if(!res)
+				CompileDynamicCallExpr(exp, expectReturn, numExpansions);
+			else if(expectReturn)
+				AppendCode(OP_GET_RETVAL);
+		}
 	}
 	else
 		CompileDynamicCallExpr(exp, expectReturn, numExpansions);
@@ -752,6 +860,14 @@ void CompileValueExpr(Expr* exp)
 	
 	switch(exp->type)
 	{
+		case EXP_BOOL:
+		{
+			if (exp->boolean)
+				AppendCode(OP_PUSH_TRUE);
+			else
+				AppendCode(OP_PUSH_FALSE);
+		} break;
+
 		case EXP_NUMBER: case EXP_STRING:
 		{
 			AppendCode(exp->constDecl->type == CONST_NUM ? OP_PUSH_NUMBER : OP_PUSH_STRING);

@@ -14,11 +14,14 @@
 #include <dlfcn.h>
 #endif
 
-Object NullObject;
+Object NullObject = { .type = OBJ_NULL };
+Object TrueObject = { .type = OBJ_BOOL, .boolean = MINT_TRUE };
+Object FalseObject = { .type = OBJ_BOOL, .boolean = MINT_FALSE };
 
 static char* ObjectTypeNames[] =
 {
 	"null",
+	"bool",
 	"number",
 	"string",
 	"array",
@@ -39,9 +42,15 @@ static void* _emalloc(size_t size, int line)
 
 static void* ecalloc(size_t size, size_t nmemb)
 {
+#ifndef TINY_MEM_CHECK
 	void* mem = calloc(size, nmemb);
 	if(!mem) { fprintf(stderr, "Virtual machine ran out of memory!\n"); exit(1); }
 	return mem;
+#else
+	void* mem = malloc(size * nmemb);
+	memset(mem, 0, size * nmemb);
+	return mem;
+#endif
 }
 
 static void* erealloc(void* mem, size_t newSize)
@@ -141,53 +150,55 @@ void Std_Atan2(VM* vm)
 
 void WriteObject(VM* vm, Object* top)
 {
-	if(top->type == OBJ_NUMBER)
+	if (top->type == OBJ_NUMBER)
 		printf("%g", top->number);
-	else if(top->type == OBJ_STRING)
+	else if (top->type == OBJ_STRING)
 		printf("%s", top->string.raw);
-	else if(top->type == OBJ_NATIVE)
+	else if (top->type == OBJ_NATIVE)
 		printf("native pointer (0x%x)", (unsigned int)(intptr_t)(top->native.value));
-	else if(top->type == OBJ_FUNC)
+	else if (top->type == OBJ_FUNC)
 	{
-		if(top->func.isExtern)
+		if (top->func.isExtern)
 			printf("extern %s", vm->externNames[top->func.index]);
 		else
 			printf("func %s", vm->functionNames[top->func.index]);
 	}
-	else if(top->type == OBJ_ARRAY)
+	else if (top->type == OBJ_ARRAY)
 	{
 		printf("[");
-		for(int i = 0; i < top->array.length; ++i)
-		{	
+		for (int i = 0; i < top->array.length; ++i)
+		{
 			WriteObject(vm, top->array.members[i]);
-			if(i + 1 < top->array.length)
+			if (i + 1 < top->array.length)
 				printf(",");
 		}
 		printf("]");
 	}
-	else if(top->type == OBJ_DICT)
+	else if (top->type == OBJ_DICT)
 	{
 		printf("{ ");
-		for(int i = 0; i < top->dict.active.length; ++i)
+		for (int i = 0; i < top->dict.active.length; ++i)
 		{
 			DictNode* node = top->dict.buckets[top->dict.active.data[i]];
-			
-			while(node)
+
+			while (node)
 			{
 				printf("%s = ", node->key);
 				WriteObject(vm, node->value);
-				
-				if(node->next || (i + 1 < top->dict.active.length))
+
+				if (node->next || (i + 1 < top->dict.active.length))
 					printf(", ");
 				node = node->next;
 			}
 		}
 		printf(" }");
 	}
-	else if(top->type == OBJ_THREAD)
+	else if (top->type == OBJ_THREAD)
 		printf("thread (0x%x)", (unsigned int)(intptr_t)(top->thread));
-	else if(top->type == OBJ_NULL)
+	else if (top->type == OBJ_NULL)
 		printf("null");
+	else if (top->type == OBJ_BOOL)
+		printf("%s", top->boolean ? "true" : "false");
 }
 
 void Std_Printf(VM* vm)
@@ -283,6 +294,7 @@ void Std_Tostring(VM* vm)
 		case OBJ_DICT: sprintf(buf, "dict(%i)", obj->dict.numEntries); break; 
 		case OBJ_NATIVE: sprintf(buf, "native(%x)", (unsigned int)(intptr_t)(obj->native.value)); break;
 		case OBJ_THREAD: sprintf(buf, "thread(%x)", (unsigned int)(intptr_t)(obj->thread)); break;
+		case OBJ_BOOL: sprintf(buf, "%s", obj->boolean ? "true" : "false"); break;
 	}
 	
 	PushString(vm, buf);
@@ -1505,8 +1517,10 @@ void ResetVM(VM* vm)
 	while(obj)
 	{
 		next = obj->next;
-		FreeObject(vm, obj);
-		if(obj != &NullObject) free(obj);
+		// No need to call FreeObject since the object data has already been free (it's in the free list after all)
+		if(obj != &NullObject &&
+		   obj != &TrueObject &&
+		   obj != &FalseObject) free(obj);
 		obj = next;
 	}
 
@@ -1516,8 +1530,12 @@ void ResetVM(VM* vm)
 	while (obj)
 	{
 		next = obj->next;
+		
 		FreeObject(vm, obj);
-		if (obj != &NullObject) free(obj);
+
+		if (obj != &NullObject &&
+			obj != &TrueObject &&
+			obj != &FalseObject) free(obj);
 		obj = next;
 	}
 	
@@ -1984,8 +2002,8 @@ Object* NewObject(VM* vm, ObjectType type)
 		printf("creating object: %s\n", ObjectTypeNames[type]);
 	
 	Object* obj;
-	if(!vm->freeHead)
-		obj = emalloc(sizeof(Object));
+	if (!vm->freeHead)
+		obj = ecalloc(sizeof(Object), 1);
 	else
 	{
 		obj = vm->freeHead;
@@ -1993,8 +2011,7 @@ Object* NewObject(VM* vm, ObjectType type)
 	}
 	
 	obj->type = type;
-	obj->marked = MINT_FALSE;
-	
+
 	obj->next = vm->gcHead;
 	vm->gcHead = obj;
 	
@@ -2005,14 +2022,28 @@ Object* NewObject(VM* vm, ObjectType type)
 
 void PushObject(VM* vm, Object* obj)
 {
+	assert(obj);
 	if(vm->thread->stackSize == MAX_STACK) ErrorExitVM(vm, "Stack overflow!\n");
 	vm->thread->stack[vm->thread->stackSize++] = obj;
+}
+
+void PushBool(VM* vm, char value)
+{
+	if (value) PushObject(vm, &TrueObject);
+	else PushObject(vm, &FalseObject);
 }
 
 Object* PopObject(VM* vm)
 {
 	if(vm->thread->stackSize == vm->numGlobals) ErrorExitVM(vm, "Stack underflow!\n");
 	return vm->thread->stack[--vm->thread->stackSize];
+}
+
+char PopBool(VM* vm)
+{
+	Object* obj = PopObject(vm);
+	if (obj->type != OBJ_BOOL) ErrorExitVM(vm, "Expected bool but received %s\n", ObjectTypeNames[obj->type]);
+	return obj->boolean;
 }
 
 void PushNumber(VM* vm, double value)
@@ -2078,15 +2109,23 @@ void PushNative(VM* vm, void* value, void (*onFree)(void*), void (*onMark)(void*
 	PushObject(vm, obj);
 }
 
-void PushThread(VM* vm, int functionIndex, int nargs)
+void PushThread(VM* vm, Object* funcObj)
 {
 	Object* obj = NewObject(vm, OBJ_THREAD);
-	
+
 	VMThread* thread = obj->thread = emalloc(sizeof(VMThread));
 
 	InitThread(thread);
 
 	thread->parent = vm->thread;
+	thread->pc = vm->functionPcs[funcObj->func.index];
+	
+	if (funcObj->func.env)
+	{
+		thread->fp = 1;
+		thread->stackSize = 1;
+		thread->stack[0] = funcObj->func.env;
+	}
 
 	PushObject(vm, obj);
 }
@@ -2154,11 +2193,11 @@ Object* PopNativeObject(VM* vm)
 	return obj;
 }
 
-Object * PopThreadObject(VM * vm)
+Object* PopThreadObject(VM * vm)
 {
 	Object* obj = PopObject(vm);
 	if (obj->type != OBJ_THREAD) ErrorExitVM(vm, "Expected thread but received %s\n", ObjectTypeNames[obj->type]);
-	return NULL;
+	return obj;
 }
 
 void* PopNative(VM* vm)
@@ -2246,6 +2285,17 @@ char* ReadStringFromStdin()
 	return estrdup(buf);
 }
 
+static void YieldCurrentThread(VM* vm)
+{
+	// NOTE: OP_THREAD_YIELD pops an object off the stack and
+	// sets the ret val to it, then calls this function
+	// Point is, the retval stores the yielded value
+
+	Object* obj = vm->thread->retVal;
+	vm->thread = vm->thread->parent;
+	vm->thread->retVal = obj;
+}
+
 void PushIndir(VM* vm, int nargs)
 {
 	if(vm->thread->indirStackSize + 4 >= MAX_INDIR) ErrorExitVM(vm, "Imminent callstack overlflow\n");
@@ -2264,6 +2314,13 @@ void PopIndir(VM* vm)
 {
 	if(vm->thread->indirStackSize <= 0)
 	{
+		// NOTE: This indicates that the thread has now completed execution
+		vm->thread->pc = -1;
+
+		// NOTE: Propogate the returned value, if any
+		if (vm->thread->parent)
+			vm->thread->parent->retVal = vm->thread->retVal;
+		
 		vm->thread = vm->thread->parent;
 		return;
 	}
@@ -2304,7 +2361,7 @@ int GetGlobalId(VM* vm, const char* name)
 	for(int i = 0; i < vm->numGlobals; ++i)
 	{
 		if(strcmp(vm->globalNames[i], name) == 0)
-			return vm->numGlobals - i - 1;
+			return i;
 	}
 	
 	return -1;
@@ -2409,6 +2466,15 @@ void ExecuteCycle(VM* vm)
 			else
 				PushObject(vm, &NullObject);
 		} break;
+
+		case OP_SET_RETVAL:
+		{
+			if (vm->debug)
+				printf("set_retval\n");
+			++thread->pc;
+
+			thread->retVal = PopObject(vm);
+		} break;
 		
 		case OP_PUSH_NULL:
 		{
@@ -2417,7 +2483,23 @@ void ExecuteCycle(VM* vm)
 			++thread->pc;
 			PushObject(vm, &NullObject);
 		} break;
+
+		case OP_PUSH_TRUE:
+		{
+			if (vm->debug)
+				printf("push_true\n");
+			++thread->pc;
+			PushBool(vm, MINT_TRUE);
+		} break;
 		
+		case OP_PUSH_FALSE:
+		{
+			if (vm->debug)
+				printf("push_false\n");
+			++thread->pc;
+			PushBool(vm, MINT_FALSE);
+		} break;
+
 		case OP_PUSH_NUMBER:
 		{
 			++thread->pc;
@@ -2458,6 +2540,18 @@ void ExecuteCycle(VM* vm)
 				printf("push_dict\n");
 			++thread->pc;
 			PushDict(vm);
+		} break;
+
+		case OP_PUSH_THREAD:
+		{
+			if (vm->debug)
+				printf("push_thread\n");
+			++thread->pc;
+
+			Object* obj = PopFuncObject(vm);
+			if (obj->func.isExtern)
+				ErrorExitVM(vm, "Expected function but received extern %s instead\n", vm->externNames[obj->func.index]);
+			PushThread(vm, obj);
 		} break;
 
 		/* REMOVED: see header
@@ -2753,8 +2847,8 @@ void ExecuteCycle(VM* vm)
 
 		case OP_THREAD_RUN:
 		{
+			++thread->pc;
 			VMThread* thread = PopThread(vm);
-
 			if (!thread) ErrorExitVM(vm, "Attempted to run deleted thread\n");
 
 			if (vm->debug)
@@ -2767,11 +2861,27 @@ void ExecuteCycle(VM* vm)
 		{
 			if (vm->debug)
 				printf("thread_yield");
-			vm->thread = vm->thread->parent;
+			++thread->pc;
+			// NOTE: yields value to the parent thread
+			Object* obj = PopObject(vm);
+
+			vm->thread->retVal = obj;
+			YieldCurrentThread(vm);
+		} break;
+
+		case OP_THREAD_DONE:
+		{
+			if (vm->debug)
+				printf("thread_done");
+			++thread->pc;
+
+			VMThread* t = PopThread(vm);
+			PushBool(vm, t->pc < 0);
 		} break;
 
 		case OP_THREAD_DELETE:
 		{
+			++thread->pc;
 			Object* obj = PopThreadObject(vm);
 
 			if (vm->debug)
@@ -2782,6 +2892,7 @@ void ExecuteCycle(VM* vm)
 		} break;
 
 		#define BIN_OP_TYPE(op, operator, ty) case OP_##op: { ++thread->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushNumber(vm, (ty)a->number operator (ty)b->number); else ErrorExitVM(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
+		#define REL_OP(op, operator) case OP_##op: { ++thread->pc; if(vm->debug) printf("%s\n", #op); Object* b = PopObject(vm); Object* a = PopObject(vm); { if(a->type != OBJ_NUMBER) CallOverloadedOperator(vm, #op, a, b); else if(b->type == OBJ_NUMBER) PushBool(vm, a->number operator b->number); else ErrorExitVM(vm, "Invalid binary operation between %s and %s\n", ObjectTypeNames[a->type], ObjectTypeNames[b->type]); } } break;
 		#define BIN_OP(op, operator) BIN_OP_TYPE(op, operator, double)
 		
 		BIN_OP(ADD, +)
@@ -2791,15 +2902,15 @@ void ExecuteCycle(VM* vm)
 		BIN_OP_TYPE(MOD, %, long)
 		BIN_OP_TYPE(OR, |, long)
 		BIN_OP_TYPE(AND, &, long)
-		BIN_OP(LT, <)
-		BIN_OP(LTE, <=)
-		BIN_OP(GT, >)
-		BIN_OP(GTE, >=)
+		REL_OP(LT, <)
+		REL_OP(LTE, <=)
+		REL_OP(GT, >)
+		REL_OP(GTE, >=)
 		BIN_OP_TYPE(LOGICAL_AND, &&, long)
 		BIN_OP_TYPE(LOGICAL_OR, ||, long)
 		BIN_OP_TYPE(SHL, <<, long)
 		BIN_OP_TYPE(SHR, >>, long)
-		
+
 		case OP_EQU:
 		{
 			++thread->pc;
@@ -2808,14 +2919,14 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("equ %s %s\n", ObjectTypeNames[o1->type], ObjectTypeNames[o2->type]);
 			
-			if(o1->type != o2->type && o1->type != OBJ_DICT) PushNumber(vm, 0);
+			if(o1->type != o2->type && o1->type != OBJ_DICT) PushBool(vm, 0);
 			else
 			{
-				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
-				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number == o2->number); }
+				if(o1->type == OBJ_STRING) { PushBool(vm, strcmp(o1->string.raw, o2->string.raw) == 0); }
+				else if(o1->type == OBJ_NUMBER) { PushBool(vm, o1->number == o2->number); }
 				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { PushObject(vm, thread->retVal); }
-				else if(o1->type == OBJ_NULL) PushNumber(vm, 1);
-				else PushNumber(vm, o1 == o2);
+				else if(o1->type == OBJ_NULL) PushBool(vm, 1);
+				else PushBool(vm, o1 == o2);
 			}
 		} break;
 		
@@ -2828,13 +2939,13 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("nequ %s %s\n", ObjectTypeNames[o1->type], ObjectTypeNames[o2->type]);
 				
-			if(o1->type != o2->type && o1->type != OBJ_DICT) PushNumber(vm, 1);
+			if(o1->type != o2->type && o1->type != OBJ_DICT) PushBool(vm, 1);
 			else
 			{
-				if(o1->type == OBJ_STRING) { PushNumber(vm, strcmp(o1->string.raw, o2->string.raw) != 0); }
-				else if(o1->type == OBJ_NUMBER) { PushNumber(vm, o1->number != o2->number); }
-				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)thread->retVal->number; PushNumber(vm, !result); }
-				else PushNumber(vm, o1 != o2);
+				if(o1->type == OBJ_STRING) { PushBool(vm, strcmp(o1->string.raw, o2->string.raw) != 0); }
+				else if(o1->type == OBJ_NUMBER) { PushBool(vm, o1->number != o2->number); }
+				else if(o1->type == OBJ_DICT && CallOverloadedOperatorIf(vm, "EQUALS", o1, o2)) { int result = (int)thread->retVal->number; PushBool(vm, !result); }
+				else PushBool(vm, o1 != o2);
 			}
 		} break;
 		
@@ -2873,15 +2984,15 @@ void ExecuteCycle(VM* vm)
 		{	
 			++thread->pc;
 			Object* obj = PopObject(vm);
-			if(obj->type == OBJ_DICT)
+			if (obj->type == OBJ_DICT)
 			{
-				if(obj->meta)
+				if (obj->meta)
 				{
-					if(vm->debug)
+					if (vm->debug)
 						printf("NOT dict\n");
-		
+
 					Object* notFunc = DictGet(&obj->meta->dict, "NOT");
-					if(notFunc && notFunc->type == OBJ_FUNC)
+					if (notFunc && notFunc->type == OBJ_FUNC)
 					{
 						PushObject(vm, obj);
 						CallFunction(vm, notFunc->func.index, 1);
@@ -2893,12 +3004,14 @@ void ExecuteCycle(VM* vm)
 				else
 					ErrorExitVM(vm, "Invalid logical not-ing of dictionary\n");
 			}
-			else
+			else if (obj->type == OBJ_BOOL)
 			{
-				if(vm->debug)
-					printf("NOT %g\n", obj->number);
-				PushNumber(vm, !obj->number);
+				if (vm->debug)
+					printf("NOT %s\n", obj->boolean ? "true" : "false");
+				PushBool(vm, !obj->boolean);
 			}
+			else
+				ErrorExitVM(vm, "Attempted to use '!' operator on value of type %s\n", ObjectTypeNames[obj->type]);
 		} break;
 		
 		case OP_SETINDEX:
@@ -3072,7 +3185,8 @@ void ExecuteCycle(VM* vm)
 			int pc = ReadInteger(vm);
 			
 			Object* top = PopObject(vm);
-			if(top->type == OBJ_NUMBER ? top->number == 0 : top == &NullObject)
+
+			if(top->type == OBJ_NULL || (top->type == OBJ_BOOL && !top->boolean))
 			{
 				thread->pc = pc;
 				if(vm->debug)
@@ -3191,8 +3305,8 @@ void ExecuteCycle(VM* vm)
 		{
 			if(vm->debug)
 				printf("ret\n");
-			PopIndir(vm);
 			thread->retVal = NULL;
+			PopIndir(vm);
 		} break;
 		
 		case OP_RETURN_VALUE:
@@ -3200,8 +3314,8 @@ void ExecuteCycle(VM* vm)
 			if(vm->debug)
 				printf("retval\n");
 			Object* returnValue = PopObject(vm);
-			PopIndir(vm);
 			thread->retVal = returnValue;
+			PopIndir(vm);
 		} break;
 		
 		case OP_CALLF:

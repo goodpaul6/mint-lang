@@ -19,8 +19,11 @@ typedef unsigned char Word;
 enum
 {	
 	OP_GET_RETVAL,
+	OP_SET_RETVAL,	// Generally only used by compiler intrinsics to mimic function behavior and not pollute stack
 	
 	OP_PUSH_NULL,
+	OP_PUSH_TRUE,
+	OP_PUSH_FALSE,
 	OP_PUSH_NUMBER,
 	OP_PUSH_STRING,
 	OP_CREATE_ARRAY,
@@ -66,6 +69,7 @@ enum
 						// or yielded
 
 	OP_THREAD_YIELD,	// Switches to the parent thread (if there isn't any, then it just stops the vm)
+	OP_THREAD_DONE,		// Returns true if thread->pc = -1 and false otherwise
 	OP_THREAD_DELETE,	// Destroys the thread for good (sets it to null in the Object)
 
 	OP_ADD,
@@ -126,6 +130,7 @@ enum
 typedef enum 
 {
 	OBJ_NULL,
+	OBJ_BOOL,
 	OBJ_NUMBER,
 	OBJ_STRING,
 	OBJ_ARRAY,
@@ -146,6 +151,8 @@ typedef struct _Object
 	
 	union
 	{
+		char boolean;
+
 		double number;
 		struct { char* raw; } string;
 		
@@ -198,11 +205,10 @@ typedef struct _VMThread
 	Object* stack[MAX_STACK];
 	int stackSize;
 	
-	// NOTE: When pc < 0 (i.e the thread is done working) it will automatically yield
+	// NOTE: When pc < 0, the thread is done working
 	int pc, fp;
 	int numExpandedArgs;
 
-	// NOTE: Used for when the thread yields as well (the value yielded is stored here)
 	Object* retVal;
 } VMThread;
 
@@ -291,16 +297,18 @@ Object* GetGlobal(VM* vm, int id);
 void SetGlobal(VM* vm, int id);	// set global to object on top of stack
 
 void PushObject(VM* vm, Object* obj);
+void PushBool(VM* vm, char value);
 void PushNumber(VM* vm, double value);
 void PushString(VM* vm, const char* string);
 Object* PushFunc(VM* vm, int id, Word isExtern, Object* env);
 Object* PushArray(VM* vm, int length);
 Object* PushDict(VM* vm);
 void PushNative(VM* vm, void* native, void (*onFree)(void*), void (*onMark)(void*));
-void PushThread(VM* vm, int functionIndex, int nargs);
+void PushThread(VM* vm, Object* funcObj);
 void PushNull(VM* vm);
 
 Object* PopObject(VM* vm);
+char PopBool(VM* vm);
 double PopNumber(VM* vm);
 const char* PopString(VM* vm);
 Object** PopArray(VM* vm, int* length);

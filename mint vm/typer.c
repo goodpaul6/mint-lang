@@ -1,6 +1,7 @@
 #include "lang.h"
 
 const char* HintStrings[] = {
+	"bool",
 	"number",
 	"string",
 	"array",
@@ -27,6 +28,8 @@ TypeHint* GetBroadTypeHint(Hint type)
 {
 	switch(type)
 	{
+		case BOOL: return CreateTypeHint(BOOL);
+
 		case NUMBER: return CreateTypeHint(NUMBER);
 		
 		case STRING: 
@@ -170,6 +173,32 @@ char CompareTypes(const TypeHint* a, const TypeHint* b)
 	}
 
 	return (a->hint == b->hint) && CompareTypes(a->subType, b->subType);
+}
+
+static char ExactCompareTypes(const TypeHint* a, const TypeHint* b)
+{
+	if (!a || !b) return MINT_TRUE;
+
+	if (a->hint != b->hint) return MINT_FALSE;
+
+	if (a->hint == USERTYPE)
+		return strcmp(a->user.name, b->user.name);
+	
+	if (a->hint == FUNC)
+	{
+		if (a->func.numArgs != b->func.numArgs)
+			return MINT_FALSE;
+
+		for (int i = 0; i < a->func.numArgs; ++i)
+		{
+			if (!ExactCompareTypes(a->func.args[i], b->func.args[i]))
+				return MINT_FALSE;
+		}
+
+		return MINT_TRUE;
+	}
+
+	return ExactCompareTypes(a->subType, b->subType);
 }
 
 TypeHint* GetTypeHintFromString(const char* n)
@@ -358,6 +387,8 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 	{
 		// null initialized variables should be inferred upon later access
 		case EXP_NULL: return NULL; break;
+
+		case EXP_BOOL: return GetBroadTypeHint(BOOL); break;
 		
 		case EXP_NUMBER: return GetBroadTypeHint(NUMBER); break;
 		
@@ -431,8 +462,14 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 				{
 					if(a && b)
 					{			
-						if(a->hint == NUMBER && b->hint == NUMBER)
-							return GetBroadTypeHint(NUMBER);
+						if (a->hint == NUMBER && b->hint == NUMBER)
+						{
+							switch (exp->binx.op)
+							{
+								case '+': case '-': case '*': case '/': case '%': case '|': case '&': return GetBroadTypeHint(NUMBER);
+								default: return GetBroadTypeHint(BOOL);
+							}
+						}
 						else if(overload)
 							return overload->type;
 						else
@@ -476,7 +513,7 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 				{
 					// if the array literal contains values which evaluate to more than one type, then it is a dynamic array
 					const TypeHint* curInf = InferTypeFromExpr(node);
-					if(!CompareTypes(curInf, inf)) 
+					if(!ExactCompareTypes(curInf, inf))		// They must match EXACTLY
 					{
 						TypeHint* type = CreateTypeHint(ARRAY);
 						type->subType = GetBroadTypeHint(DYNAMIC);
@@ -747,6 +784,7 @@ void ResolveTypes(Expr* exp)
 		case EXP_FOR:
 		{
 			ResolveTypes(exp->forx.init);
+			
 			ResolveTypes(exp->forx.cond);
 			ResolveTypes(exp->forx.iter);
 			ResolveTypesExprList(exp->forx.bodyHead);

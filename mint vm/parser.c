@@ -7,6 +7,7 @@ int GetNextToken(FILE* in)
 }
 
 const char* ExprNames[] = {
+	"EXP_BOOL",
 	"EXP_NUMBER",
 	"EXP_STRING",
 	"EXP_IDENT",
@@ -137,6 +138,17 @@ Expr* ParseFactor(FILE* in)
 {
 	switch(CurTok)
 	{
+		case TOK_TRUE:
+		case TOK_FALSE:
+		{
+			Expr* exp = CreateExpr(EXP_BOOL);
+			exp->boolean = CurTok == TOK_TRUE;
+
+			GetNextToken(in);
+
+			return exp;
+		} break;
+
 		case TOK_NUMBER:
 		{
 			Expr* exp = CreateExpr(EXP_NUMBER);
@@ -248,9 +260,9 @@ Expr* ParseFactor(FILE* in)
 		
 		case '[':
 		{
-			GetNextToken(in);
-			
 			Expr* exp = CreateExpr(EXP_ARRAY_LITERAL);
+
+			GetNextToken(in);
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
