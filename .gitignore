@@ -1,2 +1,4 @@
 *.VC.opendb 
 build 
+*.swp 
+.vs* 

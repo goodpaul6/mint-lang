@@ -1,40 +1,64 @@
 # edge.mt -- testing cutting edge features in mint-lang
 
+extern sqrt(number) : number
+
 var total_iterations = 0
 
-func counter(n : number)
-	return thread(lam ()
+struct vec2 {
+    x : number
+    y : number
+}
+
+operator ()(a : vec2) {
+    return sqrt(a.x * a.x + a.y * a.y)
+}
+
+operator +(a : vec2, b : vec2) {
+    return {
+        x = a.x + b.x,
+        y = a.y + b.y
+    } as vec2
+}
+
+func counter(n : number) {
+	return thread(lam () {
         var x = n
-		for var i = 1, i <= x, i = i + 1 do
+		for var i = 1, i <= x, i = i + 1 {
             total_iterations = total_iterations + 1
 			yield(i)
-		end
+		}
 
 		return;
-	end)
-end
+	})
+}
 
-func write_values(t : dynamic)
-	while true do
+func write_values(t : dynamic) {
+	while true {
 		var val = run_thread(t)
-		if is_thread_done(t) then
+		if is_thread_done(t) {
 			break
-		end
+        }
 
 		write(val)
-	end
-end
+	}
+}
 
-func run()
-	var x = counter(10)
-	var y = counter(20)
-	var z = counter(30000)
+func run() {
+    var a = { x = 10, y = 20 } as vec2
+    var b = { x = 20, y = 10 } as vec2
 
-	write_values(x)
-	write_values(y)
-	write_values(z)
+    write(a + b)
+    write(typename(a()))
 
-    write(total_iterations)
-end
+	# var x = counter(10)
+	# var y = counter(20)
+	# var z = counter(5)
+
+	# write_values(x)
+	# write_values(y)
+	# write_values(z)
+
+    # write(total_iterations)
+}
 
 run()

@@ -345,6 +345,8 @@ TypeHint* GetUserTypeElement(const TypeHint* type, const char* name);
 int GetUserTypeElementIndex(const TypeHint* type, const char* name);
 int GetUserTypeNumElements(const TypeHint* type);
 
+void CheckAllTypesDefined();
+
 void ExecuteMacros(Expr** head);
 
 typedef enum 
