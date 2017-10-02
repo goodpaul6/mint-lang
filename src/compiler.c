@@ -737,6 +737,13 @@ static void CompileDynamicCallExpr(Expr* exp, char expectReturn, int numExpansio
 	// overloaded call operator
 	if(decl)
 	{
+        // Shift other args over
+        memmove(&exp->callx.args[1], &exp->callx.args[0], sizeof(Expr*) * exp->callx.numArgs);
+
+        // Pass in the "function" as the first argument
+        exp->callx.args[0] = exp->callx.func; 
+        exp->callx.numArgs += 1;
+
 		CompileStaticCallExpr(exp, decl, expectReturn, numExpansions);
 		return;
 	}

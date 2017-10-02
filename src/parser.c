@@ -64,8 +64,8 @@ Expr* ParseIf(FILE* in)
 	
 	Expr* cond = ParseExpr(in);
 	
-	if(CurTok != TOK_THEN)
-		ErrorExit("Expected 'then' after if condition\n");
+	if(CurTok != '{')
+		ErrorExit("Expected '{' after if condition\n");
 	GetNextToken(in);
 
 	PushScope();
@@ -73,7 +73,7 @@ Expr* ParseIf(FILE* in)
 	Expr* exprHead = NULL;
 	Expr* exprCurrent = NULL;
 	
-	while(CurTok != TOK_ELSE && CurTok != TOK_ELIF && CurTok != TOK_END)
+	while(CurTok != '}')
 	{
 		if(!exprHead)
 		{
@@ -86,6 +86,8 @@ Expr* ParseIf(FILE* in)
 			exprCurrent = exprCurrent->next;
 		}
 	}
+
+    GetNextToken(in);
 
 	exprCurrent->next = NULL;
 	
@@ -100,13 +102,16 @@ Expr* ParseIf(FILE* in)
 	else if(CurTok == TOK_ELSE)
 	{
 		GetNextToken(in);
+
+        if(CurTok != '{') 
+            ErrorExit("Expected '{' after 'else'.\n");
 	
 		PushScope();
 		
 		Expr* exprHead = NULL;
 		Expr* exprCurrent = NULL;
 		
-		while(CurTok != TOK_END)
+		while(CurTok != '}')
 		{
 			if(!exprHead)
 			{
@@ -125,7 +130,7 @@ Expr* ParseIf(FILE* in)
 		
 		PopScope();
 	}
-	else if(CurTok == TOK_END)
+	else if(CurTok == '}')
 	{
 		GetNextToken(in);
 		exp->ifx.alt = NULL;
@@ -218,8 +223,13 @@ Expr* ParseFactor(FILE* in)
 					type->user.elements[i] = parent->user.elements[i];
 				}
 			}
+
+            if(CurTok != '{') {
+                ErrorExit("Expected '{' after type '%s'\n", type->user.name);
+            }
+            GetNextToken(in);
 			
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(CurTok != TOK_IDENT)
 					ErrorExit("Expected identifier in type declaration '%s'\n", type->user.name);
@@ -267,6 +277,7 @@ Expr* ParseFactor(FILE* in)
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			int len = 0;
+
 			while(CurTok != ']')
 			{
 				if(!exprHead)
@@ -439,15 +450,15 @@ Expr* ParseFactor(FILE* in)
 			
 			exp->whilex.cond = ParseExpr(in);
 		
-			if(CurTok != TOK_DO)
-				ErrorExit("Expected 'do' after while condition\n");
+			if(CurTok != '{')
+				ErrorExit("Expected '{' after while condition\n");
 			GetNextToken(in);
 
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
 			PushScope();
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(!exprHead)
 				{
@@ -494,14 +505,14 @@ Expr* ParseFactor(FILE* in)
 				
 			exp->forx.iter = ParseExpr(in);
 			
-			if(CurTok != TOK_DO)
-				ErrorExit("Expected 'do' after for iterator expression\n");
+			if(CurTok != '{')
+				ErrorExit("Expected '{' after for iterator expression\n");
 			GetNextToken(in);
 
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(!exprHead)
 				{
@@ -514,6 +525,7 @@ Expr* ParseFactor(FILE* in)
 					exprCurrent = exprCurrent->next;
 				}
 			}
+
 			GetNextToken(in);
 			PopScope();
 		
@@ -615,11 +627,15 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 				decl->type->func.ret = ParseTypeHint(in);
 			}
+
+            if(CurTok != '{')
+                ErrorExit("Expected '{' after operator prototype\n");
+            GetNextToken(in);
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(!exprHead)
 				{
@@ -747,11 +763,16 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 				decl->type->func.ret = ParseTypeHint(in);
 			}
+
+            if(CurTok != '{')
+                ErrorExit("Expected '{' after function prototype\n");
+
+            GetNextToken(in);
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(!exprHead)
 				{
@@ -866,11 +887,15 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 				decl->type->func.ret = ParseTypeHint(in);
 			}
+
+            if(CurTok != '{')
+                ErrorExit("Expected '{' after macro prototype.\n");
+            GetNextToken(in);
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(!exprHead)
 				{
@@ -1100,11 +1125,15 @@ Expr* ParseFactor(FILE* in)
 				GetNextToken(in);
 				decl->type->func.ret = ParseTypeHint(in);
 			}
+
+            if(CurTok != '{')
+                ErrorExit("Expected '{' after lambda prototype.\n");
+            GetNextToken(in);
 			
 			Expr* exprHead = NULL;
 			Expr* exprCurrent = NULL;
 			
-			while(CurTok != TOK_END)
+			while(CurTok != '}')
 			{
 				if(!exprHead)
 				{
@@ -1149,7 +1178,7 @@ char IsPostOperator()
 {
 	switch(CurTok)
 	{
-		case '[': case '.':  case '(': case ':': case '{': case '!': case TOK_AS:
+		case '[': case '.':  case '(': case ':': case '!': case TOK_AS:
 			return 1;
 	}
 	return 0;
@@ -1276,7 +1305,11 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			return exp;
 		} break;
 
-		case '{':
+		/* No longer valid syntax since '{' is used for opening blocks
+         * and that becomes weird when you have an expression before a block
+         * and this will get interpreted as a post-expr instead of being 
+         * a block.
+        case '{':
 		{
 			Expr* dict = ParseExpr(in);
 
@@ -1290,7 +1323,7 @@ Expr* ParsePost(FILE* in, Expr* pre)
 			
 			if(!IsPostOperator()) return exp;
 			else return ParsePost(in, exp);
-		} break;
+		} break;*/
 
 		case ':':
 		{

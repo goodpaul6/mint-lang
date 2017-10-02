@@ -164,6 +164,7 @@ int main(int argc, char* argv[])
 		VarScope = 0;
 		CurFunc = NULL;
 
+        CheckAllTypesDefined();
 		ResolveTypesExprList(exprHead);
 
         // Macros don't seem to be working so until that's figured out, no macros

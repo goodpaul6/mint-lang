@@ -199,7 +199,7 @@ enum
 	TOK_NUMBER = -2,
 	TOK_EOF = -3,
 	TOK_VAR = -4,
-	TOK_WHILE = -5,
+    TOK_WHILE = -5,
 	TOK_END = -6,
 	TOK_FUNC = -7,
 	TOK_IF = -8,
@@ -344,6 +344,8 @@ TypeHint* RegisterUserType(const char* name);
 TypeHint* GetUserTypeElement(const TypeHint* type, const char* name);
 int GetUserTypeElementIndex(const TypeHint* type, const char* name);
 int GetUserTypeNumElements(const TypeHint* type);
+
+void CheckAllTypesDefined();
 
 void ExecuteMacros(Expr** head);
 

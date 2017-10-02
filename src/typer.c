@@ -211,7 +211,6 @@ TypeHint* GetTypeHintFromString(const char* n)
 	else if(strcmp(n, "native") == 0) return GetBroadTypeHint(NATIVE);
 	else if(strcmp(n, "dynamic") == 0) return GetBroadTypeHint(DYNAMIC);
 	else if(strcmp(n, "void") == 0) return GetBroadTypeHint(VOID);
-	else ErrorExit("Invalid type hint '%s'\n", Lexeme);
 	
 	return NULL;
 }
@@ -233,6 +232,15 @@ TypeHint* RegisterUserType(const char* name)
 	UserTypes = type;
 
 	return type;
+}
+
+TypeHint* RegisterDummyUserType(const char* name)
+{
+    TypeHint* hint = RegisterUserType(name);
+
+    hint->user.numElements = -1;
+
+    return hint;
 }
 
 TypeHint* GetUserTypeElement(const TypeHint* type, const char* name)
@@ -275,21 +283,10 @@ TypeHint* ParseTypeHint(FILE* in)
 {
 	if(CurTok == TOK_IDENT)
 	{
-		TypeHint* userType = NULL;
-		TypeHint* node = UserTypes;
-		while(node)
-		{
-			if(strcmp(node->user.name, Lexeme) == 0)
-			{
-				userType = node;
-				break;
-			}
-			node = node->next;
-		}
+        TypeHint* type = GetTypeHintFromString(Lexeme);
 
-		if(!userType)
-		{
-			TypeHint* type = GetTypeHintFromString(Lexeme);
+        if(type)
+        {
 			GetNextToken(in);
 
 			if(CurTok == '(')
@@ -342,8 +339,29 @@ TypeHint* ParseTypeHint(FILE* in)
 				else
 					type->subType = subType;
 			}
+
 			return type;
+        }
+
+		TypeHint* userType = NULL;
+		TypeHint* node = UserTypes;
+
+		while(node)
+		{
+			if(strcmp(node->user.name, Lexeme) == 0)
+			{
+				userType = node;
+				break;
+			}
+			node = node->next;
 		}
+
+        if(!userType) {
+            // Register empty type
+            // Will check if all types are defined later
+            userType = RegisterDummyUserType(Lexeme);
+        }
+
 		GetNextToken(in);
 		return userType;
 	}
@@ -438,10 +456,20 @@ TypeHint* InferTypeFromExpr(Expr* exp)
 		case EXP_CALL:
 		{
 			const TypeHint* inf = InferTypeFromExpr(exp->callx.func);
-			if(inf && inf->hint == FUNC)
-				return inf->func.ret;
-			else
-				return GetBroadTypeHint(DYNAMIC);
+			if(inf) {
+                if(inf->hint == FUNC) {
+                    return inf->func.ret;
+                } else {
+                    // Call operator potentially overloaded
+                    FuncDecl* decl = GetSpecialOverload(inf, NULL, OVERLOAD_CALL);
+
+                    if(decl && decl->type && decl->type->func.ret) {
+                        return decl->type->func.ret;
+                    }
+                }
+            }
+			
+            return GetBroadTypeHint(DYNAMIC);
 		} break;
 		
 		case EXP_VAR:
@@ -894,4 +922,13 @@ void ResolveTypesExprList(Expr* head)
 		ResolveTypes(node);
 		node = node->next;
 	}
+}
+
+void CheckAllTypesDefined()
+{
+    for(TypeHint* node = UserTypes; node != NULL; node = node->next) {
+        if(node->hint == USERTYPE && node->user.numElements < 0) {
+            ErrorExit("Referenced but undefined type '%s'\n", node->user.name); 
+        }
+    }
 }
