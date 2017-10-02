@@ -1,0 +1,24 @@
+Compiler:
+- Refactor parser code (lots of repeated code for parsing function-like declarations)
+    - Random comprehension variables are instantiated in the code but are potentially 
+      never used (see TOK_FOR in ParseFactor) 
+- Change while loop syntax to 'for cond {}'
+- Change for loop over range syntax to 'for i in range(10) {'
+    - How would ranges work? Maybe a range/iterator is an intrinsic value which the for loop
+      invokes 'OP_NEXT' or something on and it pushes the new value to the stack
+- Change lambda syntax to just 'func(args, ...) {}'
+- Change function type syntax to '(arg_type, ...)-return_type'
+- Change array type syntax to '[sub_type]'
+- Use LinkedLists instead of having a 'next' in every struct
+- Look into linking code (and thus building incomplete binaries)
+
+Virtual Machine:
+- Switch from using garbage collected "Object" to non-gc'd "Value" with reference
+  to gc'd Object (see tiny-lang)
+- Prefix everything with Mint_
+- Make error handling better
+    - Maybe when an error occurs, the VM just sets a flag and then longjmps to whereever
+- Move Std_ functions to separate file
+- Provide functionality to link externs from DLLs
+- Store function names as indices into the stringConstants array in the vm
+
