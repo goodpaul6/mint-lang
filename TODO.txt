@@ -6,6 +6,8 @@ Compiler:
 - Change for loop over range syntax to 'for i in range(10) {'
     - How would ranges work? Maybe a range/iterator is an intrinsic value which the for loop
       invokes 'OP_NEXT' or something on and it pushes the new value to the stack
+    - Works with arbitrary values. OP_PUSH_RANGE, OP_PUSH_DICT_PAIRS, etc could
+      all produce "ranges" or "iterators" which could be used with OP_NEXT
 - Change lambda syntax to just 'func(args, ...) {}'
 - Change function type syntax to '(arg_type, ...)-return_type'
 - Change array type syntax to '[sub_type]'
