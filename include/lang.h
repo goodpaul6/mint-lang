@@ -199,7 +199,7 @@ enum
 	TOK_NUMBER = -2,
 	TOK_EOF = -3,
 	TOK_VAR = -4,
-	TOK_WHILE = -5,
+    TOK_WHILE = -5,
 	TOK_END = -6,
 	TOK_FUNC = -7,
 	TOK_IF = -8,

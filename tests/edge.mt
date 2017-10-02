@@ -9,6 +9,10 @@ struct vec2 {
     y : number
 }
 
+operator [](a : vec2, n : number) {
+    return [a.x, a.y][n]
+}
+
 operator ()(a : vec2) {
     return sqrt(a.x * a.x + a.y * a.y)
 }
@@ -47,7 +51,10 @@ func run() {
     var a = { x = 10, y = 20 } as vec2
     var b = { x = 20, y = 10 } as vec2
 
+    # This is all resolved at compile time
+    # pretty cool eh.
     write(a + b)
+    write(typename(a[0]))
     write(typename(a()))
 
 	# var x = counter(10)
