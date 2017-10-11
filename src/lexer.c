@@ -1,312 +1,353 @@
-#include "lang.h"
+#include <assert.h>
+#include <ctype.h>
+#include <string.h>
 
-const char* FileName = "unknown";
-int LineNumber = 0;
+#include "utils.h"
+#include "lexer.h"
 
-size_t LexemeCapacity = 0;
-size_t LexemeLength = 0;
-char* Lexeme = NULL;
-int CurTok = 0;
-char ResetLex = 0;
+static char Lexeme[MAX_LEXEME_LENGTH];
 
-void AppendLexChar(int c)
+static const char* TokenTypeNames[NUM_TOKEN_TYPES] = {
+    "null",
+    "true",
+    "false",
+    "string",
+    "identifier",
+
+    "var",
+    "func",
+    "operator",
+    "if",
+    "else",
+    "return",
+    "extern",
+    "for",
+    "struct",
+    
+    "continue",
+    "break",
+
+    ",",
+    ":",
+    ";",
+
+    "(",
+    ")",
+    "{",
+    "}",
+    "[",
+    "]",
+
+    "=",
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+    "^",
+    "|",
+    "&",
+    "<<",
+    ">>",
+    
+    "<",
+    ">",
+    "<=",
+    ">=",
+    "&&",
+    "||",
+    "==",
+    "!=",
+
+    "..",
+    "..."
+};
+
+static const struct
 {
-	if(!LexemeCapacity)
-	{
-		LexemeCapacity = 8;
-		Lexeme = malloc(LexemeCapacity);
-		assert(Lexeme);
-	}
-	
-	if(LexemeLength + 1 >= LexemeCapacity)
-	{
-		LexemeCapacity *= 2;
-		char* newLex = realloc(Lexeme, LexemeCapacity);
-		assert(newLex);
-		Lexeme = newLex;
-	}
-	
-	Lexeme[LexemeLength++] = c;
+    const char* name;
+    TokenType tokenType;
+} Keywords[] = {
+    { "func", TOK_FUNC },
+    { "operator", TOK_OPERATOR },
+    { "return", TOK_RETURN },
+    { "if", TOK_IF },
+    { "else", TOK_ELSE },
+    { "extern", TOK_EXTERN },
+    { "for", TOK_FOR },
+    { "continue", TOK_CONTINUE },
+    { "break", TOK_BREAK },
+    { "var", TOK_VAR },
+    { "null", TOK_NULL },
+    { "true", TOK_TRUE },
+    { "false", TOK_FALSE },
+    { "struct", TOK_STRUCT },
+};
+
+static const struct
+{
+    char seq[4];
+    TokenType tokenType;
+} Operators[] = {
+    // These are ordered by number of characters because
+    // we want to match the longest possible substring.
+    { "...", TOK_ELLIPSIS },
+    { "..", TOK_CAT },
+    { "!=", TOK_NEQUALS },
+    { "==", TOK_EQUALS },
+    { "<=", TOK_LTE },
+    { ">=", TOK_GTE },
+    { "<<", TOK_LSHIFT },
+    { ">>", TOK_RSHIFT },
+    { "&&", TOK_AND },
+    { "||", TOK_OR },
+
+    { "<", TOK_LT },
+    { ">", TOK_GT },
+    { "+", TOK_PLUS },
+    { "-", TOK_MINUS },
+    { "*", TOK_MUL },
+    { "/", TOK_DIV },
+    { "%", TOK_MOD },
+    { "^", TOK_XOR },
+    { "|", TOK_BITOR },
+    { "&", TOK_BITAND },
+
+    { "(", TOK_OPENPAREN },
+    { ")", TOK_CLOSEPAREN },
+    { "{", TOK_OPENCURLY },
+    { "}"' }, TOK_CLOSECURLY },
+    { "[", TOK_OPENSQUARE },
+    { "]", TOK_CLOSESQUARE },
+    
+    { ";", TOK_SEMICOLON },
+    { ":", TOK_COLON },
+    { ",", TOK_COMMA },
+};
+
+inline static bool TooLong(int i, char* error) {
+    if(i >= MAX_LEXEME_LENGTH - 1) {
+        strcpy(error, "Token exceeded maximum length of " #MAX_LEXEME_LENGTH " characters.");
+        return false;
+    }
+
+    return true;
 }
 
-void ClearLexeme()
+static bool NextToken(const char* src, int* pos, char* error, int* line, Token* token)
 {
-	LexemeLength = 0;
+    while(isspace(src[*pos])) {
+        if(src[*pos] == '\n') {
+            *line += 1;
+        }
+        *pos += 1;
+    }
+
+    token->line = *line;
+
+    if(isalpha(src[*pos]) || src[*pos] == '_') {
+        int i = 0;
+        while(isalnum(src[*pos]) || src[*pos] == '_') {
+            if(TooLong(i, error)) {
+                return false;
+            }
+
+            Lexeme[i++] = src[*pos];
+            *pos += 1;
+        }
+
+        Lexeme[i] = '\0';
+
+        for(int i = 0; i < sizeof(Keywords) / sizeof(Keywords[0]); ++i) {
+            if(strcmp(Keywords[i].name, Lexeme) == 0) {
+                token->type = Keywords[i].tokenType;
+                return true;
+            }
+        }
+
+        token->type = TOK_IDENT;
+        token->ident = estrdup(Lexeme);
+        
+        return true;
+    } 
+
+    if(isdigit(src[*pos])) {
+        int i = 0;
+        bool hasRadix = false;
+
+        while(isdigit(src[*pos]) || src[*pos] == '.') {
+            if(src[*pos] == '.' && hasRadix) {
+                strcpy(error, "Too many '.' in numeric literal.");
+                return false;
+            }
+
+            if(TooLong(i, error)) {
+                return false;
+            }
+
+            Lexeme[i++] = src[*pos];
+            *pos += 1;
+        }
+
+        Lexeme[i] = '\0';
+
+        token->type = TOK_NUMBER;
+        token->num = strtod(Lexeme, NULL);
+        
+        return true;
+    }
+
+    if(src[*pos] == '"') {
+        int i = 0;
+
+        // Skip '"'
+        *pos += 1;
+
+        while(src[*pos] && src[*pos] != '"') {
+            if(TooLong(i, error)) {
+                return false;
+            }
+
+            char ch = src[*pos];
+
+			if(ch == '\\')
+			{
+                *pos += 1;
+				switch(src[*pos])
+				{
+					case 'n': ch  = '\n'; break;
+					case 'r': ch = '\r'; break;
+					case 't': ch = '\t'; break;
+					case '"': ch = '"'; break;
+					case '\'': ch = '\''; break;
+					case '\\': ch = '\\'; break;
+				}
+			}
+
+            Lexeme[i++] = ch;
+            *pos += 1;
+        }
+
+        if(!src[*pos]) {
+            strcpy(error, "Unexpected end of source inside string literal.");
+            return false;
+        }
+
+        // Skip '"'
+        *pos += 1;
+
+        Lexeme[i] = '\0';
+
+        token->type = TOK_STRING;
+        token->str = estrdup(Lexeme);
+
+        return true;
+    }
+
+    if(!src[*pos]) {
+        // No error, just end of source
+        return false;
+    }
+    
+    // Try to match an "operator"
+    for(int i = 0; i < sizeof(Operators) / sizeof(Operators[0]); ++i) {
+        size_t len = strlen(Operators[i].seq);
+
+        bool match = true;
+
+        for(int j = 0; j < len; ++j) {
+            if(src[*pos + j] && src[*pos + j] != Operators[i].seq[j]) {
+                match = false;
+                break;
+            }
+        }
+
+        if(match) {
+            token->type = Operators[i].tokenType;
+            *pos += len;
+            return true;
+        }
+    }
+    
+    sprintf(error, "Unexpected character '%c'.", src[*pos]);
+    return false;
 }
 
-int GetToken(FILE* in)
+Tokenized Tokenize(const char* src)
 {
-	static int last = ' ';
-	
-	if(ResetLex)
-	{
-		last = ' ';
-		ResetLex = 0;
-		ClearLexeme();
-	}
-	
-	while(isspace(last))
-	{
-		if(last == '\n') ++LineNumber;
-		last = getc(in);
-	}
-	
-	if(isalpha(last) || last == '_')
-	{
-		ClearLexeme();
-		while(isalnum(last) || last == '_')
-		{
-			AppendLexChar(last);
-			last = getc(in);
-		}
-		AppendLexChar('\0');
-		
-		if (strcmp(Lexeme, "var") == 0) return TOK_VAR;
-		if (strcmp(Lexeme, "while") == 0) return TOK_WHILE;
-		if (strcmp(Lexeme, "end") == 0) return TOK_END;
-		if (strcmp(Lexeme, "func") == 0) return TOK_FUNC;
-		if (strcmp(Lexeme, "if") == 0) return TOK_IF;
-		if (strcmp(Lexeme, "return") == 0) return TOK_RETURN;
-		if (strcmp(Lexeme, "extern") == 0) return TOK_EXTERN;
-		if (strcmp(Lexeme, "true") == 0) return TOK_TRUE;
-		if (strcmp(Lexeme, "false") == 0) return TOK_FALSE;
-		if (strcmp(Lexeme, "for") == 0) return TOK_FOR;
-		if (strcmp(Lexeme, "else") == 0) return TOK_ELSE;
-		if (strcmp(Lexeme, "elif") == 0) return TOK_ELIF;
-		if (strcmp(Lexeme, "null") == 0) return TOK_NULL;
-		if (strcmp(Lexeme, "inline") == 0) return TOK_INLINE;
-		if (strcmp(Lexeme, "lam") == 0) return TOK_LAMBDA;
-		if (strcmp(Lexeme, "continue") == 0) return TOK_CONTINUE;
-		if (strcmp(Lexeme, "break") == 0) return TOK_BREAK;
-		if (strcmp(Lexeme, "as") == 0) return TOK_AS;
-		if (strcmp(Lexeme, "do") == 0) return TOK_DO;
-		if (strcmp(Lexeme, "then") == 0) return TOK_THEN;
-		if (strcmp(Lexeme, "struct") == 0) return TOK_TYPE;
-		if (strcmp(Lexeme, "as") == 0) return TOK_HAS;
-		if (strcmp(Lexeme, "macro") == 0) return TOK_MACRO;
-		if (strcmp(Lexeme, "operator") == 0) return TOK_OPERATOR;
-		if (strcmp(Lexeme, "this_function") == 0)
-		{
-			if(CurFunc && CurFunc->what != DECL_LAMBDA)
-			{
-				if(LexemeCapacity < MAX_ID_NAME_LENGTH)
-				{
-					LexemeCapacity = MAX_ID_NAME_LENGTH;
-					void* newLexeme = realloc(Lexeme, LexemeCapacity);
-					assert(newLexeme);
-					Lexeme = newLexeme;
-				}
-				
-				strcpy(Lexeme, CurFunc->name);
-			}
-		}
+    Tokenized res = { 0 };
 
-		return TOK_IDENT;
-	}
-		
-	if(isdigit(last))
-	{	
-		ClearLexeme();
-		
-		if(last == '0')
-		{
-			last = getc(in);
-			if(last == 'x')
-			{
-				last = getc(in);
-				while(isxdigit(last))
-				{
-					AppendLexChar(last);
-					last = getc(in);
-				}
-				AppendLexChar('\0');
-				
-				return TOK_HEXNUM;
-			}
-			else
-			{	
-				ungetc(last, in);
-				ungetc('0', in);
-				last = '0';
-			}
-		}
-		
-		while(isdigit(last) || last == '.')
-		{
-			AppendLexChar(last);
-			last = getc(in);
-		}
-		AppendLexChar('\0');
-		
-		return TOK_NUMBER;
-	}
-	
-	if(last == '"')
-	{
-		ClearLexeme();
-		last = getc(in);
-	
-		while(last != '"')
-		{
-			if(last == '\\')
-			{
-				last = getc(in);
-				switch(last)
-				{
-					case 'n': last = '\n'; break;
-					case 'r': last = '\r'; break;
-					case 't': last = '\t'; break;
-					case '"': last = '"'; break;
-					case '\'': last = '\''; break;
-					case '\\': last = '\\'; break;
-				}
-			}
-			
-			AppendLexChar(last);
-			last = getc(in);
-		}
-		AppendLexChar('\0');
-		last = getc(in);
-		
-		return TOK_STRING;
-	}
-	
-	if(last == '\'')
-	{
-		last = getc(in);
-		ClearLexeme();
-		if(last == '\\')
-		{
-			last = getc(in);
-			switch(last)
-			{
-				case 'n': last = '\n'; break;
-				case 'r': last = '\r'; break;
-				case 't': last = '\t'; break;
-				case '"': last = '"'; break;
-				case '\'': last = '\''; break;
-				case '\\': last = '\\'; break;
-			}
-		}
-		
-		// assure minimum capacity to store integer
-		if(LexemeCapacity < 32)
-		{
-			LexemeCapacity = 32;
-			char* newLex = realloc(Lexeme, LexemeCapacity);
-			assert(newLex);
-			Lexeme = newLex;
-		}
-		
-		sprintf(Lexeme, "%i", last);
-		last = getc(in);
-			
-		if(last != '\'')
-			ErrorExit("Expected ' after previous '\n");
-		
-		last = getc(in);
-		return TOK_NUMBER;
-	}
-	
-	if(last == '#')
-	{
-		last = getc(in);
-		if(last == '~')
-		{
-			while(last != EOF)
-			{
-				last = getc(in);
-				if(last == '~')
-				{
-					last = getc(in);
-					if(last == '#')
-						break;
-				}
-			}
-		}
-		else
-		{
-			while(last != '\n' && last != '\r' && last != EOF)
-				last = getc(in);
-		}
-		if(last == EOF) return TOK_EOF;
-		else return GetToken(in);
-	}
-	
-	if(last == EOF)
-		return TOK_EOF;
-	
-	int lastChar = last;
-	last = getc(in);
-	
-	if(lastChar == '=' && last == '=')
-	{
-		last = getc(in);
-		return TOK_EQUALS;
-	}
-	else if(lastChar == '!' && last == '=')
-	{
-		last = getc(in);
-		return TOK_NOTEQUAL;
-	}
-	else if(lastChar == '<' && last == '=')
-	{
-		last = getc(in);
-		return TOK_LTE;
-	}
-	else if(lastChar == '>' && last == '=')
-	{
-		last = getc(in);
-		return TOK_GTE;
-	}
-	else if(lastChar == '<' && last == '<')
-	{
-		last = getc(in);
-		return TOK_LSHIFT;
-	}
-	else if(lastChar == '>' && last == '>')
-	{
-		last = getc(in);
-		return TOK_RSHIFT;
-	}
-	else if(lastChar == '&' && last == '&')
-	{
-		last = getc(in);
-		return TOK_AND;
-	}
-	else if(lastChar == '|' && last == '|')
-	{
-		last = getc(in);
-		return TOK_OR;
-	}
-	else if(lastChar == '+' && last == '=')
-	{
-		last = getc(in);
-		return TOK_CADD;
-	}
-	else if(lastChar == '-' && last == '=')
-	{
-		last = getc(in);
-		return TOK_CSUB;
-	}
-	else if(lastChar == '*' && last == '=')
-	{
-		last = getc(in);
-		return TOK_CMUL;
-	}
-	else if(lastChar == '/' && last == '=')
-	{
-		last = getc(in);
-		return TOK_CDIV;
-	}
-	else if(lastChar == '.' && last == '.')
-	{
-		last = getc(in);
-		if(last != '.')
-			return TOK_CAT;
-		last = getc(in);
-		return TOK_ELLIPSIS;
-	}
-	
-	return lastChar;
+    size_t capacity = INIT_TOKEN_CAPACITY;
+
+    res.tokens = emalloc(sizeof(Token) * capacity);
+    res.line = 1;
+
+    while(true) {
+        Token token;
+
+        if(!NextToken(src, &res.pos, &res.line, res.error, &token)) {
+            break;
+        }
+
+        // Grow the token buffer
+        if(res.count + 1 >= capacity) {
+            capacity *= 2;
+            res.tokens = erealloc(res.tokens, sizeof(Token) * capacity);
+        }
+
+        // Copy token
+        memcpy(&res.tokens[res.count], &token, sizeof(Token));
+        res.count += 1;
+    }
+
+    return res;
+}
+
+const char* TokenTypeRepr(TokenType type)
+{
+    return TokenTypeNames[(int)type];
+}
+
+const char* TokenRepr(const Token* token)
+{
+    static char numBuf[64];
+
+    switch(token->type) {
+        case TOK_IDENT: return token->ident;
+        case TOK_STRING: return token->str;
+        case TOK_NUMBER: sprintf(numBuf, "%g", token->num); return numBuf;
+        default: {
+            for(int i = 0; i < sizeof(Keywords) / sizeof(Keywords[0]); ++i) {
+                if(token->type == Keywords[i].tokenType) {
+                    return Keywords[i].name;
+                }
+            }
+
+            for(int i = 0; i < sizeof(Operators) / sizeof(Operators[0]); ++i) {
+                if(token->type == Operators[i].tokenType) {
+                    return Operators[i].seq;
+                }
+            }
+
+            assert(false); // Invalid token type?
+        } break;
+    }
+ 
+    assert(false);  // Unreachable code
+    return NULL;
+}
+
+void DestroyTokenized(Tokenized* tokenized)
+{
+    for(int i = 0; i < tokenized->count; ++i) {
+        Token* token = tokenized->tokens[i];
+
+        switch(token->type) {
+            case TOK_IDENT: free(token->ident); break;
+            case TOK_STRING: free(token->str); break;
+            default: break;
+        }
+    }
+
+    free(tokenized->tokens);
 }

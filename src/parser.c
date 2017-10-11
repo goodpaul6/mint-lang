@@ -1,4 +1,360 @@
-#include "lang.h"
+#include <assert.h>
+
+#include "typetag.h"
+#include "lexer.h"
+#include "symbols.h"
+#include "parser.h"
+
+typedef struct _VarBlock
+{
+    struct _VarBlock* outer;
+
+    // All variables in this scope (not owned by the block)
+    List vars;
+} VarBlock;
+
+typedef struct
+{
+    const Tokenized* t;
+    int tok;
+
+    FuncDecl* func;
+    VarBlock* block;
+
+    Parsed* p;
+} Parser;
+
+static VarBlock* EnterBlock(Parser* parser)
+{
+    assert(parser);
+
+    VarBlock* block = emalloc(sizeof(VarBlock);
+
+    block->outer = parser->block;
+    InitList(&block->vars); 
+
+    parser->block = block;
+
+    return block;
+}
+
+static void ExitBlock(Parser* parser)
+{
+    assert(parser && parser->block);
+
+    parser->block = parser->block->outer;
+}
+
+// If 'type' is null, it will be inferred
+static VarDecl* DeclareVariable(Parser* parser, const char* name, const TypeHint* type)
+{
+    assert(parser && parser->p && name);
+
+    VarDecl* decl = emalloc(sizeof(VarDecl));
+
+    decl->func = parser->func;
+    
+    decl->name = estrdup(name);
+    decl->type = type;
+
+    if(parser->func) {
+        assert(parser->block);
+
+        decl->index = parser->func->locals.length;
+
+        AddNode(&parser->func->locals, decl);
+        AddNode(&parser->block->vars, decl);
+
+        return decl;
+    }
+
+    decl->index = parser->p->globals.length;
+    AddNode(&parser->p->globals, decl); 
+
+    return decl;
+}
+
+// If 'returnType' is NULL, it will be inferred
+// Also causes the parser to enter into a block
+static FuncDecl* EnterFunction(Parser* parser, const char* name, List args, const TypeHint* returnType)
+{
+    assert(parser && name);
+
+    FuncDecl* decl = emalloc(sizeof(FuncDecl));
+
+    decl->outer = parser->func;
+    parser->func = decl;
+
+    decl->name = estrdup(name);
+    decl->returnType = returnType;
+
+    InitList(&decl->args);
+    InitList(&decl->locals);
+
+    AddNode(&parser->functions, decl);
+}
+
+static void ExitFunction(Parser* parser)
+{
+    assert(parser && parser->func);
+
+    parser->func = parser->func->outer;
+}
+
+static VarDecl* ReferenceVariable(Parser* parser, const char* name)
+{
+    assert(parser && parser->p && name);
+
+    if(parser->block) {
+        VarBlock* block = parser->block;
+
+        while(block) {
+            LL_EACH(block->vars, VarDecl) {
+                if(strcmp(it->name, name) == 0) {
+                    return it;
+                }
+            }
+        }
+
+        block = block->outer;
+    }
+
+    if(parser->func) {
+        LL_EACH(parser->func->args, VarDecl) {
+            if(strcmp(it->name, name) == 0) {
+                return it;
+            }
+        }
+    }
+
+    LL_EACH(parser->p->globals, VarDecl) {
+        if(strcmp(it->name, name) == 0) {
+            return it;
+        }
+    }
+
+    return NULL;
+}
+
+// Try to find a previously existing usertype by name 'name' or
+// create an undefined one
+static const Typetag* RegisterUsertype(Parser* parser, const char* name)
+{
+    LL_EACH(parser->types, Typetag) {
+        if(strcmp(it->user.name, name) == 0) {
+            return it;
+        }
+    }
+
+    Typetag* tag = CreateUserTypetag(name, false);
+
+    AddNode(&parser->types, tag);
+    return tag;
+}
+
+// If a previously undefined usertype by name 'name' exists
+// this returns that. If it is already defined, this is an 
+// error and it writes the error to the parser, returns NULL.
+// If no such usertype exists, then it creates one and 'defines'
+// it.
+static Typetag* DefineUsertype(Parser* parser, const char* name)
+{
+    LL_EACH(parser->types, Typetag) {
+        if(strcmp(it->user.name, name) == 0) {
+            if(it->defined) {
+                sprintf(parser->p->error, "Attempted to redefine type '%s'", name);
+                return NULL;
+            }
+
+            return it;
+        }
+    }
+    
+    Typetag* tag = CreateUserTypetag(name, true);
+
+    AddNode(&parser->types, tag);
+    return tag;
+}
+
+inline static const Token* Tok(Parser* parser)
+{
+    assert(parser && parser->t && parser->tok < parser->t->tokenCount);
+
+    return &parser->t->tokens[parser->tok];
+}
+
+inline static bool Advance(Parser* parser)
+{
+    assert(parser && parser->t);
+
+    if(parser->tok >= parser->t->tokenCount) {
+        return false;
+    }
+
+    parser->tok += 1;
+    parser->p->line = parser->t->tokens[parser->tok].line;
+
+    return true;
+}
+
+inline static bool AdvanceExpect(Parser* parser, TokenType type)
+{
+    assert(parser && parser->t);
+
+    if(!Advance(parser) || Tok(parser)->type != type) {
+        return false;
+    }
+
+    return true;
+}
+
+static Expr* ParseFactor(Parser* parser)
+{
+    assert(parser);
+
+    switch(Tok(parser)->type)
+    {
+        case TOK_NULL:
+        {
+            Advance(parser);
+            return CreateExpr(EXP_NULL);
+        } break;
+
+        case TOK_TRUE:
+        case TOK_FALSE:
+        {
+            Expr* exp = CreateExpr(EXP_BOOL);
+
+            exp->boolean = tokens[*tok].type == TOK_TRUE;
+
+            Advance(parser);
+            return exp;
+        } break;
+
+        case TOK_NUMBER:
+        {
+            Expr* exp = CreateExpr(EXP_NUMBER);
+
+            exp->constIndex = RegisterNumber(tokens[*tok].number);
+
+            Advance(parser);
+            return exp;
+        } break;
+
+        case TOK_STRING:
+        {
+            Expr* exp = CreateExpr(EXP_STRING);
+
+            exp->constIndex = RegisterString(tokens[*tok].str);
+
+            Advance(parser);
+            return exp;
+        } break;
+
+        // TODO: Parse all factor tokens
+    }
+}
+
+static const Typetag* ParseType(Parser* parser)
+{
+    assert(parser && parser->p);
+
+    if(Tok(parser)->type != TOK_IDENT) {
+        strcpy(parser->p->error, "Expected identifier after ':'");
+        return NULL;
+    }
+
+    TypetagType type = TypetagTypeFromName(Tok(parser)->ident);
+
+    if(type == TAG_USER) {
+        const Typetag* tag = RegisterUsertype(Tok(parser)->ident);
+        Advance(parser);
+        
+        return tag;
+    }
+
+    if(type == TAG_ARRAY) {
+        if(!AdvanceExpect(parser, TOK_MINUS)) {
+            strcpy(parser->p->error, "Expected '-' after 'array'");
+            return NULL;
+        }
+
+        if(!Advance(parser)) {
+            strcpy(parser->p->error, "Expected something after 'array-'");
+            return NULL;
+        }
+
+        const Typetag* value = ParseType(parser);
+        return CreateArrayTypetag(value);
+    }
+
+    if(type == TAG_FUNC) {
+        if(!AdvanceExpect(parser, TOK_OPENPAREN)) {
+            strcpy(parser->p->error, "Expected '(' after 'func'");
+            return NULL;
+        }
+
+        if(!Advance(parser)) {
+            strcpy(parser->p->error, "Expected something after 'func('");
+            return NULL;
+        }
+
+        while(Tok(parser)->type != TOK_CLOSEPAREN) {
+            Typetag* arg = ParseType(parser);
+
+            if(Tok(parser)->type != TOK_COMMA) {
+                strcpy(parser->p->error, "Expected ',' after type in 'func(...'");
+                return NULL;
+            }
+            
+            if(!Advance(parser)) {
+                strcpy(parser->p->error, "Expected something after 'func(...'");
+                return NULL;
+            }
+        }
+    }
+}
+
+static Expr* ParseStatement(Parser* parser)
+{
+    assert(parser && parser->p);
+
+    switch(Tok(parser)->type) {
+        case TOK_VAR: {
+            if(!AdvanceExpect(parser, TOK_IDENT)) {
+                strcpy(parser->p->error, "Expected identifier after 'var'");
+                return NULL;
+            }
+
+            Expr* exp = CreateExpr(EXP_VAR);
+
+            exp->varx.name = estrdup(Tok(parser)->ident);
+
+            if(!Advance(parser) || (Tok(parser)->type != TOK_COLON && 
+                Tok(parser)->type != TOK_EQUAL)) {
+                sprintf(error, "Expected ':' or '=' after 'var %s'", exp->varx.name);
+                return NULL;
+            }
+
+            if(Tok(parser)->type == TOK_COLON) {
+                if(!Advance(parser)) {
+                    sprintf(error, "Expected type after 'var %s :'", exp->varx.name);
+                    return NULL;
+                }
+
+
+            }
+        } break;
+    }
+}
+
+Parsed Parse(const char* src)
+{
+}
+
+void DestroyParsed(Parsed* parsed)
+{
+}
 
 int GetNextToken(FILE* in)
 {

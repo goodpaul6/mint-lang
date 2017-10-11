@@ -1,31 +1,33 @@
-#include <stdlib.h>
-#include <stdio.h>
+#include <assert.h>
 
+#include "utils.h"
 #include "linkedlist.h"
 
-void InitList(LinkedList* list)
+void InitList(List* list)
 {
+    assert(list);
+
 	list->head = list->tail = NULL;
 	list->length = 0;
 }
 
-int AddNode(LinkedList* list, void* data)
+int AddNode(List* list, void* data)
 {
-	LinkedListNode* newNode = malloc(sizeof(LinkedListNode));
-	if(!newNode)
-	{
-		fprintf(stderr, "Out of memory\n");
-		exit(1);
-	}
-	
+    assert(list);
+
+	ListNode* newNode = emalloc(sizeof(ListNode));
+
+    newNode->prev = NULL;
 	newNode->next = NULL;
+
 	newNode->data = data;
 	
-	if(!list->length)
+	if(!list->length) {
 		list->head = list->tail = newNode;
-	else
-	{
+    } else {
 		list->tail->next = newNode;
+        newNode->prev = list->tail;
+
 		list->tail = newNode;
 	}
 	
@@ -34,29 +36,32 @@ int AddNode(LinkedList* list, void* data)
 	return list->length - 1;
 }
 
-void FreeList(LinkedList* list)
+void* PopNode(List* list)
 {
-	if(!list) return;
-	
-	if(list->length)
-	{
-		LinkedListNode* curr;
-		LinkedListNode* next;
-		
-		curr = list->head;
-		while(curr)
-		{
-			next = curr->next;
-			
-			if(curr->data)
-				free(curr->data);
-			
-			free(curr);
-			
-			curr = next;
-		}
-	}
+    assert(list && list->length > 0);
 
-	free(list);
+    ListNode* removed = list->tail; 
+
+    list->tail = removed->prev;
+    if(removed == list->head) {
+        list->head = NULL;
+    }
+    
+    void* data = removed->data;
+    free(removed);
+
+    return data;
+}
+
+void DestroyList(List* list)
+{ 
+    assert(list);
+
+    while(list->head) {
+        ListNode* next = list->head->next;
+
+        free(list->head);
+        list->head = next;
+    }
 }
 

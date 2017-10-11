@@ -9,7 +9,11 @@ struct vec2 {
     y : number
 }
 
-operator [](a : vec2, n : number) {
+func test(a: array-int | int) {
+
+}
+
+operator [](a : vec2, n : int) {
     return [a.x, a.y][n]
 }
 
@@ -37,7 +41,7 @@ func counter(n : number) {
 }
 
 func write_values(t : dynamic) {
-	while true {
+	while true 
 		var val = run_thread(t)
 		if is_thread_done(t) {
 			break
@@ -50,6 +54,11 @@ func write_values(t : dynamic) {
 func run() {
     var a = { x = 10, y = 20 } as vec2
     var b = { x = 20, y = 10 } as vec2
+
+    var a = cast(vec2) {
+        x = 10,
+        y = 20
+    }
 
     # This is all resolved at compile time
     # pretty cool eh.

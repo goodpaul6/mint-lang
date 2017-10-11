@@ -1,17 +1,26 @@
-// linkedlist.h -- linked list utility for the mint lang compiler
-typedef struct _LinkedListNode
+#pragma once
+
+#define LL_EACH(list, type) for(ListNode* _node = (list).head, type* it = _node ? _node->data; \
+        _node != NULL; _node = _node->next, it = _node ? _node->data : NULL)
+
+typedef struct _ListNode
 {
-	struct _LinkedListNode* next;
+    struct _ListNode* prev;
+	struct _ListNode* next;
+
 	void* data;
-} LinkedListNode;
+} ListNode;
 
 typedef struct _LinkedList
 {
-	LinkedListNode* head;
-	LinkedListNode* tail;
+	ListNode* head;
+	ListNode* tail;
 	int length;
-} LinkedList;
+} List;
 
-void InitList(LinkedList* list);
-int AddNode(LinkedList* list, void* data);
-void FreeList(LinkedList* list);
+void InitList(List* list);
+
+int AddNode(List* list, void* data);
+void* PopNode(List* list);
+
+void DestroyList(List* list);
